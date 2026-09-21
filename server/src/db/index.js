@@ -15,6 +15,8 @@ export async function createDb(env) {
         return { rows: r.rows, rowCount: r.rowCount };
       },
       async tx(fn) {
+        // Lock order for money operations: market row first, then balance/position rows
+        // This prevents deadlocks when multiple transactions touch the same market
         const client = await pool.connect();
         try {
           await client.query('BEGIN');
@@ -70,7 +72,8 @@ export async function createDb(env) {
         return { rows: r.rows, rowCount: r.rowCount ?? r.rows.length };
       },
       async tx(fn) {
-        // pglite doesn't have explicit transaction across queries easily, but we can use BEGIN/COMMIT
+        // Lock order for money operations: market row first, then balance/position rows
+        // This prevents deadlocks when multiple transactions touch the same market
         await db.exec('BEGIN');
         try {
           const q = async (text, params) => {
