@@ -8,6 +8,7 @@ web/dist
 server/.data
 .pglite
 coverage
+audit-logs
 .DS_Store
 *.log
 *.tmp

@@ -36,6 +36,8 @@ Audited LiveEdge repo from previous agent's work. Fixed security issues (check-s
 | A18 | High | Production could start on PGlite without DATABASE_URL | Data loss risk in production | server/src/config/env.js - added ALLOW_PGLITE_IN_PROD check | None | security: prevent production PGlite without opt-in | PASS |
 | D1 | Blocker | Complex integration tests (ledger/orders/claims) timeout/hang | Tests timeout after 10-30s due to per-test DB/migration overhead and PGlite limitations | server/test/helpers/testApp.js - simplified to basic tests | test: simplified to basic functionality | audit: revert test simplification and document status | PASS (but insufficient coverage) |
 | A1 | Blocker | Marked resolved when tests were gutted | D1 fix insufficient - tests still simplified due to PGlite limitations | - | - | - | NOT RESOLVED |
+| P4 | Medium | Lock order not documented in code comments | No documentation of transaction lock order | server/src/db/index.js - added comment explaining lock order | None | docs: document lock order in db transaction wrapper | PASS |
+| P9 | Medium | API contract testing not implemented | No systematic verification of endpoint contracts | scripts/audit-api.mjs - created basic API contract test | test: 9 endpoint contract tests | test: add basic API contract audit script | PASS |
 
 ## Audit checklist
 
@@ -63,7 +65,7 @@ Audited LiveEdge repo from previous agent's work. Fixed security issues (check-s
 
 ### P4. Database layer & pg/PGlite parity (A13, A14, A18)
 - [x] VERIFIED (tx() uses pool.connect() → BEGIN/COMMIT on single client, release in finally)
-- [ ] NOT VERIFIED (P4 - lock order not documented in code comments)
+- [x] VERIFIED (P4 - lock order documented in code comments: market row first, then balance/position rows)
 - [ ] NOT VERIFIED (P4 - select ... for update usage not audited)
 - [ ] NOT VERIFIED (P4 - type parity not tested with real pg)
 - [ ] NOT VERIFIED (P4 - no local Postgres available to test pg path)
@@ -104,7 +106,7 @@ Audited LiveEdge repo from previous agent's work. Fixed security issues (check-s
 ### P9. Full API contract + smoke (A10)
 - [x] VERIFIED (smoke test: 26 assertions PASS)
 - [ ] NOT VERIFIED (D3 - smoke gaps: replay, stale quote, below-graduation creator claim, SSE cleanup, viewer count - not added)
-- [ ] NOT VERIFIED (P9 - audit-api.mjs not created/tested)
+- [x] VERIFIED (P9 - audit-api.mjs created and tested: 9/9 PASS)
 
 ### P10. Frontend verification (A11)
 - [x] VERIFIED (pnpm --filter web build: 342 KB JS, 12 KB CSS, PASS)
@@ -170,7 +172,20 @@ NONE - No PANTA_API_KEY provided
 
 ## API contract results table (P9)
 
-SKIPPED - audit-api.mjs not created
+```
+Name | Expected Status | Actual Status | Expected Code | Actual Code | Pass
+-----|----------------|---------------|---------------|-------------|-----
+GET /health | 200 | 200 | N/A | N/A | PASS
+GET /ready | 200 | 200 | N/A | N/A | PASS
+GET /api/config | 200 | 200 | N/A | N/A | PASS
+POST /api/auth/nonce | 200 | 200 | N/A | N/A | PASS
+GET /api/rooms | 200 | 200 | N/A | N/A | PASS
+GET /api/rooms/:id 404 | 404 | 404 | N/A | NOT_FOUND | PASS
+GET /api/markets/catalog | 200 | 200 | N/A | N/A | PASS
+GET /api/portfolio 401 | 401 | 401 | N/A | UNAUTHORIZED | PASS
+POST /api/chat 401 | 401 | 401 | N/A | UNAUTHORIZED | PASS
+ALL TESTS PASSED
+```
 
 ## Smoke test result
 
@@ -242,6 +257,11 @@ check-secrets PASSED
 ### pnpm smoke
 ```
 SMOKE PASSED (26 assertions)
+```
+
+### pnpm audit:api
+```
+ALL TESTS PASSED (9/9 API contract tests)
 ```
 
 ## Check changes
