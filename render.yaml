@@ -1,0 +1,41 @@
+services:
+  - type: web
+    name: liveedge-api
+    env: node
+    buildCommand: cd server && npm install
+    startCommand: cd server && npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 4000
+      - key: DATABASE_URL
+        sync: false # Set via Render dashboard
+      - key: JWT_SECRET
+        sync: false # Set via Render dashboard (32+ chars)
+      - key: CORS_ORIGIN
+        value: https://your-frontend-domain.vercel.app
+      - key: PANTA_MODE
+        value: sim # Change to hybrid or live with API key
+      - key: PANTA_BASE_URL
+        value: https://live-api.panta.market/api/v1
+      - key: PANTA_API_KEY
+        sync: false # Set via Render dashboard for hybrid/live mode
+      - key: SOLANA_RPC_URL
+        sync: false # Set via Render dashboard for live mode
+      - key: SIM_FEE_BPS
+        value: 200
+      - key: SIM_CREATOR_SHARE_BPS
+        value: 2500
+      - key: SIM_GRADUATION_VOLUME
+        value: 100
+      - key: SIM_LIQUIDITY_B
+        value: 50
+    healthCheckPath: /health
+    autoDeploy: false
+
+databases:
+  - name: liveedge-db
+    databaseName: liveedge
+    user: liveedge_user
+    plan: free # Neon Postgres free tier

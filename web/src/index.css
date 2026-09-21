@@ -1,0 +1,8 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { color-scheme: dark; }
+body { background:#0B0B10; color:#fff; font-family: Inter, system-ui, sans-serif; }
+h1,h2,h3 { font-family: 'Space Grotesk', system-ui, sans-serif; }
+.num { font-variant-numeric: tabular-nums; font-family: 'Space Grotesk', monospace; }
