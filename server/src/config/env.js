@@ -4,6 +4,7 @@ const schema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().default(4000),
   DATABASE_URL: z.string().optional(),
+  ALLOW_PGLITE_IN_PROD: z.enum(['true', 'false']).optional(),
   JWT_SECRET: z.string().min(32).default('dev-only-secret-change-me-dev-only-secret'),
   CORS_ORIGIN: z.string().default('http://localhost:5173'),
   PANTA_MODE: z.enum(['sim', 'hybrid', 'live']).default('sim'),
@@ -21,6 +22,9 @@ export function loadEnv(raw = process.env) {
   const warnings = [];
   if (env.NODE_ENV === 'production' && env.JWT_SECRET.startsWith('dev-only')) {
     throw new Error('JWT_SECRET must be set in production');
+  }
+  if (env.NODE_ENV === 'production' && !env.DATABASE_URL && env.ALLOW_PGLITE_IN_PROD !== 'true') {
+    throw new Error('DATABASE_URL must be set in production. To use PGlite in production, set ALLOW_PGLITE_IN_PROD=true');
   }
   let mode = env.PANTA_MODE;
   if (mode !== 'sim' && !env.PANTA_API_KEY) {
