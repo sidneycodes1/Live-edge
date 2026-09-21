@@ -14,6 +14,7 @@
     "lint": "eslint .",
     "test": "pnpm --filter server test",
     "smoke": "node scripts/smoke.mjs",
+    "audit:api": "node scripts/audit-api.mjs",
     "check:secrets": "node scripts/check-secrets.mjs"
   },
   "devDependencies": {
