@@ -1,7 +1,7 @@
 import { createApp } from '../server/src/app.js';
 import { createDb } from '../server/src/db/index.js';
 import { migrate } from '../server/src/db/migrate.js';
-import { genWallet, sign } from '../server/test/helpers/wallet.js';
+import { genWallet } from '../server/test/helpers/wallet.js';
 
 const env = {
   NODE_ENV: 'test',
