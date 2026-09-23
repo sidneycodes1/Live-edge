@@ -21,6 +21,16 @@ export function getOrCreateGuestWallet() {
   return { publicKey: bs58.encode(kp.publicKey), secretKey: kp.secretKey, kp };
 }
 
+// Canonical JSON for signatures - MUST stay byte-identical to server/src/lib/signature.js canonicalStringify.
+// Both sort keys alphabetically then JSON.stringify. See server/test/signature-fixtures.test.js proof.
+export function canonicalStringify(obj) {
+  const sorted = {};
+  Object.keys(obj).sort().forEach(key => {
+    sorted[key] = obj[key];
+  });
+  return JSON.stringify(sorted);
+}
+
 export function signMessage(secretKey, message) {
   const msgBytes = new TextEncoder().encode(message);
   const sig = nacl.sign.detached(msgBytes, secretKey);
@@ -28,7 +38,7 @@ export function signMessage(secretKey, message) {
 }
 
 export function signObject(secretKey, obj) {
-  const msg = JSON.stringify(obj);
+  const msg = canonicalStringify(obj);
   return signMessage(secretKey, msg);
 }
 

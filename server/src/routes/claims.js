@@ -41,7 +41,7 @@ export function claimsRouter({ _db, panta }) {
     try {
       if (!req.user) return res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Unauthorized' } });
       const { marketId } = req.body;
-      const result = panta._sim ? await panta._sim.buildClaim({ marketId }) : await panta.buildClaim({ marketId, wallet: req.user.wallet });
+      const result = panta._sim ? await panta._sim.buildClaim({ marketId, wallet: req.user.wallet, userId: req.user.id }) : await panta.buildClaim({ marketId, wallet: req.user.wallet, userId: req.user.id });
       res.json(result);
     } catch (e) { next(e); }
   });
@@ -50,7 +50,7 @@ export function claimsRouter({ _db, panta }) {
     try {
       if (!req.user) return res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Unauthorized' } });
       const { marketId } = req.body;
-      const result = panta._sim ? await panta._sim.buildCreatorFeeClaim({ marketId }) : await panta.buildCreatorFeeClaim({ marketId, wallet: req.user.wallet });
+      const result = panta._sim ? await panta._sim.buildCreatorFeeClaim({ marketId, wallet: req.user.wallet, userId: req.user.id }) : await panta.buildCreatorFeeClaim({ marketId, wallet: req.user.wallet, userId: req.user.id });
       res.json(result);
     } catch (e) { next(e); }
   });

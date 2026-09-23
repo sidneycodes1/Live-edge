@@ -46,7 +46,11 @@ export async function createApp({ env: rawEnv, db: existingDb } = {}) {
   app.use(pinoHttp({ logger }));
 
   const { globalLimiter, authLimiter, ordersLimiter, chatLimiter } = createRateLimiters();
-  app.use(globalLimiter);
+  // In test, a single shared server handles all tests in the file, so IP-based
+  // rate limits would leak across tests and flake. Bypass them in test only.
+  const passThrough = (_req, _res, next) => next();
+  const isTest = env.NODE_ENV === 'test';
+  app.use(isTest ? passThrough : globalLimiter);
 
   // health (no /api prefix)
   app.use(healthRouter(db));
@@ -55,7 +59,7 @@ export async function createApp({ env: rawEnv, db: existingDb } = {}) {
   app.use('/api/config', configRouter(env));
 
   // auth (rate limited)
-  app.use('/api/auth', authLimiter, authRouter({ db, env }));
+  app.use('/api/auth', isTest ? passThrough : authLimiter, authRouter({ db, env }));
 
   // streaming (public)
   app.use('/api/stream', streamRouter({ hub }));
@@ -80,7 +84,7 @@ export async function createApp({ env: rawEnv, db: existingDb } = {}) {
   );
 
   // orders (auth + limiter)
-  app.use('/api/orders', auth, ordersLimiter, ordersRouter({ db, panta, hub }));
+  app.use('/api/orders', auth, isTest ? passThrough : ordersLimiter, ordersRouter({ db, panta, hub }));
 
   // portfolio (auth)
   app.use('/api/portfolio', auth, portfolioRouter({ db, panta }));
@@ -89,7 +93,7 @@ export async function createApp({ env: rawEnv, db: existingDb } = {}) {
   app.use('/api/claims', auth, claimsRouter({ db, panta }));
 
   // chat (auth + limiter)
-  app.use('/api/chat', auth, chatLimiter, chatRouter({ db, hub }));
+  app.use('/api/chat', auth, isTest ? passThrough : chatLimiter, chatRouter({ db, hub }));
 
   // streamer metrics (auth)
   app.use('/api/streamer', auth, streamerRouter({ db, panta }));

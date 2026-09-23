@@ -11,8 +11,16 @@ function wallet() {
 function sign(kp, message) {
   return bs58.encode(nacl.sign.detached(new TextEncoder().encode(message), kp.secretKey));
 }
+// MUST stay byte-identical to server/src/lib/signature.js canonicalStringify
+function canonicalStringify(obj) {
+  const sorted = {};
+  Object.keys(obj).sort().forEach((key) => {
+    sorted[key] = obj[key];
+  });
+  return JSON.stringify(sorted);
+}
 function signObj(kp, obj) {
-  return bs58.encode(nacl.sign.detached(new TextEncoder().encode(JSON.stringify(obj)), kp.secretKey));
+  return bs58.encode(nacl.sign.detached(new TextEncoder().encode(canonicalStringify(obj)), kp.secretKey));
 }
 
 async function run() {
@@ -153,12 +161,13 @@ async function run() {
   r = await fetchJson('/api/orders/build', { method:'POST', body: JSON.stringify({ orderId: '00000000-0000-0000-0000-000000000000' }), headers:{ Authorization:`Bearer ${UB.token}` } });
   assert(r.res.status===410 || r.res.status===404 || r.res.status===400, 'stale/expired error');
 
-  // 8 resolve YES; B claims
+  // 8 resolve YES; B claims via build -> sign -> submit (uses stored build nonce)
   r = await fetchJson(`/api/markets/${marketId}/resolve`, { method:'POST', body: JSON.stringify({ outcome:'yes', force:true }), headers:{ Authorization:`Bearer ${UA.token}` } });
   assert(r.res.status===200, 'resolve');
   // B claim
-  const payloadClaim = { kind:'claim_win', marketId, wallet: UB.pub, nonce: 'test-nonce' };
-  const sigClaim = signObj(UB.kp, payloadClaim);
+  let bc = await fetchJson('/api/claims/win/build', { method:'POST', body: JSON.stringify({ marketId }), headers:{ Authorization:`Bearer ${UB.token}` } });
+  assert(bc.res.status===200 && bc.json.signPayload, 'claim win build');
+  const sigClaim = signObj(UB.kp, bc.json.signPayload);
   r = await fetchJson('/api/claims/win', { method:'POST', body: JSON.stringify({ marketId, signature: sigClaim }), headers:{ Authorization:`Bearer ${UB.token}` } });
   assert(r.res.status===200, 'claim win');
   r = await fetchJson('/api/portfolio', { headers:{ Authorization:`Bearer ${UB.token}` } });
@@ -166,8 +175,9 @@ async function run() {
   // we had 5 amount, fee 0.1, net 4.9, shares approx?
   // We'll just check balance >95
   assert(r.json.balance > 95, 'balance after claim >95');
-  // second claim -> NOT_CLAIMABLE
-  const sigClaim2 = signObj(UB.kp, { kind:'claim_win', marketId, wallet: UB.pub, nonce:'test2'});
+  // second claim -> NOT_CLAIMABLE (rebuild then submit; position already claimed)
+  let bc2 = await fetchJson('/api/claims/win/build', { method:'POST', body: JSON.stringify({ marketId }), headers:{ Authorization:`Bearer ${UB.token}` } });
+  const sigClaim2 = signObj(UB.kp, bc2.json.signPayload);
   r = await fetchJson('/api/claims/win', { method:'POST', body: JSON.stringify({ marketId, signature: sigClaim2 }), headers:{ Authorization:`Bearer ${UB.token}` } });
   assert(r.json.error?.code==='NOT_CLAIMABLE' || r.res.status===400, 'second claim NOT_CLAIMABLE');
 
@@ -192,8 +202,9 @@ async function run() {
   }
   // resolve market2
   await fetchJson(`/api/markets/${market2}/resolve`, { method:'POST', body: JSON.stringify({ outcome:'yes', force:true }), headers:{ Authorization:`Bearer ${UA.token}` } });
-  // try claim creator fees
-  const sigFee = signObj(UA.kp, { kind:'claim_creator_fees', marketId: market2, wallet: UA.pub, nonce:'fee1' });
+  // try claim creator fees via build -> sign -> submit
+  let fb = await fetchJson('/api/claims/creator-fees/build', { method:'POST', body: JSON.stringify({ marketId: market2 }), headers:{ Authorization:`Bearer ${UA.token}` } });
+  const sigFee = signObj(UA.kp, fb.json.signPayload);
   r = await fetchJson('/api/claims/creator-fees', { method:'POST', body: JSON.stringify({ marketId: market2, signature: sigFee }), headers:{ Authorization:`Bearer ${UA.token}` } });
   // if graduated, should succeed; else MARKET_NOT_GRADUATED
   if (r.res.status===200) console.log('PASS creator fee claim graduated');
@@ -206,7 +217,8 @@ async function run() {
     let reg = await fetchJson('/api/markets/register', { method:'POST', body: JSON.stringify({ quoteId: qs, signature: s2 }), headers:{ Authorization:`Bearer ${UA.token}` } });
     const smallMid = reg.json.id;
     await fetchJson(`/api/markets/${smallMid}/resolve`, { method:'POST', body: JSON.stringify({ outcome:'yes', force:true }), headers:{ Authorization:`Bearer ${UA.token}` } });
-    const sigFeeSmall = signObj(UA.kp, { kind:'claim_creator_fees', marketId: smallMid, wallet: UA.pub, nonce:'feeSmall' });
+    let fbSmall = await fetchJson('/api/claims/creator-fees/build', { method:'POST', body: JSON.stringify({ marketId: smallMid }), headers:{ Authorization:`Bearer ${UA.token}` } });
+    const sigFeeSmall = signObj(UA.kp, fbSmall.json.signPayload);
     let r2 = await fetchJson('/api/claims/creator-fees', { method:'POST', body: JSON.stringify({ marketId: smallMid, signature: sigFeeSmall }), headers:{ Authorization:`Bearer ${UA.token}` } });
     assert(r2.json.error?.code==='MARKET_NOT_GRADUATED', 'creator fee below threshold MARKET_NOT_GRADUATED');
   }

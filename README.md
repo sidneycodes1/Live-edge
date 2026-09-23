@@ -56,17 +56,10 @@ pnpm check:secrets # Check for leaked secrets
 
 ## Environment Variables
 
-Create `.env` in the root (optional - defaults provided):
-
-```bash
-NODE_ENV=development
-PORT=4000
-DATABASE_URL=postgresql://...  # Optional; defaults to PGlite
-JWT_SECRET=dev-only-secret-change-me-dev-only-secret
-CORS_ORIGIN=http://localhost:5173
-PANTA_MODE=sim                  # sim, hybrid, or live
-PANTA_BASE_URL=https://live-api.panta.market/api/v1
-PANTA_API_KEY=                  # Required for hybrid/live
+Create `.env` in the root (optional - defaults provided). See `.env.example` for the complete list. Required for production:
+- `DATABASE_URL` (PostgreSQL connection string, optional in dev)
+- `JWT_SECRET` (32+ character random string)
+- `PANTA_API_KEY` (from Panta, required for hybrid/live modes)
 SOLANA_RPC_URL=                 # Optional for live mode
 SIM_FEE_BPS=200
 SIM_CREATOR_SHARE_BPS=2500

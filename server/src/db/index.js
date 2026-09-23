@@ -62,6 +62,10 @@ export async function createDb(env) {
     }
     // wrapper for pg-like API: need to handle $1 params -> ? maybe pglite supports $1? Check: pglite uses same as pg.
     // It does support parameterized queries via .query
+    // PGlite is a single-connection embedded DB: concurrent BEGIN/COMMIT interleave
+    // and fail. Serialize transactions through a promise-chain mutex so parallel
+    // submits queue correctly (real pg Pool uses separate clients and needs no mutex).
+    let txQueue = Promise.resolve();
     return {
       kind: 'pglite',
       db,
@@ -74,18 +78,28 @@ export async function createDb(env) {
       async tx(fn) {
         // Lock order for money operations: market row first, then balance/position rows
         // This prevents deadlocks when multiple transactions touch the same market
-        await db.exec('BEGIN');
+        let release;
+        const prev = txQueue;
+        txQueue = new Promise((r) => {
+          release = r;
+        });
+        await prev;
         try {
-          const q = async (text, params) => {
-            const r = await db.query(text, params);
-            return { rows: r.rows, rowCount: r.rowCount ?? r.rows.length };
-          };
-          const result = await fn({ query: q });
-          await db.exec('COMMIT');
-          return result;
-        } catch (e) {
-          await db.exec('ROLLBACK');
-          throw e;
+          await db.exec('BEGIN');
+          try {
+            const q = async (text, params) => {
+              const r = await db.query(text, params);
+              return { rows: r.rows, rowCount: r.rowCount ?? r.rows.length };
+            };
+            const result = await fn({ query: q });
+            await db.exec('COMMIT');
+            return result;
+          } catch (e) {
+            await db.exec('ROLLBACK');
+            throw e;
+          }
+        } finally {
+          release();
         }
       },
       async close() {

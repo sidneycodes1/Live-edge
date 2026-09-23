@@ -4,10 +4,11 @@ import { validate } from '../middleware/validate.js';
 import { PantaError } from '../panta/errors.js';
 import bs58 from 'bs58';
 import nacl from 'tweetnacl';
+import { canonicalStringify } from '../lib/signature.js';
 
 function _verifySig(messageObj, signature, wallet) {
   try {
-    const msg = JSON.stringify(messageObj);
+    const msg = canonicalStringify(messageObj);
     const msgBytes = new TextEncoder().encode(msg);
     const sigBytes = bs58.decode(signature);
     const pubBytes = bs58.decode(wallet);

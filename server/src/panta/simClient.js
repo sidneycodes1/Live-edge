@@ -1,6 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { PantaError } from './errors.js';
 import { priceYes, priceNo, sharesForSpend, round6 } from '../sim/lmsr.js';
+import { canonicalStringify } from '../lib/signature.js';
+import nacl from 'tweetnacl';
+import bs58 from 'bs58';
 
 export function createSimClient({ db, env }) {
   const B = Number(env.SIM_LIQUIDITY_B);
@@ -11,9 +14,17 @@ export function createSimClient({ db, env }) {
   // in-memory quote stores
   const marketQuotes = new Map(); // quoteId -> {roomId, question,... expiresAt}
   const orderQuotes = new Map();
+  // claim nonces issued at build time, keyed `${userId}:${marketId}` -> { nonce, wallet }
+  const claimNonces = new Map();
+  const creatorFeeNonces = new Map();
 
   function now() {
     return new Date();
+  }
+
+  function normExpires(v) {
+    // Normalize any DB Date / string into a single ISO string so build and submit agree byte-for-byte
+    return new Date(v).toISOString();
   }
 
   return {
@@ -41,13 +52,33 @@ export function createSimClient({ db, env }) {
       const q = marketQuotes.get(quoteId);
       if (!q) throw new PantaError('QUOTE_EXPIRED', 'Quote expired', { status: 410 });
       if (new Date(q.expiresAt) <= now()) throw new PantaError('QUOTE_EXPIRED', 'Quote expired', { status: 410 });
-      const signPayload = { kind: 'create_market', quoteId, wallet, question: q.question, nonce: randomUUID() };
+      const nonce = randomUUID();
+      const signPayload = { kind: 'create_market', quoteId, wallet, question: q.question, nonce };
+      // Store nonce for verification
+      q.nonce = nonce;
+      const canonicalPayload = canonicalStringify(signPayload);
       // mark built? keep quote
-      return { signPayload, quoteId, wallet };
+      return { signPayload, canonicalPayload, quoteId, wallet };
     },
     async registerMarket(quoteId, signature, userId) {
       const q = marketQuotes.get(quoteId);
       if (!q) throw new PantaError('QUOTE_EXPIRED', 'Quote expired', { status: 410 });
+      // Verify signature
+      const { rows: uRows } = await db.query('select wallet from users where id=$1', [userId]);
+      if (uRows.length === 0) throw new PantaError('UNAUTHORIZED', 'User not found', { status: 401 });
+      const wallet = uRows[0].wallet;
+      const signPayload = { kind: 'create_market', quoteId, wallet, question: q.question, nonce: q.nonce };
+      const canonical = canonicalStringify(signPayload);
+      const msgBytes = new TextEncoder().encode(canonical);
+      try {
+        const sigBytes = bs58.decode(signature);
+        const pubBytes = bs58.decode(wallet);
+        if (!nacl.sign.detached.verify(msgBytes, sigBytes, pubBytes)) {
+          throw new PantaError('INVALID_SIGNATURE', 'Invalid signature', { status: 400 });
+        }
+      } catch {
+        throw new PantaError('INVALID_SIGNATURE', 'Invalid signature encoding', { status: 400 });
+      }
       // check duplicate
       const { rows: dup } = await db.query('select id from markets where creator_id=$1 and question=$2', [userId, q.question]);
       if (dup.length > 0) throw new PantaError('DUPLICATE_MARKET', 'Duplicate market', { status: 409 });
@@ -110,7 +141,9 @@ export function createSimClient({ db, env }) {
           throw new PantaError('QUOTE_STALE', 'Price moved', { status: 409 });
         }
         await db.query(`update orders set status='built' where id=$1`, [quoteId]);
-        return { signPayload: { orderId: quoteId, marketId: r.market_id, side: r.side, amount: Number(r.amount), expiresAt: r.expires_at }, preview: false, orderId: quoteId };
+        const signPayload = { orderId: quoteId, marketId: r.market_id, side: r.side, amount: Number(r.amount), expiresAt: normExpires(r.expires_at) };
+        const canonicalPayload = canonicalStringify(signPayload);
+        return { signPayload, canonicalPayload, preview: false, orderId: quoteId };
       }
       // check stale
       const { rows: mRows } = await db.query('select * from markets where id=$1', [q.marketId]);
@@ -121,7 +154,9 @@ export function createSimClient({ db, env }) {
       }
       if (new Date(q.expiresAt) <= now()) throw new PantaError('QUOTE_EXPIRED', 'Quote expired', { status: 410 });
       await db.query(`update orders set status='built' where id=$1`, [quoteId]);
-      return { signPayload: { orderId: quoteId, marketId: q.marketId, side: q.side, amount: q.amount, expiresAt: q.expiresAt }, preview: false, orderId: quoteId };
+      const signPayload = { orderId: quoteId, marketId: q.marketId, side: q.side, amount: q.amount, expiresAt: normExpires(q.expiresAt) };
+      const canonicalPayload = canonicalStringify(signPayload);
+      return { signPayload, canonicalPayload, preview: false, orderId: quoteId };
     },
     async submitBuy(quoteId, signature, walletUserId) {
       // idempotent on signature
@@ -137,6 +172,22 @@ export function createSimClient({ db, env }) {
       const order = oRows[0];
       if (order.user_id !== walletUserId) throw new PantaError('FORBIDDEN', 'Not your order', { status: 403 });
       if (new Date(order.expires_at) <= now()) throw new PantaError('QUOTE_EXPIRED', 'Quote expired', { status: 410 });
+      // Verify signature
+      const { rows: uRows } = await db.query('select wallet from users where id=$1', [walletUserId]);
+      if (uRows.length === 0) throw new PantaError('UNAUTHORIZED', 'User not found', { status: 401 });
+      const wallet = uRows[0].wallet;
+      const signPayload = { orderId: quoteId, marketId: order.market_id, side: order.side, amount: Number(order.amount), expiresAt: normExpires(order.expires_at) };
+      const canonical = canonicalStringify(signPayload);
+      const msgBytes = new TextEncoder().encode(canonical);
+      try {
+        const sigBytes = bs58.decode(signature);
+        const pubBytes = bs58.decode(wallet);
+        if (!nacl.sign.detached.verify(msgBytes, sigBytes, pubBytes)) {
+          throw new PantaError('INVALID_SIGNATURE', 'Invalid signature', { status: 400 });
+        }
+      } catch {
+        throw new PantaError('INVALID_SIGNATURE', 'Invalid signature encoding', { status: 400 });
+      }
       // do ledger update in transaction
       return db.tx(async ({ query }) => {
         // lock market
@@ -197,8 +248,14 @@ export function createSimClient({ db, env }) {
       return { totalVolume: Number(vol[0].total), tradeCount: Number(vol[0].cnt), uniqueTraders: Number(vol[0].traders), byMarket, creatorFeesAccrued: Number(fees[0].fees) };
     },
     // claims
-    async buildClaim({ marketId }) {
-      return { signPayload: { kind: 'claim_win', marketId, nonce: randomUUID() } };
+    async buildClaim({ marketId, wallet, userId }) {
+      const nonce = randomUUID();
+      const signPayload = { kind: 'claim_win', marketId, wallet, nonce };
+      const canonicalPayload = canonicalStringify(signPayload);
+      // Store build-time nonce so submit can verify against what was actually issued
+      if (userId) claimNonces.set(`${userId}:${marketId}`, { nonce, wallet });
+      else claimNonces.set(`:${marketId}:${wallet}`, { nonce, wallet });
+      return { signPayload, canonicalPayload };
     },
     async submitClaim({ marketId, _wallet, signature, userId }) {
       const { rows: mRows } = await db.query('select * from markets where id=$1', [marketId]);
@@ -211,6 +268,24 @@ export function createSimClient({ db, env }) {
       if (pos.claimed) throw new PantaError('NOT_CLAIMABLE', 'Already claimed', { status: 400 });
       const winningShares = m.outcome === 'yes' ? Number(pos.yes_shares) : Number(pos.no_shares);
       if (winningShares <= 0) throw new PantaError('NOT_CLAIMABLE', 'No winning shares', { status: 400 });
+      // Verify signature against the nonce actually issued at build time
+      const { rows: uRows } = await db.query('select wallet from users where id=$1', [userId]);
+      if (uRows.length === 0) throw new PantaError('UNAUTHORIZED', 'User not found', { status: 401 });
+      const wallet = uRows[0].wallet;
+      const stored = claimNonces.get(`${userId}:${marketId}`) || claimNonces.get(`:${marketId}:${wallet}`);
+      if (!stored) throw new PantaError('INVALID_SIGNATURE', 'No claim build found for this market (call /win/build first)', { status: 400 });
+      const signPayload = { kind: 'claim_win', marketId, wallet, nonce: stored.nonce };
+      const canonical = canonicalStringify(signPayload);
+      const msgBytes = new TextEncoder().encode(canonical);
+      try {
+        const sigBytes = bs58.decode(signature);
+        const pubBytes = bs58.decode(wallet);
+        if (!nacl.sign.detached.verify(msgBytes, sigBytes, pubBytes)) {
+          throw new PantaError('INVALID_SIGNATURE', 'Invalid signature', { status: 400 });
+        }
+      } catch {
+        throw new PantaError('INVALID_SIGNATURE', 'Invalid signature encoding', { status: 400 });
+      }
       // idempotent via trades signature uniqueness
       const { rows: existing } = await db.query('select * from trades where signature=$1', [signature]);
       if (existing.length > 0) return { amount: winningShares, idempotent: true };
@@ -222,8 +297,15 @@ export function createSimClient({ db, env }) {
         return { amount: winningShares, tradeId: tid };
       });
     },
-    async buildCreatorFeeClaim({ marketId }) {
-      return { signPayload: { kind: 'claim_creator_fees', marketId, nonce: randomUUID() } };
+    async buildCreatorFeeClaim({ marketId, wallet, userId }) {
+      const nonce = randomUUID();
+      const signPayload = { kind: 'claim_creator_fees', marketId, wallet, nonce };
+      const canonicalPayload = canonicalStringify(signPayload);
+      // Store build-time nonce so submit can verify against what was actually issued
+      if (userId) creatorFeeNonces.set(`${userId}:${marketId}`, { nonce, wallet });
+      else if (wallet) creatorFeeNonces.set(`:${marketId}:${wallet}`, { nonce, wallet });
+      else creatorFeeNonces.set(`${marketId}`, { nonce, wallet: wallet || null });
+      return { signPayload, canonicalPayload };
     },
     async submitCreatorFeeClaim({ marketId, _wallet, signature, userId }) {
       const { rows: mRows } = await db.query('select * from markets where id=$1', [marketId]);
@@ -233,6 +315,26 @@ export function createSimClient({ db, env }) {
       if (m.status !== 'resolved') throw new PantaError('MARKET_NOT_GRADUATED', 'Market not resolved', { status: 400 });
       if (!m.graduated) throw new PantaError('MARKET_NOT_GRADUATED', 'Market not graduated', { status: 400 });
       if (m.creator_fees_claimed) throw new PantaError('NOT_CLAIMABLE', 'Already claimed', { status: 400 });
+      // Verify signature against the nonce actually issued at build time
+      const { rows: uRows } = await db.query('select wallet from users where id=$1', [userId]);
+      if (uRows.length === 0) throw new PantaError('UNAUTHORIZED', 'User not found', { status: 401 });
+      const wallet = uRows[0].wallet;
+      const stored = creatorFeeNonces.get(`${userId}:${marketId}`) || creatorFeeNonces.get(`:${marketId}:${wallet}`) || creatorFeeNonces.get(`${marketId}`);
+      if (!stored) throw new PantaError('INVALID_SIGNATURE', 'No creator-fee build found for this market (call /creator-fees/build first)', { status: 400 });
+      // Rebuild with stored nonce AND stored wallet if build was issued without wallet (legacy), else current wallet
+      const effectiveWallet = stored.wallet || wallet;
+      const signPayload = { kind: 'claim_creator_fees', marketId, wallet: effectiveWallet, nonce: stored.nonce };
+      const canonical = canonicalStringify(signPayload);
+      const msgBytes = new TextEncoder().encode(canonical);
+      try {
+        const sigBytes = bs58.decode(signature);
+        const pubBytes = bs58.decode(wallet);
+        if (!nacl.sign.detached.verify(msgBytes, sigBytes, pubBytes)) {
+          throw new PantaError('INVALID_SIGNATURE', 'Invalid signature', { status: 400 });
+        }
+      } catch {
+        throw new PantaError('INVALID_SIGNATURE', 'Invalid signature encoding', { status: 400 });
+      }
       const { rows: existing } = await db.query('select * from trades where signature=$1', [signature]);
       if (existing.length > 0) return { amount: Number(m.creator_fees_accrued), idempotent: true };
       const amount = Number(m.creator_fees_accrued);
