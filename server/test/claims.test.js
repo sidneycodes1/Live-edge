@@ -141,11 +141,10 @@ describe('claims', () => {
     const UA = await auth(fetchJson, A);
     const UB = await auth(fetchJson, B);
     const smallId = await createMarket(fetchJson, UA, 'Small graduation threshold?');
-    await buy(fetchJson, UB, marketId_small_fallback(smallId), 'yes', 5);
+    await buy(fetchJson, UB, smallId, 'yes', 5);
     const { rows: sRows } = await db.query('select graduated, volume from markets where id=$1', [smallId]);
     assert.equal(sRows[0].graduated, false);
     assert.equal(Number(sRows[0].volume), 5);
-    function marketId_small_fallback(id) { return id; }
   });
 
   it('claim without build fails INVALID_SIGNATURE', async () => {
