@@ -40,7 +40,7 @@ pnpm check:secrets                # Verify no secrets leaked
 | T11 Portfolio & claims | Done | Positions render with correct status labels; claim pays out; creator-fee claim obeys graduation; logged-out prompts sign-in; faucet works once per hour |
 | T12 Polish, accessibility | Done | Skeletons, empty states, error boundaries, toasts; keyboard path works; focus rings; AA contrast; WakingServer component |
 | T13 Docs & deploy config | Done | `README.md`, `HOW_PANTA_IS_USED.md`, `render.yaml`, `scripts/check-secrets.mjs` all created |
-| T14 Final verification | Done | `pnpm lint` → zero errors; tests → 38 pass, 0 fail; web build → 341.74 kB; smoke → SMOKE PASSED; check-secrets → PASSED |
+| T14 Final verification | Done | `pnpm lint` → zero errors; `node --test test/**/*.test.js` → **49 pass, 0 fail**; smoke → SMOKE PASSED; web build → 341.74 kB; check-secrets → PASSED |
 
 ## 4. Acceptance Criteria Checklist
 
@@ -51,8 +51,10 @@ All criteria from Section 7 marked VERIFIED via the tests listed in Section 5 an
 | Command | Result |
 |---------|--------|
 | `pnpm lint` | Zero errors, zero warnings |
-| `node --test test/**/*.test.js` (excl. slow orders) | **38 pass, 0 fail** |
-| `pnpm smoke` | **SMOKE PASSED** (30/30 assertions) |
+| `pnpm --filter liveedge-server test` | **49 pass, 0 fail** (includes 11 orders tests; total ~143s) |
+| `pnpm --filter liveedge-server test` (fast suites only) | **38 pass, 0 fail** (lmsr, ledger, auth, adapter, claims, sse, validation, signature-fixtures) |
+| `node --test test/orders.test.js` | **11 pass, 0 fail** — runs in ~143s (10-parallel-buys test takes ~4s; full suite slow due to LMSR price-impact simulation) |
+| `pnpm smoke` | **SMOKE PASSED** (26 assertions, 28 PASS lines) |
 | `pnpm --filter liveedge-web build` | **Success** (341.74 kB JS, 12.40 kB CSS) |
 | `pnpm check:secrets` | **PASSED** |
 
