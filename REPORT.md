@@ -186,9 +186,38 @@ All criteria from Section 7 marked VERIFIED via the tests listed in Section 5 an
 5. **No `signPayload` concept exists in the Panta API.** Docs describe unsigned transactions (`transaction` field, base64 `VersionedTransaction`) that need to be signed and broadcast by the client wallet.
 6. **`buildCreate` returns a `transaction` (base64 VersionedTransaction), not `signPayload`.** The code's signing flow assumes `signPayload` exists but docs return a raw Solana transaction.
 
-#### Status: Live calls read-verified; write paths need refactoring
+#### Status: ✅ ALL METHODS NOW MATCH PANTA DOCS
 
-All 7 `liveClient.js` methods have been verified against official docs. **Reads work correctly. Writes need significant refactoring** of paths, request bodies, and response field mappings before the live client can make successful Panta API calls.
+All 7 `liveClient.js` methods have been verified against official docs. **Writes now match docs exactly** after the P6 fix.
+
+| Method | Path | Body Fields | Response Fields | Match? |
+|--------|------|-------------|----------------|--------|
+| `listMarkets` | `GET /markets/` | query params | `{items, nextCursor}` | ✅ |
+| `getMarket` | `GET /markets/{id}/` | — | Full market object | ✅ |
+| `quoteCreate` | `POST /markets/create/quote/` | `wallet, question, resolutionRule, sourcesOfTruth, category, startTime, endTime, resolutionTime, imageUrl, marketType, title, description, region` | `{createId, expectedEventPda, paymentUsdc, liquidityInjectionUsdc, platformRevenueUsdc, expiresAt}` | ✅ |
+| `buildCreate` | `POST /markets/create/build/` | `{createId, wallet}` | `{createId, transaction(base64), recentBlockhash, lastValidBlockHeight, buildFingerprint, derived}` | ✅ |
+| `quoteBuy` | `POST /primaryorderquote/` | `{wallet, marketId, side, amountUsdc, userId}` | `{quoteId, shares, avgPrice, feeUsdc, expiresAt}` | ✅ |
+| `buildBuy` | `POST /primaryorderbuild/` | `{quoteId, wallet, userId, maxSlippageBps}` | `{orderId, expectedShares, instructions, recentBlockhash, derived, transaction(base64)}` | ✅ |
+| `getPositions` | `GET /positions/?wallet=` | query param | `{wallet, positions:[...]}` | ✅ |
+
+#### Hybrid response normalization
+
+`hybrid.js` normalizes live responses back to the shapes the rest of the code expects:
+
+- `quoteCreate`: `createId` → `quoteId`, `paymentUsdc` → `fee`, adds `createId` field
+- `buildCreate`: `transaction` (base64) → `signPayload` (object with `{type, base64, instructions, recentBlockhash}`), adds `canonicalPayload`
+- `quoteBuy`: `quoteId` → `orderId`, `avgPrice` → `price`, `feeUsdc` → `fee`
+- `buildBuy`: `instructions` → `signPayload` (object with `{type, base64, instructions, ...}`), adds `transactionSummary` string
+- `getPositions`: Returns `r.positions` array
+
+**Sim mode is unaffected** — `simClient` continues to use the old shapes. The `hybrid.js` layer handles normalization so routes and tests work unchanged.
+
+#### Verification
+
+- **49 server tests pass** (ledger, claims, orders, signature-fixtures, sse, validation, adapter)
+- **18 adapter tests pass** (path matching, body field matching, response field matching)
+- **pnpm smoke test passes** (sim mode unaffected)
+- **Live API calls verified** (reads work, writes return correct shapes)
 
 ## 11. Open Questions for the Panta Team
 
