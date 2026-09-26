@@ -90,7 +90,7 @@ export function marketsRouter({ db, panta, hub, priceCache }) {
       const { rows: roomRows } = await db.query('select * from rooms where id=$1', [body.roomId]);
       if (roomRows.length === 0) throw new PantaError('NOT_FOUND', 'Room not found', { status: 404 });
       if (roomRows[0].owner_id !== req.user.id) throw new PantaError('FORBIDDEN', 'Only room owner can create market', { status: 403 });
-      const input = { roomId: body.roomId, question, resolutionRule, sourcesOfTruth: sources, endInMinutes, category, wallet: req.user.wallet };
+      const input = { roomId: body.roomId, question, resolutionRule, sourcesOfTruth: sources, endInMinutes, category, wallet: req.user.wallet, startTime: body.startTime || new Date().toISOString(), endTime: body.endTime || new Date(Date.now() + (body.endInMinutes || 10) * 60000).toISOString(), resolutionTime: body.resolutionTime || new Date(Date.now() + (body.endInMinutes || 10) * 60000 + 5 * 60000).toISOString(), imageUrl: body.imageUrl || `https://via.placeholder.com/1024/15151C/FFFFFF?text=${encodeURIComponent(question.slice(0, 30))}`, marketType: body.marketType || 'standard', title: body.title || question, description: body.description || question, region: body.region || 'Global' };
       const quote = await panta.quoteCreate(input);
       // we need to store quoteId mapping for sim; panta hybrid already handles, but for our flow we rely on panta's quoteId
       res.json(quote);
@@ -101,16 +101,16 @@ export function marketsRouter({ db, panta, hub, priceCache }) {
 
   const buildSchema = z.object({ quoteId: z.string().min(1) });
 
-  r.post('/build', validate(buildSchema), async (req, res, next) => {
-    try {
-      if (!req.user) return res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Unauthorized' } });
-      const { quoteId } = req.body;
-      const result = await panta.buildCreate(quoteId, req.user.wallet);
-      res.json(result);
-    } catch (e) {
-      next(e);
-    }
-  });
+    r.post('/build', validate(buildSchema), async (req, res, next) => {
+      try {
+        if (!req.user) return res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Unauthorized' } });
+        const { createId, quoteId } = req.body;
+        const result = await panta.buildCreate(createId || quoteId, req.user.wallet);
+        res.json(result);
+      } catch (e) {
+        next(e);
+      }
+    });
 
   const registerSchema = z.object({ quoteId: z.string().min(1), signature: z.string().min(5) });
 

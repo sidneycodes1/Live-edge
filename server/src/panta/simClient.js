@@ -39,7 +39,6 @@ export function createSimClient({ db, env }) {
       return rows[0];
     },
     async quoteCreate(input) {
-      // input: { roomId, question, resolutionRule, sourcesOfTruth, endInMinutes, category, wallet? }
       const fee = 1.0; // sim creation fee 1 USDC placeholder
       const quoteId = randomUUID();
       const expiresAt = new Date(Date.now() + 90 * 1000).toISOString();

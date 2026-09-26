@@ -31,7 +31,7 @@ export function ordersRouter({ db, panta, hub }) {
     try {
       if (!req.user) return res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Unauthorized' } });
       const { marketId, side, amount } = req.body;
-      const quote = await panta.quoteBuy({ marketId, side, amount, wallet: req.user.wallet, userId: req.user.id });
+      const quote = await panta.quoteBuy({ marketId, side, amountUsdc: amount, amount, wallet: req.user.wallet, userId: req.user.id });
       res.json(quote);
     } catch (e) {
       next(e);
@@ -40,17 +40,17 @@ export function ordersRouter({ db, panta, hub }) {
 
   // const buildSchema = z.object({ orderId: z.string().min(1), quoteId: z.string().optional() }); // Unused
 
-  r.post('/build', async (req, res, next) => {
-    try {
-      if (!req.user) return res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Unauthorized' } });
-      const id = req.body.orderId || req.body.quoteId;
-      if (!id) throw new PantaError('VALIDATION_ERROR', 'orderId required', { status: 400 });
-      const result = await panta.buildBuy(id);
-      res.json(result);
-    } catch (e) {
-      next(e);
-    }
-  });
+    r.post('/build', async (req, res, next) => {
+      try {
+        if (!req.user) return res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Unauthorized' } });
+        const id = req.body.orderId || req.body.quoteId;
+        if (!id) throw new PantaError('VALIDATION_ERROR', 'orderId required', { status: 400 });
+        const result = await panta.buildBuy(id);
+        res.json(result);
+      } catch (e) {
+        next(e);
+      }
+    });
 
   const submitSchema = z.object({ orderId: z.string().min(1), quoteId: z.string().optional(), signature: z.string().min(5) });
 
