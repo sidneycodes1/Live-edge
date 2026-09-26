@@ -117,7 +117,78 @@ All criteria from Section 7 marked VERIFIED via the tests listed in Section 5 an
 
 ## 10. Panta Integration Status
 
-All Panta capabilities are **simulated**. The adapter is structured to swap to real calls when `PANTA_API_KEY` is provided and `PANTA_MODE=hybrid` or `PANTA_MODE=live`.
+### P6 Audit: Live API Verification (PANTA_API_KEY set, PANTA_MODE=hybrid)
+
+**Docs source**: `https://docs.panta.market/llms.txt` and all referenced endpoint pages.
+
+**Live API key**: `[REDACTED]` (read-only allowlist tested: no signing, submitting, or claiming).
+
+#### Live-call allowlist results
+
+| Call | Endpoint | Status | Notes |
+|------|----------|--------|-------|
+| `listMarkets({limit:2})` | `GET /markets/?limit=2` | ✅ 200 | Returns `{items:[...], nextCursor:"..."}` — matches docs exactly |
+| `getMarket("AESrMoZxcTGQibC1rNEmq3oz9qoDqHhomUe6MQEw1k9F")` | `GET /markets/AESrMoZxcTGQibC1rNEmq3oz9qoDqHhomUe6MQEw1k9F/` | ✅ 200 | Returns full market with `yesPrice`/`noPrice` filled — matches docs |
+| `getPositions("invalid_wallet")` | `GET /positions/?wallet=invalid_wallet` | ⚠️ 400 | Endpoint exists; returns `{code:"INVALID_MARKET_PARAMS"}` — path is query param, not path param |
+| `quoteCreate(...)` | `POST /markets/create/quote/` | ⚠️ 400 | Endpoint exists at **different path**; wallet format validation fails (test wallet not valid Solana pubkey) |
+| `buildCreate(...)` | `POST /markets/create/build/` | ⚠️ 400 | Endpoint exists at **different path**; returns `CREATE_EXPIRED` for invalid createId |
+| `quoteBuy(...)` | `POST /primaryorderquote/` | ⚠️ 400 | Endpoint exists at **different path**; returns `INVALID_MARKET_PARAMS` for invalid marketId |
+| `buildBuy(...)` | `POST /primaryorderbuild/` | ⚠️ 400 | Endpoint exists at **different path**; returns `INVALID_MARKET_PARAMS` for invalid quoteId |
+
+#### Docs vs Code Comparison Table
+
+##### Path comparison
+
+| Method | `liveClient.js` path | Official docs path | Match? |
+|--------|---------------------|-------------------|--------|
+| `listMarkets` | `GET /markets` (+ query) | `GET /markets/` | ✅ Trailing slash added by `withTrailingSlash` |
+| `getMarket` | `GET /markets/{id}` | `GET /markets/{marketId}/` | ⚠️ Trailing slash added, but `id` vs `marketId` naming |
+| `quoteCreate` | `POST /markets/quote` | `POST /markets/create/quote/` | ❌ **WRONG PATH** |
+| `buildCreate` | `POST /markets/build` | `POST /markets/create/build/` | ❌ **WRONG PATH** |
+| `quoteBuy` | `POST /orders/quote` | `POST /primaryorderquote/` | ❌ **WRONG PATH** |
+| `buildBuy` | `POST /orders/build` | `POST /primaryorderbuild/` | ❌ **WRONG PATH** |
+| `getPositions` | `GET /positions/{wallet}` | `GET /positions/?wallet=` | ❌ **WRONG PARAM STYLE** (path vs query) |
+
+##### Request body comparison
+
+| Method | Code sends | Docs require | Match? |
+|--------|-----------|-------------|--------|
+| `quoteCreate` | `{roomId, question, resolutionRule, sourcesOfTruth, endInMinutes, category, wallet}` | `{wallet, question, resolutionRule, sourcesOfTruth, category, startTime, endTime, resolutionTime, imageUrl, marketType, title?, description?, region?}` | ❌ Missing `startTime`, `endTime`, `resolutionTime`, `imageUrl`, `marketType`; has extra `roomId`, `endInMinutes` |
+| `buildCreate` | `{quoteId, wallet}` | `{createId, wallet}` | ❌ `quoteId` vs `createId` |
+| `quoteBuy` | `{marketId, side, amount, wallet}` | `{wallet, marketId, side, amountUsdc, userId}` | ❌ `amount` vs `amountUsdc`; missing `userId` |
+| `buildBuy` | `{quoteId}` | `{quoteId, wallet, userId, maxSlippageBps}` | ❌ Missing `wallet`, `userId`, `maxSlippageBps` |
+
+##### Response field mapping comparison
+
+| Method | Code expects | Docs returns | Match? |
+|--------|-------------|-------------|--------|
+| `quoteCreate` | `{quoteId, fee, currency, expiresAt, source}` | `{createId, expectedEventPda, paymentUsdc, liquidityInjectionUsdc, platformRevenueUsdc, marketType, expiresAt, blockhashExpiryHintSec}` | ❌ Wrong fields entirely |
+| `buildCreate` | `{signPayload, quoteId, wallet}` | `{createId, transaction, recentBlockhash, lastValidBlockHeight, buildFingerprint, derived, expiresAt}` | ❌ No `signPayload`; has `transaction` (base64 VersionedTransaction) |
+| `quoteBuy` | `{orderId, price, shares, fee, expiresAt, payoutIfWin, source}` | `{quoteId, marketId, side, amountUsdc, shares, avgPrice, feeUsdc, expiresAt, blockhashExpiryHintSec}` | ❌ `orderId` vs `quoteId`; `price` vs `avgPrice`; `fee` vs `feeUsdc`; no `payoutIfWin` |
+| `buildBuy` | `{signPayload, preview, orderId}` | `{orderId, quoteId, wallet, marketId, side, amountUsdc, expectedShares, instructions, recentBlockhash, derived, expiresAt}` | ❌ No `signPayload`; has `instructions` (Solana instructions) |
+| `getPositions` | Array of position objects | `{wallet, positions: [{marketId, category, side, shares, phase, claimable, claimed, outcome}]}` | ❌ Wrong wrapper shape |
+
+##### Header/Authorization comparison
+
+| Aspect | Code | Docs | Match? |
+|--------|------|------|--------|
+| API key header | `X-Api-Key: pk_live_...` | `X-Api-Key` or `Authorization: Bearer <access>` | ✅ |
+| Content-Type | `application/json` | `application/json` | ✅ |
+| Timeout | 10s `AbortController` | Not specified | N/A |
+| 429 handling | `Retry-After` header, retry once | Confirmed in docs | ✅ |
+
+#### Critical findings
+
+1. **All write endpoints have wrong paths.** Code uses `/markets/quote`, `/markets/build`, `/orders/quote`, `/orders/build` but docs specify `/markets/create/quote/`, `/markets/create/build/`, `/primaryorderquote/`, `/primaryorderbuild/`.
+2. **All request bodies use wrong field names.** `amount` should be `amountUsdc`, `quoteId` should be `createId` for create flow, missing fields like `startTime`, `endTime`, `resolutionTime`, `imageUrl`, `userId`.
+3. **All response field mappings are wrong.** Code expects `quoteId`, `orderId`, `price`, `fee`, `payoutIfWin`, `signPayload` but docs return `createId`, `quoteId`, `avgPrice`, `feeUsdc`, `transaction` (base64), `instructions`.
+4. **`getPositions` uses wrong path style.** Code uses `/positions/{wallet}` but docs use `/positions/?wallet=`.
+5. **No `signPayload` concept exists in the Panta API.** Docs describe unsigned transactions (`transaction` field, base64 `VersionedTransaction`) that need to be signed and broadcast by the client wallet.
+6. **`buildCreate` returns a `transaction` (base64 VersionedTransaction), not `signPayload`.** The code's signing flow assumes `signPayload` exists but docs return a raw Solana transaction.
+
+#### Status: Live calls read-verified; write paths need refactoring
+
+All 7 `liveClient.js` methods have been verified against official docs. **Reads work correctly. Writes need significant refactoring** of paths, request bodies, and response field mappings before the live client can make successful Panta API calls.
 
 ## 11. Open Questions for the Panta Team
 
