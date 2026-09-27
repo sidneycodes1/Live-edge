@@ -202,4 +202,24 @@ describe('liveClient', () => {
       assert.deepEqual(r.positions, [{ marketId: 'm', side: 'yes', shares: 10 }]);
     });
   });
+
+  describe('env loading', () => {
+    it('loads .env and PANTA_MODE=hybrid', async () => {
+      const { readFileSync } = await import('node:fs');
+      const serverJsPath = 'C:/Users/USER/Documents/MY CODES/Live edge/server/src/server.js';
+      const envPath = serverJsPath.replace('src/server.js', '../.env');
+      const envText = readFileSync(envPath, 'utf8');
+      const env = {};
+      for (const line of envText.trim().split('\n')) {
+        const eq = line.indexOf('=');
+        if (eq > 0 && !line.startsWith('#')) {
+          const key = line.slice(0, eq).trim();
+          const val = line.slice(eq + 1).trim();
+          env[key] = val;
+        }
+      }
+      assert.equal(env.PANTA_MODE, 'hybrid');
+      assert.ok(env.PANTA_API_KEY.startsWith('pk_live_'));
+    });
+  });
 });

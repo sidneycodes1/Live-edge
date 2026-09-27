@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { createApp } from './app.js';
 import { loadEnv } from './config/env.js';
 import { createDb } from './db/index.js';
@@ -6,7 +7,8 @@ import { migrate } from './db/migrate.js';
 import { seed } from './db/seed.js';
 
 // Load .env manually (dotenv not installed as dependency)
-const envPath = new URL('../../.env', import.meta.url);
+const __filename = fileURLToPath(import.meta.url);
+const envPath = __filename.replace('src/server.js', '../.env');
 try {
   const envText = readFileSync(envPath, 'utf8');
   for (const line of envText.trim().split('\n')) {
