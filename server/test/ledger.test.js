@@ -11,15 +11,20 @@ async function auth(fetchJson, W) {
   return { token: v.json.token, pub: W.pub, kp: W.kp, id: v.json.user.id };
 }
 
-async function createMarket(fetchJson, UA, question) {
+async function createMarket(fetchJson, UA, question, endInMinutes = 10) {
   let r = await fetchJson('/api/rooms', { method: 'POST', body: JSON.stringify({ title: 'Ledger Room' }), headers: { Authorization: `Bearer ${UA.token}` } });
   const roomId = r.json.id;
-  r = await fetchJson('/api/markets/quote', { method: 'POST', body: JSON.stringify({ roomId, question, resolutionRule: 'YES rule', sourcesOfTruth: ['https://x'] }), headers: { Authorization: `Bearer ${UA.token}` } });
+  r = await fetchJson('/api/markets/quote', { method: 'POST', body: JSON.stringify({ roomId, question, resolutionRule: 'YES rule', sourcesOfTruth: ['https://x'], endInMinutes }), headers: { Authorization: `Bearer ${UA.token}` } });
   const q = r.json.quoteId;
   r = await fetchJson('/api/markets/build', { method: 'POST', body: JSON.stringify({ quoteId: q }), headers: { Authorization: `Bearer ${UA.token}` } });
   const sigM = signObj(UA.kp, r.json.signPayload);
   r = await fetchJson('/api/markets/register', { method: 'POST', body: JSON.stringify({ quoteId: q, signature: sigM }), headers: { Authorization: `Bearer ${UA.token}` } });
   return r.json.id;
+}
+
+async function getMarketStatus(fetchJson, id) {
+  const r = await fetchJson(`/api/markets/${id}`);
+  return r.json.status;
 }
 
 async function buy(fetchJson, U, marketId, side, amount) {
@@ -132,21 +137,31 @@ describe('ledger', () => {
     const UA = await auth(fetchJson, A);
     const UB = await auth(fetchJson, B);
     const marketId = await createMarket(fetchJson, UA, 'Volume accrual ledger?');
-    await buy(fetchJson, UB, marketId, 'yes', 7);
-    const { rows } = await db.query('select volume from markets where id=$1', [marketId]);
-    assert.equal(Number(rows[0].volume), 7);
-  });
+     await buy(fetchJson, UB, marketId, 'yes', 7);
+     const { rows } = await db.query('select volume from markets where id=$1', [marketId]);
+     assert.equal(Number(rows[0].volume), 7);
+   });
 
-  it('two sequential buys debit cumulatively', async () => {
-    const { fetchJson, db } = await makeApp();
-    const A = genWallet();
-    const B = genWallet();
-    const UA = await auth(fetchJson, A);
-    const UB = await auth(fetchJson, B);
-    const marketId = await createMarket(fetchJson, UA, 'Cumulative debit ledger?');
-    await buy(fetchJson, UB, marketId, 'yes', 5);
-    await buy(fetchJson, UB, marketId, 'no', 8);
-    const { rows } = await db.query('select sim_usdc from balances where user_id=$1', [UB.id]);
-    assert.equal(Number(rows[0].sim_usdc), 87);
-  });
-});
+it('market stays open after creation with 10-minute duration', async () => {
+     const { fetchJson, db } = await makeApp();
+     const A = genWallet();
+     const UA = await auth(fetchJson, A);
+     const marketId = await createMarket(fetchJson, UA, 'Market lifecycle test?', 10);
+     const status = await getMarketStatus(fetchJson, marketId);
+     assert.equal(status, 'open');
+     const { rows } = await db.query('select status, end_time from markets where id=$1', [marketId]);
+     assert.equal(rows[0].status, 'open');
+   });
+   it('two sequential buys debit cumulatively', async () => {
+     const { fetchJson, db } = await makeApp();
+     const A = genWallet();
+     const B = genWallet();
+     const UA = await auth(fetchJson, A);
+     const UB = await auth(fetchJson, B);
+     const marketId = await createMarket(fetchJson, UA, 'Cumulative debit ledger?');
+     await buy(fetchJson, UB, marketId, 'yes', 5);
+     await buy(fetchJson, UB, marketId, 'no', 8);
+     const { rows } = await db.query('select sim_usdc from balances where user_id=$1', [UB.id]);
+     assert.equal(Number(rows[0].sim_usdc), 87);
+   });
+ });
