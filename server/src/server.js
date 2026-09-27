@@ -1,8 +1,23 @@
+import { readFileSync } from 'node:fs';
 import { createApp } from './app.js';
 import { loadEnv } from './config/env.js';
 import { createDb } from './db/index.js';
 import { migrate } from './db/migrate.js';
 import { seed } from './db/seed.js';
+
+// Load .env manually (dotenv not installed as dependency)
+const envPath = new URL('../../.env', import.meta.url);
+try {
+  const envText = readFileSync(envPath, 'utf8');
+  for (const line of envText.trim().split('\n')) {
+    const eq = line.indexOf('=');
+    if (eq > 0 && !line.startsWith('#')) {
+      const key = line.slice(0, eq).trim();
+      const val = line.slice(eq + 1).trim();
+      if (!(key in process.env)) process.env[key] = val;
+    }
+  }
+} catch { /* .env not found */ }
 
 const env = loadEnv(process.env);
 // handle port busy
