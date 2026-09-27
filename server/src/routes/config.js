@@ -2,7 +2,7 @@ import { Router } from 'express';
 
 export function configRouter(env) {
   const r = Router();
-  r.get('/config', (_req, res) => {
+  r.get('/', (_req, res) => {
     res.json({
       mode: env.effectiveMode,
       requestedMode: env.PANTA_MODE,

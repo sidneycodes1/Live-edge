@@ -3,6 +3,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import pinoHttp from 'pino-http';
 import pino from 'pino';
+import 'dotenv/config';
 import { loadEnv } from './config/env.js';
 import { createDb } from './db/index.js';
 import { migrate } from './db/migrate.js';
