@@ -14,7 +14,13 @@ export function roomsRouter({ db, hub }) {
       const { rows: rooms } = await db.query(`select r.*, u.display_name as owner_name, u.wallet as owner_wallet from rooms r join users u on u.id=r.owner_id order by r.created_at desc`);
       const result = [];
       for (const room of rooms) {
-        const { rows: markets } = await db.query(`select * from markets where room_id=$1 order by created_at desc limit 1`, [room.id]);
+        // Prefer a tradeable (open) market as the room hero; fall back to most recent.
+        const { rows: markets } = await db.query(
+          `select * from markets where room_id=$1
+           order by case status when 'open' then 0 when 'closed' then 1 else 2 end, created_at desc
+           limit 1`,
+          [room.id],
+        );
         const hero = markets[0] || null;
         const viewers = hub ? hub.count(room.id) : 0;
         result.push({
@@ -49,7 +55,11 @@ export function roomsRouter({ db, hub }) {
       const { rows } = await db.query(`select r.*, u.display_name as owner_name from rooms r join users u on u.id=r.owner_id where r.id=$1`, [req.params.id]);
       if (rows.length === 0) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Room not found' } });
       const room = rows[0];
-      const { rows: markets } = await db.query(`select * from markets where room_id=$1 order by status asc, created_at desc`, [room.id]);
+      const { rows: markets } = await db.query(
+        `select * from markets where room_id=$1
+         order by case status when 'open' then 0 when 'closed' then 1 else 2 end, created_at desc`,
+        [room.id],
+      );
       const { rows: chats } = await db.query(`select c.*, u.wallet, u.display_name from chat_messages c left join users u on u.id=c.user_id where c.room_id=$1 order by c.id desc limit 50`, [room.id]);
       const viewers = hub ? hub.count(room.id) : 0;
       res.json({
