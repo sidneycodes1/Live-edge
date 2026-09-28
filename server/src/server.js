@@ -1,25 +1,18 @@
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import { createApp } from './app.js';
 import { loadEnv } from './config/env.js';
+import { loadDotEnv } from './config/dotenv.js';
 import { createDb } from './db/index.js';
 import { migrate } from './db/migrate.js';
 import { seed } from './db/seed.js';
 
-// Load .env manually (dotenv not installed as dependency)
-const __filename = fileURLToPath(import.meta.url);
-const envPath = __filename.replace('src/server.js', '../.env');
-try {
-  const envText = readFileSync(envPath, 'utf8');
-  for (const line of envText.trim().split('\n')) {
-    const eq = line.indexOf('=');
-    if (eq > 0 && !line.startsWith('#')) {
-      const key = line.slice(0, eq).trim();
-      const val = line.slice(eq + 1).trim();
-      if (!(key in process.env)) process.env[key] = val;
-    }
-  }
-} catch { /* .env not found */ }
+// Load .env from the repo root (falling back to the server dir) before reading config.
+// Precedence: real process.env wins, so an explicit shell/env var overrides the file.
+const dot = loadDotEnv();
+// Boot diagnostic: which .env was read and the raw mode value. Never print secrets.
+console.warn(
+  `LiveEdge env: dotenv=${dot.loaded ? 'loaded' : 'not-found'} path=${dot.path} ` +
+    `applied=${dot.parsed} rawPANTA_MODE=${process.env.PANTA_MODE ?? '(unset)'}`,
+);
 
 const env = loadEnv(process.env);
 // handle port busy
