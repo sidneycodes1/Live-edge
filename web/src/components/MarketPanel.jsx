@@ -7,7 +7,7 @@ export default function MarketPanel({ market, onTrade }) {
     <div className="bg-surface rounded-card border border-white/10 p-4">
       <div className="flex items-center gap-2 text-xs">
         <span className={`px-2 py-1 rounded-full text-xs ${market.status==='open'?'bg-live text-black':'bg-white/10'}`}>{market.status}</span>
-        <span className="text-white/50">{fmtTimeLeft(market.end_time)}</span>
+        {market.status==='open' && <span className="text-white/50">{fmtTimeLeft(market.end_time)}</span>}
         {market.graduated && <span className="ml-auto text-yes text-xs">graduated</span>}
       </div>
       <h3 className="font-heading font-bold mt-3 text-lg">{market.question}</h3>
