@@ -15,7 +15,9 @@
     "test": "pnpm --filter server test",
     "smoke": "node scripts/smoke.mjs",
     "audit:api": "node scripts/audit-api.mjs",
-    "check:secrets": "node scripts/check-secrets.mjs"
+    "check-secrets": "node scripts/check-secrets.mjs",
+    "hooks:install": "node scripts/install-hooks.mjs",
+    "prepare": "node scripts/install-hooks.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.11.0",

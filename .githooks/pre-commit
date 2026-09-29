@@ -1,0 +1,14 @@
+#!/bin/sh
+# LiveEdge pre-commit guard — blocks commits that introduce secrets.
+# Runs the repo's own scanner against the staged working tree.
+# Install/refresh: node scripts/install-hooks.mjs  (also run automatically on `pnpm install` via the root "prepare" script).
+node scripts/check-secrets.mjs
+code=$?
+if [ $code -ne 0 ]; then
+  echo ""
+  echo "COMMIT BLOCKED: check-secrets found a secret (or a secret-named file)."
+  echo "Remove it from the staged changes. If a key was ever committed, rotate it"
+  echo "and purge it from history (see AUDIT_REPORT.md F-001)."
+  exit $code
+fi
+exit 0
