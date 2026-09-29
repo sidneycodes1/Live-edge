@@ -5,6 +5,7 @@ import Discover from './pages/Discover.jsx';
 import Room from './pages/Room.jsx';
 import Creator from './pages/Creator.jsx';
 import Portfolio from './pages/Portfolio.jsx';
+import SignIn from './pages/SignIn.jsx';
 import About from './pages/About.jsx';
 import NotFound from './pages/NotFound.jsx';
 import { useAuthProvider, AuthContext } from './hooks/useAuth.js';
@@ -40,6 +41,7 @@ export default function App() {
             <Route path="/creator/:roomId" element={<Creator />} />
             <Route path="/creator" element={<Creator />} />
             <Route path="/portfolio" element={<Portfolio />} />
+            <Route path="/signin" element={<SignIn />} />
             <Route path="/about" element={<About />} />
             <Route path="*" element={<NotFound />} />
           </Routes>

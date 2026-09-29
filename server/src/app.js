@@ -52,21 +52,24 @@ export async function createApp({ env: rawEnv, db: existingDb } = {}) {
   const isTest = env.NODE_ENV === 'test';
   app.use(isTest ? passThrough : globalLimiter);
 
+  // auth middleware (used by protected routes and by authRouter's /me, /logout, /upgrade)
+  const auth = createAuth(env);
+
   // health (no /api prefix)
   app.use(healthRouter(db));
 
   // public routes
   app.use('/api/config', configRouter(env));
 
-  // auth (rate limited)
-  app.use('/api/auth', isTest ? passThrough : authLimiter, authRouter({ db, env }));
+  // auth (rate limited). /nonce and /verify stay public; /me, /logout, /upgrade
+  // apply `auth` per-route inside the router.
+  app.use('/api/auth', isTest ? passThrough : authLimiter, authRouter({ db, env, auth }));
 
   // streaming (public)
   app.use('/api/stream', streamRouter({ hub }));
 
   // catalog public
   // rooms public (list/detail)
-  const auth = createAuth(env);
   // need to allow public GET but auth for POST
   app.use('/api/rooms', (req, res, next) => {
     if (req.method === 'POST') return auth(req, res, next);

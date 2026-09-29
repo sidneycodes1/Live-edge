@@ -5,12 +5,26 @@ import { api } from '../lib/api.js';
 import PositionRow from '../components/PositionRow.jsx';
 import { getOrCreateGuestWallet, signMessage } from '../lib/wallet.js';
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 
 export default function Portfolio() {
-  const { user, signIn } = useAuth();
+  const { user, signIn, upgrade } = useAuth();
   const { showToast } = useToast();
   const { data, loading, setData } = useApi(()=> user ? api.getPortfolio() : Promise.resolve(null), [user]);
   const [msg, setMsg] = useState('');
+  const [upEmail, setUpEmail] = useState('');
+  const [upPw, setUpPw] = useState('');
+  const [upMsg, setUpMsg] = useState('');
+
+  async function doUpgrade(e) {
+    e.preventDefault();
+    setUpMsg('');
+    try {
+      await upgrade(upEmail, upPw);
+      showToast('Account upgraded — you can now log in with email & password');
+      setUpEmail(''); setUpPw('');
+    } catch (err) { setUpMsg(err.message); }
+  }
 
   async function claim(pos) {
     try {
@@ -48,7 +62,7 @@ export default function Portfolio() {
     } catch (e) { setMsg(e.message); showToast(`Faucet failed: ${e.message}`); }
   }
 
-  if (!user) return <div className="max-w-3xl mx-auto px-4 py-10 text-center"><p className="mb-4">Sign in to see portfolio</p><button onClick={signIn} className="bg-white text-black px-6 py-2 rounded-full font-bold">Sign in (Demo wallet)</button></div>;
+  if (!user) return <div className="max-w-3xl mx-auto px-4 py-10 text-center"><p className="mb-4">Sign in to see portfolio</p><div className="flex gap-3 justify-center"><Link to="/signin" className="bg-white text-black px-6 py-2 rounded-full font-bold">Create account / Log in</Link><button onClick={signIn} className="border border-white/20 px-6 py-2 rounded-full font-bold">Continue as guest</button></div></div>;
   if (loading) return <div className="max-w-3xl mx-auto px-4 py-6">Loading...</div>;
 
   return (
@@ -58,6 +72,18 @@ export default function Portfolio() {
         <span className="text-sm text-white/60">Balance</span><span className="num font-bold text-lg">${data?.balance?.toFixed(2) || '0.00'}</span>
         <button onClick={faucet} className="bg-white/10 border border-white/20 px-3 py-1 rounded-full text-xs">Faucet +$100 (1h)</button>
       </div>
+      {user.kind === 'guest' && (
+        <form onSubmit={doUpgrade} className="bg-surface border border-white/10 rounded-card p-4">
+          <h2 className="font-heading font-bold text-sm mb-1">Upgrade to a full account</h2>
+          <p className="text-xs text-white/50 mb-3">Keep this wallet, balance and positions exactly as they are — just add an email and password so you can log back in later.</p>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <input type="email" required value={upEmail} onChange={(e)=>setUpEmail(e.target.value)} placeholder="Email" className="flex-1 bg-black/30 border border-white/10 rounded px-3 py-2 text-sm" />
+            <input type="password" required minLength={8} value={upPw} onChange={(e)=>setUpPw(e.target.value)} placeholder="Password (min 8)" className="flex-1 bg-black/30 border border-white/10 rounded px-3 py-2 text-sm" />
+            <button type="submit" className="bg-white text-black px-4 py-2 rounded-full text-sm font-bold">Upgrade</button>
+          </div>
+          {upMsg && <p className="text-xs text-no mt-2">{upMsg}</p>}
+        </form>
+      )}
       <h2 className="font-heading font-bold">Positions</h2>
       {(data?.positions||[]).length===0 ? <p className="text-white/50 text-sm">No positions yet</p> : data.positions.map(p=> <PositionRow key={p.market.id} pos={p} onClaim={claim} />)}
       <h2 className="font-heading font-bold mt-6">Created Markets</h2>
