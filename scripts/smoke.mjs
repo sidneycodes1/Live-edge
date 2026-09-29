@@ -175,11 +175,15 @@ async function run() {
   // we had 5 amount, fee 0.1, net 4.9, shares approx?
   // We'll just check balance >95
   assert(r.json.balance > 95, 'balance after claim >95');
-  // second claim -> NOT_CLAIMABLE (rebuild then submit; position already claimed)
+  // second claim -> F-020 idempotent 200 (rebuild then submit; position already claimed).
+  // Money-safe: replay must NOT credit the balance a second time.
+  const balBeforeReplay = (await fetchJson('/api/portfolio', { headers:{ Authorization:`Bearer ${UB.token}` } })).json.balance;
   let bc2 = await fetchJson('/api/claims/win/build', { method:'POST', body: JSON.stringify({ marketId }), headers:{ Authorization:`Bearer ${UB.token}` } });
   const sigClaim2 = signObj(UB.kp, bc2.json.signPayload);
   r = await fetchJson('/api/claims/win', { method:'POST', body: JSON.stringify({ marketId, signature: sigClaim2 }), headers:{ Authorization:`Bearer ${UB.token}` } });
-  assert(r.json.error?.code==='NOT_CLAIMABLE' || r.res.status===400, 'second claim NOT_CLAIMABLE');
+  assert(r.res.status===200 && r.json.idempotent===true, 'second claim idempotent 200 (F-020)');
+  const balAfterReplay = (await fetchJson('/api/portfolio', { headers:{ Authorization:`Bearer ${UB.token}` } })).json.balance;
+  assert(balAfterReplay === balBeforeReplay, 'second claim does not pay twice (F-020)');
 
   // 9 graduation test: create second market with high volume
   // For volume >=100, need multiple buys. We'll do one big buy 100?
