@@ -65,8 +65,9 @@ describe('ledger history (GET /api/ledger)', () => {
 
     const { json } = await ledger(fetchJson, U);
     const kinds = json.items.map((i) => i.kind);
-    // Newest first: claim, then buy, then faucet, then welcome.
-    assert.deepEqual(kinds, ['claim', 'buy', 'faucet', 'welcome']);
+    // Newest first: claim, then buy, then the creation fee for the market U made in
+    // that buy path, then faucet, then welcome. (Phase 3.1 added the creation_fee row.)
+    assert.deepEqual(kinds, ['claim', 'buy', 'creation_fee', 'faucet', 'welcome']);
 
     // Correct signs: spends negative, mints/earnings positive.
     const byKind = Object.fromEntries(json.items.map((i) => [i.kind, i]));
@@ -75,6 +76,8 @@ describe('ledger history (GET /api/ledger)', () => {
     assert.ok(byKind.claim.delta > 0, 'claim should credit');
     assert.equal(byKind.faucet.delta, 100);
     assert.equal(byKind.welcome.delta, 100);
+    assert.equal(byKind.creation_fee.label, 'Creation fee');
+    assert.ok(byKind.creation_fee.delta < 0, 'creation fee should debit');
 
     // Sum of all deltas must equal the live balance (single source, no drift).
     const sum = json.items.reduce((a, i) => a + i.delta, 0);

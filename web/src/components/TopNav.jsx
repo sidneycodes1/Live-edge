@@ -13,6 +13,7 @@ export default function TopNav() {
         <div className="hidden md:flex gap-4 ml-6 text-sm">
           <Link to="/" className="text-white/70 hover:text-white">Discover</Link>
           <Link to="/portfolio" className="text-white/70 hover:text-white">Portfolio</Link>
+          <Link to="/creator" className="text-white/70 hover:text-white">Create</Link>
           <Link to="/about" className="text-white/70 hover:text-white">About</Link>
         </div>
         <div className="ml-auto flex items-center gap-2">

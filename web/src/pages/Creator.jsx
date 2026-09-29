@@ -14,6 +14,22 @@ export default function Creator() {
   const { data: metrics } = useApi(()=> user ? api.metrics() : Promise.resolve(null), [user]);
   const [resolveOutcome, setResolveOutcome] = useState('yes');
   const [msg, setMsg] = useState('');
+  const [roomTitle, setRoomTitle] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [createErr, setCreateErr] = useState('');
+
+  async function handleCreateRoom(e) {
+    e.preventDefault();
+    setCreateErr('');
+    setCreating(true);
+    try {
+      const r = await api.createRoom(roomTitle.trim(), '');
+      navigate(`/creator/${r.id}`);
+    } catch (err) {
+      setCreateErr(err.message || 'Could not create room');
+      setCreating(false);
+    }
+  }
 
   async function handleResolve() {
     try {
@@ -46,7 +62,13 @@ export default function Creator() {
         </>
       ) : (
         <div className="bg-surface border border-white/10 rounded-card p-6">
-          <p className="text-sm text-white/60">Pick a room to create markets</p>
+          <h2 className="font-heading font-bold">Start a room</h2>
+          <p className="text-xs text-white/50 mt-1 mb-4">Any signed-in account can create a room, then drop markets in it. Pick a room from Discover to manage an existing one.</p>
+          <form onSubmit={handleCreateRoom} className="flex flex-col sm:flex-row gap-2">
+            <input value={roomTitle} onChange={(e) => setRoomTitle(e.target.value)} required minLength={3} maxLength={80} placeholder="Room title (e.g. Friday ranked grind)" className="flex-1 bg-black/30 border border-white/10 rounded px-3 py-2 text-sm" />
+            <button type="submit" disabled={creating} className="bg-white text-black px-4 py-2 rounded-full text-sm font-bold disabled:opacity-50">{creating ? 'Creating…' : 'Create room & open cockpit'}</button>
+          </form>
+          {createErr && <p className="text-xs text-no mt-2">{createErr}</p>}
         </div>
       )}
       {metrics && (

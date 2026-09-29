@@ -38,6 +38,17 @@ export function ledgerRouter({ db }) {
         m.created_at as "createdAt"
       from mint_events m
       where m.user_id = $1
+      union all
+      select
+        f.id::text as id,
+        f.kind as kind,
+        'Creation fee' as label,
+        -f.amount as delta,
+        f.amount as amount,
+        f.market_id::text as "marketId",
+        f.created_at as "createdAt"
+      from fee_events f
+      where f.user_id = $1
     ) ledger
     order by "createdAt" desc, id asc
     limit $2 offset $3`;

@@ -15,6 +15,7 @@ const schema = z.object({
   SIM_CREATOR_SHARE_BPS: z.coerce.number().default(2500),
   SIM_GRADUATION_VOLUME: z.coerce.number().default(100),
   SIM_LIQUIDITY_B: z.coerce.number().default(50),
+  SIM_CREATE_FEE: z.coerce.number().min(0).default(1),
 });
 
 export function loadEnv(raw = process.env) {

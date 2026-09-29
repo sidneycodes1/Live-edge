@@ -10,6 +10,9 @@ export function createSimClient({ db, env }) {
   const FEE_BPS = Number(env.SIM_FEE_BPS);
   const CREATOR_SHARE_BPS = Number(env.SIM_CREATOR_SHARE_BPS);
   const GRADUATION_VOLUME = Number(env.SIM_GRADUATION_VOLUME);
+  // Simulated market-creation fee (play money), now actually deducted on register
+  // (F-010). Defaults to $1; override via SIM_CREATE_FEE.
+  const CREATE_FEE = Number(env.SIM_CREATE_FEE ?? 1);
 
   // in-memory quote stores
   const marketQuotes = new Map(); // quoteId -> {roomId, question,... expiresAt}
@@ -39,7 +42,7 @@ export function createSimClient({ db, env }) {
       return rows[0];
     },
     async quoteCreate(input) {
-      const fee = 1.0; // sim creation fee 1 USDC placeholder
+      const fee = CREATE_FEE;
       const quoteId = randomUUID();
       const expiresAt = new Date(Date.now() + 90 * 1000).toISOString();
       marketQuotes.set(quoteId, { ...input, fee, expiresAt });
@@ -81,20 +84,36 @@ export function createSimClient({ db, env }) {
       // check duplicate
       const { rows: dup } = await db.query('select id from markets where creator_id=$1 and question=$2', [userId, q.question]);
       if (dup.length > 0) throw new PantaError('DUPLICATE_MARKET', 'Duplicate market', { status: 409 });
+      // F-010: the creation fee is now a real charge. Confirm the creator can cover it
+      // before mutating anything, and fail with a specific (not generic) error if not.
+      const fee = Number(q.fee ?? CREATE_FEE);
+      const { rows: balRows } = await db.query('select sim_usdc from balances where user_id=$1', [userId]);
+      const bal = balRows.length ? Number(balRows[0].sim_usdc) : 0;
+      if (fee > 0 && bal < fee) {
+        throw new PantaError('INSUFFICIENT_BALANCE', `Not enough balance to cover the $${fee.toFixed(2)} market creation fee (you have $${bal.toFixed(2)})`, { status: 400 });
+      }
       const id = randomUUID();
       const start = new Date().toISOString();
       const end = new Date(Date.now() + (q.endInMinutes || 10) * 60000).toISOString();
       const resolution = new Date(Date.now() + (q.endInMinutes || 10) * 60000 + 5 * 60000).toISOString();
       const imageUrl = `https://via.placeholder.com/1024/15151C/FFFFFF?text=${encodeURIComponent(q.question.slice(0, 30))}`;
-      await db.query(
-        `insert into markets(id, room_id, creator_id, source, question, resolution_rule, sources_of_truth, category, image_url, start_time, end_time, resolution_time, yes_price, no_price)
-         values($1,$2,$3,'sim',$4,$5,$6,$7,$8,$9,$10,$11,0.5,0.5)`,
-        [id, q.roomId, userId, q.question, q.resolutionRule, q.sourcesOfTruth, q.category || 'gaming', imageUrl, start, end, resolution],
-      );
+      // Market insert, fee debit and the fee journal row commit atomically, so a
+      // balance can never be charged for a market that wasn't created (or vice versa).
+      const market = await db.tx(async ({ query }) => {
+        await query(
+          `insert into markets(id, room_id, creator_id, source, question, resolution_rule, sources_of_truth, category, image_url, start_time, end_time, resolution_time, yes_price, no_price)
+           values($1,$2,$3,'sim',$4,$5,$6,$7,$8,$9,$10,$11,0.5,0.5)`,
+          [id, q.roomId, userId, q.question, q.resolutionRule, q.sourcesOfTruth, q.category || 'gaming', imageUrl, start, end, resolution],
+        );
+        if (fee > 0) {
+          await query(`update balances set sim_usdc = sim_usdc - $1 where user_id=$2`, [fee, userId]);
+          await query(`insert into fee_events(user_id, kind, amount, market_id) values($1,'creation_fee',$2,$3)`, [userId, fee, id]);
+        }
+        const { rows: mk } = await query('select * from markets where id=$1', [id]);
+        return mk[0];
+      });
       marketQuotes.delete(quoteId);
-      // store signature trade? not needed for market creation
-      const { rows } = await db.query('select * from markets where id=$1', [id]);
-      return rows[0];
+      return market;
     },
     async quoteBuy({ marketId, side, amount, _wallet, userId }) {
       const { rows } = await db.query('select * from markets where id=$1', [marketId]);
