@@ -43,7 +43,7 @@ export default function Room() {
   return (
     <div className="max-w-6xl mx-auto px-4 py-6 pb-20">
       <div className="flex items-center gap-2 text-xs text-white/50">
-        <span className="w-2 h-2 bg-live rounded-full animate-pulse inline-block" /> LIVE · {viewers} viewers · Last updated {lastUpdate ? `${Math.round((Date.now()-lastUpdate.getTime())/1000)}s ago` : 'now'}
+        <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse inline-block" /> LIVE · {viewers} {viewers === 1 ? 'viewer' : 'viewers'} · Last updated {lastUpdate ? `${Math.round((Date.now()-lastUpdate.getTime())/1000)}s ago` : 'now'}
       </div>
       <h1 className="font-heading font-bold text-xl mt-2">{room.title}</h1>
       <div className="grid md:grid-cols-[65%_35%] gap-4 mt-4">

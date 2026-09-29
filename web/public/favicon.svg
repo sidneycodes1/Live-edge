@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="LiveEdge">
+  <rect width="64" height="64" rx="14" fill="#0B0B10"/>
+  <rect x="1.5" y="1.5" width="61" height="61" rx="12.5" fill="none" stroke="#3DFFB5" stroke-opacity="0.35" stroke-width="3"/>
+  <circle cx="48" cy="17" r="5" fill="#FF2D2D"/>
+  <path d="M24 20 L24 44 L44 32 Z" fill="#3DFFB5"/>
+</svg>
