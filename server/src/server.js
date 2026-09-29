@@ -25,6 +25,12 @@ async function start() {
   const app = await createApp({ env, db });
   for (const w of env.warnings || []) console.warn(w);
   console.warn(`LiveEdge effectiveMode=${env.effectiveMode} requested=${env.PANTA_MODE}`);
+  // F-019: production loadEnv() already hard-fails on the fallback secret. In any
+  // other env print a loud (but non-fatal) signal so a dev-facing default is never
+  // mistaken for a deployable secret.
+  if (env.JWT_SECRET.startsWith('dev-only')) {
+    console.warn('!! JWT_SECRET is the built-in dev fallback. Set a real JWT_SECRET before deploying — tokens are forgeable otherwise. !!');
+  }
 
   const server = app.listen(port, () => {
     console.log(`Server listening on http://localhost:${port} mode=${env.effectiveMode}`);

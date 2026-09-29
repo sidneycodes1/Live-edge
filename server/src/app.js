@@ -44,6 +44,12 @@ export async function createApp({ env: rawEnv, db: existingDb } = {}) {
   const logger = pino({ level: env.NODE_ENV === 'test' ? 'silent' : 'info' });
 
   const app = express();
+  // F-008: behind Render / any single reverse proxy every request otherwise
+  // shares one IP bucket, so IP-keyed rate limits become ineffective (or one
+  // client can get everyone blocked). Trust exactly one hop so req.ip is the
+  // real client. Number (not `true`) keeps express-rate-limit's validator happy
+  // and avoids trusting an attacker-supplied X-Forwarded-For chain.
+  app.set('trust proxy', 1);
   app.use(helmet());
   app.use(cors({ origin: env.CORS_ORIGIN, credentials: true }));
   app.use(express.json({ limit: '100kb' }));

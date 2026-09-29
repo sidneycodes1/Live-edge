@@ -5,40 +5,64 @@ import path from 'node:path';
 
 export async function createDb(env) {
   if (env.DATABASE_URL) {
-    const pool = new pg.Pool({ connectionString: env.DATABASE_URL, ssl: env.DATABASE_URL.includes('sslmode') ? { rejectUnauthorized: false } : undefined });
-    // simple wrapper
-    return {
-      kind: 'pg',
-      pool,
-      async query(text, params) {
-        const r = await pool.query(text, params);
-        return { rows: r.rows, rowCount: r.rowCount };
-      },
-      async tx(fn) {
-        // Lock order for money operations: market row first, then balance/position rows
-        // This prevents deadlocks when multiple transactions touch the same market
-        const client = await pool.connect();
-        try {
-          await client.query('BEGIN');
-          const q = async (text, params) => {
-            const r = await client.query(text, params);
-            return { rows: r.rows, rowCount: r.rowCount };
-          };
-          const result = await fn({ query: q });
-          await client.query('COMMIT');
-          return result;
-        } catch (e) {
-          await client.query('ROLLBACK');
-          throw e;
-        } finally {
-          client.release();
-        }
-      },
-      async close() {
-        await pool.end();
-      },
-    };
-  } else {
+    try {
+      const db = await createPgDb(env);
+      // F-017: a committed/placeholder DATABASE_URL (e.g. host "db") otherwise
+      // crashes `node src/server.js` with ENOTFOUND and no way to boot locally.
+      // Probe reachability once before committing to the pg path.
+      await db.query('select 1 as ok');
+      return db;
+    } catch (e) {
+      // In production, a configured DB that is unreachable is a hard error — never
+      // silently fall back (that would route real money/state to a throwaway store).
+      if (env.NODE_ENV === 'production') throw e;
+      console.warn(
+        `DATABASE_URL unreachable (${e.code || e.message}); falling back to embedded PGlite for local dev. ` +
+          'Set a reachable DB (or omit DATABASE_URL) as intended. See .env.example.',
+      );
+      return createPgliteDb(env);
+    }
+  }
+  return createPgliteDb(env);
+}
+
+async function createPgDb(env) {
+  const pool = new pg.Pool({ connectionString: env.DATABASE_URL, ssl: env.DATABASE_URL.includes('sslmode') ? { rejectUnauthorized: false } : undefined });
+  // simple wrapper
+  return {
+    kind: 'pg',
+    pool,
+    async query(text, params) {
+      const r = await pool.query(text, params);
+      return { rows: r.rows, rowCount: r.rowCount };
+    },
+    async tx(fn) {
+      // Lock order for money operations: market row first, then balance/position rows
+      // This prevents deadlocks when multiple transactions touch the same market
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        const q = async (text, params) => {
+          const r = await client.query(text, params);
+          return { rows: r.rows, rowCount: r.rowCount };
+        };
+        const result = await fn({ query: q });
+        await client.query('COMMIT');
+        return result;
+      } catch (e) {
+        await client.query('ROLLBACK');
+        throw e;
+      } finally {
+        client.release();
+      }
+    },
+    async close() {
+      await pool.end();
+    },
+  };
+}
+
+async function createPgliteDb(env) {
     // PGlite
     // In test, use in-memory; in dev, use .data/pglite
     const isTest = env.NODE_ENV === 'test';
@@ -106,5 +130,4 @@ export async function createDb(env) {
         await db.close();
       },
     };
-  }
 }

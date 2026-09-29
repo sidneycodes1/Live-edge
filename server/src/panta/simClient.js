@@ -284,7 +284,17 @@ export function createSimClient({ db, env }) {
       const { rows: posRows } = await db.query('select * from positions where user_id=$1 and market_id=$2', [userId, marketId]);
       if (posRows.length === 0) throw new PantaError('NOT_CLAIMABLE', 'No position', { status: 400 });
       const pos = posRows[0];
-      if (pos.claimed) throw new PantaError('NOT_CLAIMABLE', 'Already claimed', { status: 400 });
+      if (pos.claimed) {
+        // F-020: replaying a completed claim is idempotent (200), mirroring the
+        // orders path, not a 400. Money-safe: the payout already happened and the
+        // balance was credited; here we re-report the original amount from the
+        // claim trade and apply NO balance/position mutation.
+        const { rows: prior } = await db.query(
+          `select amount from trades where user_id=$1 and market_id=$2 and kind='claim' limit 1`,
+          [userId, marketId],
+        );
+        return { amount: prior.length ? Number(prior[0].amount) : 0, idempotent: true };
+      }
       const winningShares = m.outcome === 'yes' ? Number(pos.yes_shares) : Number(pos.no_shares);
       if (winningShares <= 0) throw new PantaError('NOT_CLAIMABLE', 'No winning shares', { status: 400 });
       // Verify signature against the nonce actually issued at build time
@@ -333,7 +343,11 @@ export function createSimClient({ db, env }) {
       if (m.creator_id !== userId) throw new PantaError('FORBIDDEN', 'Not creator', { status: 403 });
       if (m.status !== 'resolved') throw new PantaError('MARKET_NOT_GRADUATED', 'Market not resolved', { status: 400 });
       if (!m.graduated) throw new PantaError('MARKET_NOT_GRADUATED', 'Market not graduated', { status: 400 });
-      if (m.creator_fees_claimed) throw new PantaError('NOT_CLAIMABLE', 'Already claimed', { status: 400 });
+      if (m.creator_fees_claimed) {
+        // F-020: replay is idempotent (200), mirroring orders. creator_fees_accrued
+        // is not reset on payout, so it still equals the amount already credited.
+        return { amount: Number(m.creator_fees_accrued), idempotent: true };
+      }
       // Verify signature against the nonce actually issued at build time
       const { rows: uRows } = await db.query('select wallet from users where id=$1', [userId]);
       if (uRows.length === 0) throw new PantaError('UNAUTHORIZED', 'User not found', { status: 401 });

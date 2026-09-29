@@ -2,6 +2,16 @@
 import nacl from 'tweetnacl';
 import bs58 from 'bs58';
 
+// F-016 — guest signing key storage (deliberate, documented tradeoff).
+// The guest keypair's secret key is kept in localStorage so a "Continue as guest"
+// session survives reloads and the demo feels like a persistent wallet. This is
+// acceptable ONLY because this wallet signs for simulated play money (SIM_USDC)
+// that has no real-world value and lives entirely in our own DB — there is no
+// external asset an attacker could drain. It is NOT for real custody.
+// Threats to weigh before reuse with anything valuable: any XSS or a shared/dev
+// machine can read localStorage; there is no device binding or passphrase.
+// Mitigations if this ever guards real value: move the secret to sessionStorage
+// (cleared per tab), or sign server-side via an HttpOnly-session-backed wallet.
 const LS_KEY = 'liveedge_guest_secret';
 
 export function getOrCreateGuestWallet() {

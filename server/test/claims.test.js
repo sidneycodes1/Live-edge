@@ -67,7 +67,7 @@ describe('claims', () => {
     assert.ok(Number(port.json.balance) > 90);
   });
 
-  it('double claim NOT_CLAIMABLE', async () => {
+  it('double claim is idempotent 200 and pays only once (F-020)', async () => {
     const { fetchJson } = await makeApp();
     const A = genWallet();
     const B = genWallet();
@@ -79,10 +79,15 @@ describe('claims', () => {
     const sig = await buildSignClaim(fetchJson, UB, marketId, 'win');
     const first = await fetchJson('/api/claims/win', { method: 'POST', body: JSON.stringify({ marketId, signature: sig }), headers: { Authorization: `Bearer ${UB.token}` } });
     assert.equal(first.res.status, 200);
-    // rebuild (new nonce) then submit -> position already claimed
+    const balAfterFirst = Number((await fetchJson('/api/portfolio', { headers: { Authorization: `Bearer ${UB.token}` } })).json.balance);
+    // rebuild (new nonce) then submit -> position already claimed. F-020: this is an
+    // idempotent 200 (mirroring orders), NOT a 400, and must not credit the balance twice.
     const sig2 = await buildSignClaim(fetchJson, UB, marketId, 'win');
     const r = await fetchJson('/api/claims/win', { method: 'POST', body: JSON.stringify({ marketId, signature: sig2 }), headers: { Authorization: `Bearer ${UB.token}` } });
-    assert.equal(r.json.error.code, 'NOT_CLAIMABLE');
+    assert.equal(r.res.status, 200);
+    assert.equal(r.json.idempotent, true);
+    const balAfterReplay = Number((await fetchJson('/api/portfolio', { headers: { Authorization: `Bearer ${UB.token}` } })).json.balance);
+    assert.equal(balAfterReplay, balAfterFirst);
   });
 
   it('loser cannot claim', async () => {
@@ -132,6 +137,15 @@ describe('claims', () => {
     const sig = await buildSignClaim(fetchJson, UA, marketId, 'creator');
     const r = await fetchJson('/api/claims/creator-fees', { method: 'POST', body: JSON.stringify({ marketId, signature: sig }), headers: { Authorization: `Bearer ${UA.token}` } });
     assert.equal(r.res.status, 200);
+    // F-020: replaying the creator-fee claim is an idempotent 200, not a 400, and
+    // must not credit the accrued fees a second time.
+    const balAfterFirst = Number((await fetchJson('/api/portfolio', { headers: { Authorization: `Bearer ${UA.token}` } })).json.balance);
+    const sig2 = await buildSignClaim(fetchJson, UA, marketId, 'creator');
+    const replay = await fetchJson('/api/claims/creator-fees', { method: 'POST', body: JSON.stringify({ marketId, signature: sig2 }), headers: { Authorization: `Bearer ${UA.token}` } });
+    assert.equal(replay.res.status, 200);
+    assert.equal(replay.json.idempotent, true);
+    const balAfterReplay = Number((await fetchJson('/api/portfolio', { headers: { Authorization: `Bearer ${UA.token}` } })).json.balance);
+    assert.equal(balAfterReplay, balAfterFirst);
   });
 
   it('graduation threshold: volume 100 graduates, 5 does not', async () => {
