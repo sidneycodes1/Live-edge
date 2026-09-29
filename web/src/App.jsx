@@ -10,13 +10,14 @@ import About from './pages/About.jsx';
 import NotFound from './pages/NotFound.jsx';
 import { useAuthProvider, AuthContext } from './hooks/useAuth.js';
 import { ToastContext } from './hooks/useToast.js';
+import { emitNotificationsRefresh } from './lib/notify-bus.js';
 import { useState, useCallback, useMemo } from 'react';
 import Toast from './components/Toast.jsx';
 
 export default function App() {
   const auth = useAuthProvider();
   const [toast, setToast] = useState('');
-  const showToast = useCallback((message) => setToast(message), []);
+  const showToast = useCallback((message) => { setToast(message); emitNotificationsRefresh(); }, []);
   // Wrap signIn so a successful sign-in surfaces feedback from ANY call site
   // (WalletButton, Room trade-gate, Portfolio) without duplicating the toast logic.
   const authValue = useMemo(

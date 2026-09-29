@@ -4,7 +4,7 @@ import { validate } from '../middleware/validate.js';
 import { PantaError } from '../panta/errors.js';
 import { sanitizeText } from '../services/sanitize.js';
 
-export function marketsRouter({ db, panta, hub, priceCache }) {
+export function marketsRouter({ db, panta, hub, priceCache, notify }) {
   const r = Router();
 
   r.get('/catalog', async (_req, res, next) => {
@@ -136,6 +136,7 @@ export function marketsRouter({ db, panta, hub, priceCache }) {
         hub.broadcast(market.room_id, 'market_created', { market: { id: market.id, question: market.question, yes_price: Number(market.yes_price), no_price: Number(market.no_price) } });
         hub.broadcast(market.room_id, 'chat', { kind: 'system', body: `New market just dropped: ${market.question}` });
       }
+      if (notify) await notify({ userId: req.user.id, kind: 'market_created', body: `You created a market: ${market.question}` });
       res.status(201).json(market);
     } catch (e) {
       next(e);
@@ -170,6 +171,21 @@ export function marketsRouter({ db, panta, hub, priceCache }) {
       await db.query(`update markets set status='resolved', outcome=$1 where id=$2`, [outcome, m.id]);
       const { rows: updated } = await db.query('select * from markets where id=$1', [m.id]);
       if (hub) hub.broadcast(m.room_id, 'market_status', { marketId: m.id, status: 'resolved', outcome });
+      // Notify EVERY holder (not just the creator) that the market resolved, and
+      // winners additionally that a payout is available.
+      if (notify) {
+        const { rows: holders } = await db.query(
+          `select user_id, yes_shares, no_shares from positions where market_id=$1 and (yes_shares > 0 or no_shares > 0)`,
+          [m.id],
+        );
+        for (const h of holders) {
+          await notify({ userId: h.user_id, kind: 'market_resolved', body: `Resolved ${outcome.toUpperCase()}: ${m.question}` });
+          const winning = outcome === 'yes' ? Number(h.yes_shares) : Number(h.no_shares);
+          if (winning > 0) {
+            await notify({ userId: h.user_id, kind: 'payout_available', body: `Payout available: $${winning.toFixed(2)} from "${m.question}"` });
+          }
+        }
+      }
       res.json(updated[0]);
     } catch (e) {
       next(e);

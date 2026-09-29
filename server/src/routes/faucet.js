@@ -1,6 +1,6 @@
 import { Router } from 'express';
 
-export function faucetRouter({ db }) {
+export function faucetRouter({ db, notify }) {
   const r = Router();
   r.post('/', async (req, res, next) => {
     try {
@@ -9,6 +9,7 @@ export function faucetRouter({ db }) {
       const { rows } = await db.query('select last_faucet_at, sim_usdc from balances where user_id=$1', [userId]);
       if (rows.length === 0) {
         await db.query('insert into balances(user_id, sim_usdc, last_faucet_at) values($1,100, now())', [userId]);
+        if (notify) await notify({ userId, kind: 'faucet', body: 'Faucet: +$100 added — balance $100.00' });
         return res.json({ balance: 100 });
       }
       const last = rows[0].last_faucet_at ? new Date(rows[0].last_faucet_at) : null;
@@ -20,6 +21,7 @@ export function faucetRouter({ db }) {
       const before = cur.length ? Number(cur[0].sim_usdc) : 0;
       const after = before + 100;
       await db.query(`update balances set sim_usdc = sim_usdc + 100, last_faucet_at=now() where user_id=$1`, [userId]);
+      if (notify) await notify({ userId, kind: 'faucet', body: `Faucet: +$100 added — balance $${after.toFixed(2)}` });
       res.json({ balance: after, added: 100 });
     } catch (e) {
       next(e);

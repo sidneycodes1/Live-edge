@@ -22,6 +22,8 @@ import { chatRouter } from './routes/chat.js';
 import { streamRouter } from './routes/stream.js';
 import { streamerRouter } from './routes/streamer.js';
 import { faucetRouter } from './routes/faucet.js';
+import { notificationsRouter } from './routes/notifications.js';
+import { createNotifier } from './services/notify.js';
 import { createAuth } from './middleware/auth.js';
 import { createRateLimiters } from './middleware/rateLimit.js';
 import { errorHandler } from './middleware/error.js';
@@ -36,6 +38,7 @@ export async function createApp({ env: rawEnv, db: existingDb } = {}) {
   }
   const panta = createPanta({ db, env });
   const hub = createHub();
+  const notify = createNotifier(db, hub);
   const priceCache = createPriceCache({ ttlMs: 10000 });
   const logger = pino({ level: env.NODE_ENV === 'test' ? 'silent' : 'info' });
 
@@ -63,7 +66,7 @@ export async function createApp({ env: rawEnv, db: existingDb } = {}) {
 
   // auth (rate limited). /nonce and /verify stay public; /me, /logout, /upgrade
   // apply `auth` per-route inside the router.
-  app.use('/api/auth', isTest ? passThrough : authLimiter, authRouter({ db, env, auth }));
+  app.use('/api/auth', isTest ? passThrough : authLimiter, authRouter({ db, env, auth, notify }));
 
   // streaming (public)
   app.use('/api/stream', streamRouter({ hub }));
@@ -83,7 +86,7 @@ export async function createApp({ env: rawEnv, db: existingDb } = {}) {
       if (req.path === '/catalog' || (req.method === 'GET' && req.path.match(/^\/[^/]+$/))) return next();
       return auth(req, res, next);
     },
-    marketsRouter({ db, panta, hub, priceCache }),
+    marketsRouter({ db, panta, hub, priceCache, notify }),
   );
 
   // orders (auth + limiter)
@@ -93,7 +96,7 @@ export async function createApp({ env: rawEnv, db: existingDb } = {}) {
   app.use('/api/portfolio', auth, portfolioRouter({ db, panta }));
 
   // claims (auth)
-  app.use('/api/claims', auth, claimsRouter({ db, panta }));
+  app.use('/api/claims', auth, claimsRouter({ db, panta, notify }));
 
   // chat (auth + limiter)
   app.use('/api/chat', auth, isTest ? passThrough : chatLimiter, chatRouter({ db, hub }));
@@ -102,7 +105,10 @@ export async function createApp({ env: rawEnv, db: existingDb } = {}) {
   app.use('/api/streamer', auth, streamerRouter({ db, panta }));
 
   // faucet (auth)
-  app.use('/api/faucet', auth, faucetRouter({ db }));
+  app.use('/api/faucet', auth, faucetRouter({ db, notify }));
+
+  // notifications (auth)
+  app.use('/api/notifications', auth, notificationsRouter({ db }));
 
   // 404
   app.use(notFound);

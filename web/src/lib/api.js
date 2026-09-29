@@ -69,4 +69,6 @@ export const api = {
   buildClaimFees: (marketId) => request('/api/claims/creator-fees/build', { method:'POST', body:{ marketId }, auth:true }),
   chat: (roomId, body) => request('/api/chat', { method:'POST', body:{ roomId, body }, auth:true }),
   metrics: () => request('/api/streamer/metrics', { auth:true }),
+  listNotifications: (unread=false) => request(`/api/notifications${unread ? '?unread=1' : ''}`, { auth:true }),
+  markNotificationsRead: (payload={ all:true }) => request('/api/notifications/read', { method:'POST', body:payload, auth:true }),
 };

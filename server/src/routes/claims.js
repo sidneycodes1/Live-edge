@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { validate } from '../middleware/validate.js';
 import bs58 from 'bs58';
 
-export function claimsRouter({ _db, panta }) {
+export function claimsRouter({ _db, panta, notify }) {
   const r = Router();
 
   const schema = z.object({ marketId: z.string().uuid(), signature: z.string().min(5) });
@@ -16,6 +16,9 @@ export function claimsRouter({ _db, panta }) {
       let result;
       if (panta._sim) result = await panta._sim.submitClaim({ marketId, signature, userId: req.user.id });
       else result = await panta.submitClaim({ marketId, wallet: req.user.wallet, signature, userId: req.user.id });
+      if (notify && result && !result.idempotent) {
+        await notify({ userId: req.user.id, kind: 'claim_completed', body: `Claimed! +$${Number(result.amount).toFixed(2)} added to your balance` });
+      }
       res.json(result);
     } catch (e) {
       next(e);
@@ -30,6 +33,9 @@ export function claimsRouter({ _db, panta }) {
       let result;
       if (panta._sim) result = await panta._sim.submitCreatorFeeClaim({ marketId, signature, userId: req.user.id });
       else result = await panta.submitCreatorFeeClaim({ marketId, wallet: req.user.wallet, signature, userId: req.user.id });
+      if (notify && result && !result.idempotent) {
+        await notify({ userId: req.user.id, kind: 'fee_claimed', body: `Creator fees claimed: +$${Number(result.amount).toFixed(2)}` });
+      }
       res.json(result);
     } catch (e) {
       next(e);

@@ -39,7 +39,7 @@ function isValidBase58(s) {
   }
 }
 
-export function authRouter({ db, env, auth }) {
+export function authRouter({ db, env, auth, notify }) {
   const r = Router();
 
   r.post('/nonce', validate(nonceSchema), async (req, res, next) => {
@@ -92,6 +92,7 @@ export function authRouter({ db, env, auth }) {
         await db.query('insert into users(id, wallet, display_name) values($1,$2,$3)', [id, wallet, wallet.slice(0, 4) + '…' + wallet.slice(-4)]);
         await db.query('insert into balances(user_id, sim_usdc) values($1,100) on conflict do nothing', [id]);
         userId = id;
+        if (notify) await notify({ userId: id, kind: 'welcome', body: "Welcome! You've received $100 in play money" });
       } else {
         userId = uRows[0].id;
         // ensure balance exists
@@ -139,6 +140,7 @@ export function authRouter({ db, env, auth }) {
         await db.query('insert into balances(user_id, sim_usdc) values($1,100) on conflict do nothing', [existing.id]);
         const { rows: refreshed } = await db.query('select * from users where id=$1', [existing.id]);
         user = refreshed[0];
+        if (notify) await notify({ userId: existing.id, kind: 'account_upgraded', body: 'Your account now has email & password sign-in' });
       } else {
         const id = randomUUID();
         await db.query(`insert into users(id, wallet, display_name, email, password_hash, kind, upgraded_at) values($1,$2,$3,$4,$5,'email',now())`, [
@@ -151,6 +153,7 @@ export function authRouter({ db, env, auth }) {
         await db.query('insert into balances(user_id, sim_usdc) values($1,100) on conflict do nothing', [id]);
         const { rows: created } = await db.query('select * from users where id=$1', [id]);
         user = created[0];
+        if (notify) await notify({ userId: id, kind: 'welcome', body: 'Welcome! Your account is ready with $100 in play money' });
       }
       const token = jwt.sign({ id: user.id, wallet: user.wallet }, env.JWT_SECRET, { expiresIn: '1h' });
       res.status(201).json({ token, user: publicUser(user) });
@@ -217,6 +220,7 @@ export function authRouter({ db, env, auth }) {
       await db.query(`update users set email=$1, password_hash=$2, kind='email', upgraded_at=now() where id=$3`, [email, password_hash, me.id]);
       const { rows: refreshed } = await db.query('select * from users where id=$1', [me.id]);
       const user = refreshed[0];
+      if (notify) await notify({ userId: user.id, kind: 'account_upgraded', body: 'Your account now has email & password sign-in' });
       const token = jwt.sign({ id: user.id, wallet: user.wallet }, env.JWT_SECRET, { expiresIn: '1h' });
       res.json({ token, user: publicUser(user) });
     } catch (e) {
