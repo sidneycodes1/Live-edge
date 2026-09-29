@@ -1,5 +1,6 @@
 import { useAuth } from '../hooks/useAuth.js';
 import { useBalance } from '../hooks/useBalance.js';
+import { useApi } from '../hooks/useApi.js';
 import { useToast } from '../hooks/useToast.js';
 import { api } from '../lib/api.js';
 import PositionRow from '../components/PositionRow.jsx';
@@ -12,6 +13,9 @@ export default function Portfolio() {
   const { showToast } = useToast();
   // Single source of truth (T2): header and this page both read BalanceContext.
   const { data, loading, refresh } = useBalance();
+  // Transaction history (F-006). Re-fetches whenever the balance changes, so it
+  // always lines up with the header/portfolio number above.
+  const { data: ledger } = useApi(() => (user ? api.getLedger(20) : Promise.resolve({ items: [] })), [user, data?.balance]);
   const [msg, setMsg] = useState('');
   const [upEmail, setUpEmail] = useState('');
   const [upPw, setUpPw] = useState('');
@@ -91,6 +95,25 @@ export default function Portfolio() {
           {c.canClaimFees && <button onClick={()=>claimFees(c)} className="bg-yes text-black px-4 py-2 rounded-full text-sm font-bold">Claim fees</button>}
         </div>
       ))}
+      <h2 className="font-heading font-bold mt-6">Transaction history</h2>
+      {(ledger?.items || []).length === 0 ? (
+        <p className="text-white/50 text-sm">No transactions yet</p>
+      ) : (
+        <div className="bg-surface border border-white/10 rounded-card divide-y divide-white/10">
+          {ledger.items.map((it) => (
+            <div key={it.id} className="flex justify-between items-center p-3" data-testid="ledger-row">
+              <div>
+                <p className="text-sm">{it.label}</p>
+                <p className="text-xs text-white/50">{new Date(it.createdAt).toLocaleString()}</p>
+              </div>
+              <span className={`num font-bold text-sm ${it.delta >= 0 ? 'text-yes' : 'text-no'}`}>
+                {it.delta >= 0 ? '+' : ''}
+                {Number(it.delta).toFixed(2)}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
       {msg && <p className="text-sm text-yes">{msg}</p>}
     </div>
   );

@@ -23,6 +23,7 @@ import { streamRouter } from './routes/stream.js';
 import { streamerRouter } from './routes/streamer.js';
 import { faucetRouter } from './routes/faucet.js';
 import { notificationsRouter } from './routes/notifications.js';
+import { ledgerRouter } from './routes/ledger.js';
 import { createNotifier } from './services/notify.js';
 import { createAuth } from './middleware/auth.js';
 import { createRateLimiters } from './middleware/rateLimit.js';
@@ -109,6 +110,9 @@ export async function createApp({ env: rawEnv, db: existingDb } = {}) {
 
   // notifications (auth)
   app.use('/api/notifications', auth, notificationsRouter({ db }));
+
+  // transaction history / ledger (auth)
+  app.use('/api/ledger', auth, ledgerRouter({ db }));
 
   // 404
   app.use(notFound);

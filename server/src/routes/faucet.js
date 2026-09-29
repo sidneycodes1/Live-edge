@@ -8,7 +8,12 @@ export function faucetRouter({ db, notify }) {
       const userId = req.user.id;
       const { rows } = await db.query('select last_faucet_at, sim_usdc from balances where user_id=$1', [userId]);
       if (rows.length === 0) {
-        await db.query('insert into balances(user_id, sim_usdc, last_faucet_at) values($1,100, now())', [userId]);
+        // No balance row yet (user created outside the normal welcome flow): mint the
+        // first $100 and journal it so the ledger + Phase 4.1 invariant stay complete.
+        await db.tx(async ({ query }) => {
+          await query('insert into balances(user_id, sim_usdc, last_faucet_at) values($1,100, now())', [userId]);
+          await query(`insert into mint_events(user_id, kind, amount) values($1,'faucet',100)`, [userId]);
+        });
         if (notify) await notify({ userId, kind: 'faucet', body: 'Faucet: +$100 added — balance $100.00' });
         return res.json({ balance: 100 });
       }
@@ -20,7 +25,12 @@ export function faucetRouter({ db, notify }) {
       const { rows: cur } = await db.query('select sim_usdc from balances where user_id=$1', [userId]);
       const before = cur.length ? Number(cur[0].sim_usdc) : 0;
       const after = before + 100;
-      await db.query(`update balances set sim_usdc = sim_usdc + 100, last_faucet_at=now() where user_id=$1`, [userId]);
+      // Debit the balance and append the mint journal row in one transaction so the
+      // ledger can never show a top-up the wallet didn't actually receive (or vice versa).
+      await db.tx(async ({ query }) => {
+        await query(`update balances set sim_usdc = sim_usdc + 100, last_faucet_at=now() where user_id=$1`, [userId]);
+        await query(`insert into mint_events(user_id, kind, amount) values($1,'faucet',100)`, [userId]);
+      });
       if (notify) await notify({ userId, kind: 'faucet', body: `Faucet: +$100 added — balance $${after.toFixed(2)}` });
       res.json({ balance: after, added: 100 });
     } catch (e) {

@@ -91,6 +91,8 @@ export function authRouter({ db, env, auth, notify }) {
         const id = randomUUID();
         await db.query('insert into users(id, wallet, display_name) values($1,$2,$3)', [id, wallet, wallet.slice(0, 4) + '…' + wallet.slice(-4)]);
         await db.query('insert into balances(user_id, sim_usdc) values($1,100) on conflict do nothing', [id]);
+        // Journal the welcome mint (the only place this $100 first appears) for the ledger.
+        await db.query(`insert into mint_events(user_id, kind, amount) values($1,'welcome',100)`, [id]);
         userId = id;
         if (notify) await notify({ userId: id, kind: 'welcome', body: "Welcome! You've received $100 in play money" });
       } else {
@@ -151,6 +153,10 @@ export function authRouter({ db, env, auth, notify }) {
           password_hash,
         ]);
         await db.query('insert into balances(user_id, sim_usdc) values($1,100) on conflict do nothing', [id]);
+        // Journal the welcome mint for a brand-new email account (a wallet that already
+        // got its welcome via /verify takes the in-place-upgrade branch above instead,
+        // so exactly one welcome mint_event is recorded per user).
+        await db.query(`insert into mint_events(user_id, kind, amount) values($1,'welcome',100)`, [id]);
         const { rows: created } = await db.query('select * from users where id=$1', [id]);
         user = created[0];
         if (notify) await notify({ userId: id, kind: 'welcome', body: 'Welcome! Your account is ready with $100 in play money' });

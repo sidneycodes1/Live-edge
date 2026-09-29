@@ -62,6 +62,7 @@ export const api = {
   buildOrder: (orderId) => request('/api/orders/build', { method:'POST', body:{ orderId }, auth:true }),
   submitOrder: (orderId, signature) => request('/api/orders/submit', { method:'POST', body:{ orderId, signature }, auth:true }),
   getPortfolio: () => request('/api/portfolio', { auth:true }),
+  getLedger: (limit=50, offset=0) => request(`/api/ledger?limit=${limit}&offset=${offset}`, { auth:true }),
   faucet: () => request('/api/faucet', { method:'POST', auth:true }),
   claimWin: (marketId, signature) => request('/api/claims/win', { method:'POST', body:{ marketId, signature }, auth:true }),
   claimFees: (marketId, signature) => request('/api/claims/creator-fees', { method:'POST', body:{ marketId, signature }, auth:true }),
