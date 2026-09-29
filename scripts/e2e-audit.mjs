@@ -134,6 +134,15 @@ async function main() {
     return `balance=${r.json.balance}`;
   });
 
+  await step('F-007 faucet adds (does not overwrite): welcome 100 -> faucet -> 200', async () => {
+    const f = await api('POST', '/api/faucet', { token: creatorToken });
+    if (f.status !== 200) throw new Error(`faucet ${f.status} ${JSON.stringify(f.json)}`);
+    if (Number(f.json.balance) !== 200) throw new Error(`expected additive 200, got ${f.json.balance}`);
+    const p = await api('GET', '/api/portfolio', { token: creatorToken });
+    if (Number(p.json.balance) !== 200) throw new Error(`portfolio ${p.json.balance}`);
+    return `balance=${f.json.balance} added=${f.json.added}`;
+  });
+
   let roomId = '';
   await step('creator opens a new room', async () => {
     const r = await api('POST', '/api/rooms', {
