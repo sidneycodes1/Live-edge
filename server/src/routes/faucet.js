@@ -16,8 +16,11 @@ export function faucetRouter({ db }) {
         const retryAfter = Math.ceil((60 * 60 * 1000 - (Date.now() - last.getTime())) / 1000);
         return res.status(429).json({ error: { code: 'RATE_LIMITED', message: 'Faucet once per hour', retryAfter } });
       }
-      await db.query(`update balances set sim_usdc=100, last_faucet_at=now() where user_id=$1`, [userId]);
-      res.json({ balance: 100 });
+      const { rows: cur } = await db.query('select sim_usdc from balances where user_id=$1', [userId]);
+      const before = cur.length ? Number(cur[0].sim_usdc) : 0;
+      const after = before + 100;
+      await db.query(`update balances set sim_usdc = sim_usdc + 100, last_faucet_at=now() where user_id=$1`, [userId]);
+      res.json({ balance: after, added: 100 });
     } catch (e) {
       next(e);
     }
