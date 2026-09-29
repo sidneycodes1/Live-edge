@@ -1,38 +1,51 @@
 import { useAuth } from '../hooks/useAuth.js';
 import { useApi } from '../hooks/useApi.js';
+import { useToast } from '../hooks/useToast.js';
 import { api } from '../lib/api.js';
 import PositionRow from '../components/PositionRow.jsx';
-import { getOrCreateGuestWallet, signObject } from '../lib/wallet.js';
+import { getOrCreateGuestWallet, signMessage } from '../lib/wallet.js';
 import { useState } from 'react';
 
 export default function Portfolio() {
   const { user, signIn } = useAuth();
+  const { showToast } = useToast();
   const { data, loading, setData } = useApi(()=> user ? api.getPortfolio() : Promise.resolve(null), [user]);
   const [msg, setMsg] = useState('');
 
   async function claim(pos) {
     try {
       const gw = getOrCreateGuestWallet();
-      // build payload? directly use signature over claim object
-      const payload = { kind:'claim_win', marketId: pos.market.id, wallet: user.wallet, nonce: Date.now().toString() };
-      const sig = signObject(gw.secretKey, payload);
-      await api.claimWin(pos.market.id, sig);
+      // Server requires the build-time nonce: fetch the canonical payload from
+      // /win/build, sign that exact string, then submit (mirrors scripts/e2e-audit.mjs).
+      const { canonicalPayload } = await api.buildClaimWin(pos.market.id);
+      const sig = signMessage(gw.secretKey, canonicalPayload);
+      const r = await api.claimWin(pos.market.id, sig);
+      const p = await api.getPortfolio();
+      setData(p);
       setMsg('Claimed!');
-      api.getPortfolio().then(setData);
-    } catch (e) { setMsg(e.message); }
+      showToast(`Claimed! +$${Number(r.amount).toFixed(2)} added to your balance`);
+    } catch (e) { setMsg(e.message); showToast(`Claim failed: ${e.message}`); }
   }
   async function claimFees(m) {
     try {
       const gw = getOrCreateGuestWallet();
-      const payload = { kind:'claim_creator_fees', marketId: m.market.id, wallet: user.wallet, nonce: Date.now().toString() };
-      const sig = signObject(gw.secretKey, payload);
-      await api.claimFees(m.market.id, sig);
+      const { canonicalPayload } = await api.buildClaimFees(m.market.id);
+      const sig = signMessage(gw.secretKey, canonicalPayload);
+      const r = await api.claimFees(m.market.id, sig);
+      const p = await api.getPortfolio();
+      setData(p);
       setMsg('Fees claimed!');
-      api.getPortfolio().then(setData);
-    } catch (e) { setMsg(e.message); }
+      showToast(`Creator fees claimed: +$${Number(r.amount).toFixed(2)}`);
+    } catch (e) { setMsg(e.message); showToast(`Fee claim failed: ${e.message}`); }
   }
   async function faucet() {
-    try { const r=await api.faucet(); setMsg('Topped up to $'+r.balance); api.getPortfolio().then(setData);} catch(e){ setMsg(e.message);}
+    try {
+      const r = await api.faucet();
+      const p = await api.getPortfolio();
+      setData(p);
+      setMsg('Topped up to $'+r.balance);
+      showToast(`Faucet: +$100 added — balance $${Number(r.balance).toFixed(2)}`);
+    } catch (e) { setMsg(e.message); showToast(`Faucet failed: ${e.message}`); }
   }
 
   if (!user) return <div className="max-w-3xl mx-auto px-4 py-10 text-center"><p className="mb-4">Sign in to see portfolio</p><button onClick={signIn} className="bg-white text-black px-6 py-2 rounded-full font-bold">Sign in (Demo wallet)</button></div>;
