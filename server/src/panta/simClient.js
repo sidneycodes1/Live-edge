@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { PantaError } from './errors.js';
 import { priceYes, priceNo, sharesForSpend, round6 } from '../sim/lmsr.js';
+import { bpsFee } from '../lib/money.js';
 import { canonicalStringify } from '../lib/signature.js';
 import nacl from 'tweetnacl';
 import bs58 from 'bs58';
@@ -128,7 +129,7 @@ export function createSimClient({ db, env }) {
       if (bal < amount) throw new PantaError('INSUFFICIENT_FUNDS', 'Insufficient funds', { status: 400 });
       const qy = Number(m.q_yes);
       const qn = Number(m.q_no);
-      const fee = round6((amount * FEE_BPS) / 10000);
+      const fee = bpsFee(amount, FEE_BPS);
       const net = round6(amount - fee);
       const shares = sharesForSpend(qy, qn, side, net, B);
       const currentPrice = side === 'yes' ? priceYes(qy, qn, B) : priceNo(qy, qn, B);
@@ -233,7 +234,7 @@ export function createSimClient({ db, env }) {
         else newQn = round6(qn + shares);
         const newYesPrice = round6(priceYes(newQy, newQn, B));
         const newNoPrice = round6(priceNo(newQy, newQn, B));
-        const creatorShare = round6((fee * CREATOR_SHARE_BPS) / 10000);
+        const creatorShare = bpsFee(fee, CREATOR_SHARE_BPS);
         const newVolume = round6(Number(m.volume) + Number(order.amount));
         const graduated = newVolume >= GRADUATION_VOLUME ? true : m.graduated;
         await query(`update markets set q_yes=$1, q_no=$2, yes_price=$3, no_price=$4, volume=$5, creator_fees_accrued = creator_fees_accrued + $6, graduated=$7 where id=$8`, [newQy, newQn, newYesPrice, newNoPrice, newVolume, creatorShare, graduated, m.id]);
