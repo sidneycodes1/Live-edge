@@ -8,9 +8,9 @@ This document describes which Panta capabilities are real vs simulated in each m
 |------------|-----|--------|------|
 | Market catalog (listMarkets) | Simulated (local DB) | Real Panta API | Real Panta API |
 | Market details (getMarket) | Simulated (local DB) | Real Panta API (fallback to sim) | Real Panta API |
-| Market creation quote (quoteCreate) | Simulated (1 USDC fee) | Real Panta API (fallback to sim) | Real Panta API |
+| Market creation quote (quoteCreate) | Simulated (SIM_CREATE_FEE, default 1 USDC) | Real Panta quoteCreate fee (fallback to sim) | Real Panta API |
 | Market creation build (buildCreate) | Simulated (unsigned payload) | Real Panta API (fallback to sim) | Real Panta API |
-| Market registration (registerMarket) | Simulated (local DB) | Simulated (local DB) | Real Panta API |
+| Market registration (registerMarket) | Simulated (local DB) + fee deducted from creator balance (F-010) | Simulated (local DB) + fee deducted (F-010) | Real Panta API |
 | Buy quote (quoteBuy) | Simulated (LMSR pricing) | Simulated for sim markets, Real Panta for Panta markets (preview only) | Real Panta API |
 | Buy build (buildBuy) | Simulated (unsigned payload) | Simulated for sim markets, Real Panta for Panta markets (preview only) | Real Panta API |
 | Buy submit (submitBuy) | Simulated (local ledger) | Simulated (local ledger) | Real Panta API |
@@ -20,6 +20,37 @@ This document describes which Panta capabilities are real vs simulated in each m
 | Claim submit (submitClaim) | Simulated (local ledger) | Simulated (local ledger) | Real Panta API |
 | Creator fee claim build (buildCreatorFeeClaim) | Simulated (unsigned payload) | Simulated (unsigned payload) | Real Panta API |
 | Creator fee claim submit (submitCreatorFeeClaim) | Simulated (local ledger) | Simulated (local ledger) | Real Panta API |
+
+## Creator fee share (how it is earned and claimed)
+
+The creator's share of trading volume is **accrued on every trade but
+intentionally graduation-gated before it can be withdrawn**. This is by design,
+not a bug. The full lifecycle:
+
+1. **Accrual** — every time anyone buys in a market, the trade's house fee
+   (`SIM_FEE_BPS`, default 2%) is split: `creatorShare = fee × SIM_CREATOR_SHARE_BPS/10000`
+   (default 25%) is added to `markets.creator_fees_accrued`. This happens inside
+   `submitBuy` (sim), so accrual is real and continuous.
+2. **Graduation** — the market flips `graduated = true` once cumulative volume
+   reaches `SIM_GRADUATION_VOLUME` (default 100 USDC). Graduation is what proves
+   the market attracted genuine trading interest.
+3. **Claim gating** — `submitCreatorFeeClaim` only pays out when **all** of these
+   hold: the market is `resolved`, it is `graduated`, fees have not already been
+   claimed, and `creator_fees_accrued > 0`. Otherwise it returns a specific error
+   (`MARKET_NOT_GRADUATED` / `MARKET_NOT_CLAIMABLE`), never a silent no-op.
+4. **Payout** — on a valid claim the accrued amount is credited to
+   `balances.sim_usdc` and journaled as a `trades` row of kind `creator_fee_claim`,
+   which then appears in `GET /api/ledger` (F-006) as a positive delta.
+5. **Visibility** — `GET /api/portfolio` returns each created market with
+   `creatorFeesAccrued`, `graduated`, `canClaimFees`, and a human `reason`
+   ("Creator fees unlock when market graduates" / "Awaiting resolution"). The
+   Portfolio page renders the accrued amount + reason and shows the **Claim fees**
+   button only when `canClaimFees` is true.
+
+Why gate on graduation: it prevents a creator from farming the fee share on a
+market nobody traded, and mirrors the intent that a creator earns from real
+trading activity. In `live` mode these amounts are settled by Panta; the rules
+above describe the simulator, which stands in for Panta's oracle/fee distribution.
 
 ## Key Assumptions
 
