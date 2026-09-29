@@ -17,6 +17,7 @@
     "audit:api": "node scripts/audit-api.mjs",
     "e2e:browser": "node scripts/e2e-browser.mjs",
     "e2e:phase2": "node scripts/e2e-phase2.mjs",
+    "e2e:phase3": "node scripts/e2e-phase3.mjs",
     "check-secrets": "node scripts/check-secrets.mjs",
     "hooks:install": "node scripts/install-hooks.mjs",
     "prepare": "node scripts/install-hooks.mjs"

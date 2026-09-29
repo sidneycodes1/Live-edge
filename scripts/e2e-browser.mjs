@@ -50,7 +50,10 @@ async function main() {
   const roomId = ROOM_ID || (await page.evaluate(async () => {
     const r = await fetch('http://localhost:4000/api/rooms');
     const j = await r.json();
-    return j[0].id;
+    // Prefer a room whose hero market is still open (a resolved/closed one would
+    // not expose the OPEN badge this checkpoint looks for).
+    const open = j.find((x) => x.heroMarket && x.heroMarket.status === 'open');
+    return (open || j[0]).id;
   }));
 
   // ---- Room (F-002 infinite-render checkpoint) ----
@@ -69,14 +72,17 @@ async function main() {
   rec('Room open market shows no stray "closed" (B4)', closedText === 0, `closed-count=${closedText}`);
   await page.screenshot({ path: `${SHOTS}/02-room-desktop.png`, fullPage: true });
 
-  // ---- Sign in (F-005 toast) ----
-  await page.getByRole('button', { name: /Sign in \(Demo wallet\)/ }).click();
+  // ---- Sign in (F-005 toast). Guest sign-in now redirects to /portfolio. ----
+  await page.locator('nav').getByRole('button', { name: 'Continue as guest' }).click();
+  await page.waitForURL('**/portfolio', { timeout: 8000 });
   await page.getByRole('button', { name: 'Sign out' }).waitFor({ timeout: 8000 });
   const signInToast = await page.getByText(/Signed in as demo wallet/).count();
   rec('F-005 sign-in toast visible', signInToast >= 1, `matches=${signInToast}`);
   await page.screenshot({ path: `${SHOTS}/03-signed-in.png` });
 
-  // ---- Trade on the seeded room (F-005 toast) ----
+  // ---- Trade on the seeded room (F-005 toast) — return to the room first ----
+  await page.goto(`${WEB}/room/${roomId}`, { waitUntil: 'networkidle' });
+  await yesBtn.first().waitFor({ timeout: 8000 });
   await yesBtn.first().click();
   const confirm = page.getByRole('button', { name: /Confirm/ });
   await confirm.waitFor({ timeout: 6000 });
@@ -102,7 +108,10 @@ async function main() {
   rec('Setup: creator opened an owned room', !!claimRoomId, `roomId=${claimRoomId}`);
 
   await page.goto(`${WEB}/creator/${claimRoomId}`, { waitUntil: 'networkidle' });
-  await page.getByRole('button', { name: /Create \(sim\)/ }).click();
+  // F-010: creation is now a two-step preview -> confirm (the fee is quoted, then paid).
+  await page.getByRole('button', { name: /Preview creation fee/ }).click();
+  await page.getByTestId('fee-preview').waitFor({ timeout: 6000 });
+  await page.getByTestId('confirm-create').click();
   const createToastOk = await page.getByText(/Market created!/).waitFor({ timeout: 6000 }).then(() => true).catch(() => false);
   rec('F-005 market-creation toast visible', createToastOk);
   await page.waitForTimeout(1200);
