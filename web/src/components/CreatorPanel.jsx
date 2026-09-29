@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import { templates } from '../lib/templates.js';
 import { api } from '../lib/api.js';
+import { useToast } from '../hooks/useToast.js';
 import { getOrCreateGuestWallet, signObject } from '../lib/wallet.js';
 
 export default function CreatorPanel({ roomId, onCreated }) {
+  const { showToast } = useToast();
   const [q, setQ] = useState(templates[0].question);
   const [rule, setRule] = useState(templates[0].resolutionRule);
   const [endMin, setEndMin] = useState(10);
@@ -32,6 +34,7 @@ export default function CreatorPanel({ roomId, onCreated }) {
       setStatus('Registering...');
       const market = await api.registerMarket(quote.quoteId, sig);
       setStatus('Created!');
+      showToast('Market created! Find it in your room.');
       onCreated?.(market);
     } catch (e) { setError(e.message); setStatus(''); }
   }

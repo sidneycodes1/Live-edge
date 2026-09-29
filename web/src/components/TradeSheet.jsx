@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import { api } from '../lib/api.js';
+import { useToast } from '../hooks/useToast.js';
 import { getOrCreateGuestWallet, signObject } from '../lib/wallet.js';
 import TxStatus from './TxStatus.jsx';
 
 export default function TradeSheet({ market, side: initialSide, onClose, onSuccess }) {
+  const { showToast } = useToast();
   const [side, setSide] = useState(initialSide);
   const [amount, setAmount] = useState(5);
   const [status, setStatus] = useState('idle'); // idle, quoting, building, submitting, success, error
@@ -32,6 +34,7 @@ export default function TradeSheet({ market, side: initialSide, onClose, onSucce
       const sig = signObject(gw.secretKey, build.signPayload);
       await api.submitOrder(build.orderId || q.orderId, sig);
       setStatus('success');
+      showToast(`Order confirmed: $${amount} on ${side.toUpperCase()} — good luck!`);
       setTimeout(()=>{ onSuccess?.(); onClose(); }, 800);
     } catch (e) {
       setError(e.message || 'Failed');
