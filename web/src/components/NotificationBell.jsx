@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { api } from '../lib/api.js';
 import { useAuth } from '../hooks/useAuth.js';
-import { onNotificationsRefresh } from '../lib/notify-bus.js';
+import { onDataRefresh } from '../lib/data-bus.js';
 
 function timeAgo(iso) {
   const diff = (Date.now() - new Date(iso).getTime()) / 1000;
@@ -30,7 +30,7 @@ export default function NotificationBell() {
   useEffect(() => {
     if (!user) { setItems([]); setUnread(0); return; }
     load();
-    const off = onNotificationsRefresh(load);
+    const off = onDataRefresh(load);
     const timer = setInterval(load, 15000);
     return () => { off(); clearInterval(timer); };
   }, [user, load]);

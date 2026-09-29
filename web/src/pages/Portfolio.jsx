@@ -1,5 +1,5 @@
 import { useAuth } from '../hooks/useAuth.js';
-import { useApi } from '../hooks/useApi.js';
+import { useBalance } from '../hooks/useBalance.js';
 import { useToast } from '../hooks/useToast.js';
 import { api } from '../lib/api.js';
 import PositionRow from '../components/PositionRow.jsx';
@@ -10,7 +10,8 @@ import { Link } from 'react-router-dom';
 export default function Portfolio() {
   const { user, signIn, upgrade } = useAuth();
   const { showToast } = useToast();
-  const { data, loading, setData } = useApi(()=> user ? api.getPortfolio() : Promise.resolve(null), [user]);
+  // Single source of truth (T2): header and this page both read BalanceContext.
+  const { data, loading, refresh } = useBalance();
   const [msg, setMsg] = useState('');
   const [upEmail, setUpEmail] = useState('');
   const [upPw, setUpPw] = useState('');
@@ -34,8 +35,7 @@ export default function Portfolio() {
       const { canonicalPayload } = await api.buildClaimWin(pos.market.id);
       const sig = signMessage(gw.secretKey, canonicalPayload);
       const r = await api.claimWin(pos.market.id, sig);
-      const p = await api.getPortfolio();
-      setData(p);
+      await refresh();
       setMsg('Claimed!');
       showToast(`Claimed! +$${Number(r.amount).toFixed(2)} added to your balance`);
     } catch (e) { setMsg(e.message); showToast(`Claim failed: ${e.message}`); }
@@ -46,8 +46,7 @@ export default function Portfolio() {
       const { canonicalPayload } = await api.buildClaimFees(m.market.id);
       const sig = signMessage(gw.secretKey, canonicalPayload);
       const r = await api.claimFees(m.market.id, sig);
-      const p = await api.getPortfolio();
-      setData(p);
+      await refresh();
       setMsg('Fees claimed!');
       showToast(`Creator fees claimed: +$${Number(r.amount).toFixed(2)}`);
     } catch (e) { setMsg(e.message); showToast(`Fee claim failed: ${e.message}`); }
@@ -55,8 +54,7 @@ export default function Portfolio() {
   async function faucet() {
     try {
       const r = await api.faucet();
-      const p = await api.getPortfolio();
-      setData(p);
+      await refresh();
       setMsg('Topped up to $'+r.balance);
       showToast(`Faucet: +$100 added — balance $${Number(r.balance).toFixed(2)}`);
     } catch (e) { setMsg(e.message); showToast(`Faucet failed: ${e.message}`); }

@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import ModeBadge from './ModeBadge.jsx';
 import WalletButton from './WalletButton.jsx';
 import NotificationBell from './NotificationBell.jsx';
+import HeaderBalance from './HeaderBalance.jsx';
 
 export default function TopNav() {
   return (
@@ -15,6 +16,7 @@ export default function TopNav() {
           <Link to="/about" className="text-white/70 hover:text-white">About</Link>
         </div>
         <div className="ml-auto flex items-center gap-2">
+          <HeaderBalance />
           <NotificationBell />
           <WalletButton />
         </div>
