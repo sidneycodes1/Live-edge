@@ -19,13 +19,18 @@ export default function Room() {
   const { user, signIn } = useAuth();
 
   useEffect(()=>{ if(room && room.markets && room.markets.length){ setActiveMarket(room.markets[0]); } }, [room]);
-  // handle odds SSE to update price
+  // handle odds SSE to update price. Depends only on `events`; uses a functional
+  // update that returns the SAME object when nothing actually changed, so it never
+  // re-triggers itself (activeMarket is intentionally NOT a dependency).
   useEffect(()=>{
     const lastOdds = [...events].reverse().find(e=>e.type==='odds');
-    if (lastOdds && activeMarket && lastOdds.data.marketId===activeMarket.id) {
-      setActiveMarket(m=> m ? {...m, yes_price:lastOdds.data.yesPrice, no_price:lastOdds.data.noPrice, volume:lastOdds.data.volume } : m);
-    }
-  }, [events, activeMarket]);
+    if (!lastOdds) return;
+    setActiveMarket(m => {
+      if (!m || lastOdds.data.marketId !== m.id) return m;
+      if (m.yes_price===lastOdds.data.yesPrice && m.no_price===lastOdds.data.noPrice && m.volume===lastOdds.data.volume) return m;
+      return { ...m, yes_price:lastOdds.data.yesPrice, no_price:lastOdds.data.noPrice, volume:lastOdds.data.volume };
+    });
+  }, [events]);
 
   if (loading) return <div className="max-w-6xl mx-auto px-4 py-6"><Skeleton className="h-[400px]" /></div>;
   if (!room) return <div className="p-6">Room not found</div>;
