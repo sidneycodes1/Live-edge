@@ -8,6 +8,7 @@ import { createDb } from './db/index.js';
 import { migrate } from './db/migrate.js';
 import { seed } from './db/seed.js';
 import { createPanta } from './panta/index.js';
+import { createTwitchClient } from './twitch/client.js';
 import { createHub } from './services/sse.js';
 import { createPriceCache } from './services/priceCache.js';
 import { healthRouter } from './routes/health.js';
@@ -23,6 +24,7 @@ import { streamRouter } from './routes/stream.js';
 import { streamerRouter } from './routes/streamer.js';
 import { faucetRouter } from './routes/faucet.js';
 import { notificationsRouter } from './routes/notifications.js';
+import { twitchRouter } from './routes/twitch.js';
 import { ledgerRouter } from './routes/ledger.js';
 import { createNotifier } from './services/notify.js';
 import { createAuth } from './middleware/auth.js';
@@ -38,6 +40,13 @@ export async function createApp({ env: rawEnv, db: existingDb } = {}) {
     await seed(db);
   }
   const panta = createPanta({ db, env });
+  // Twitch live client (feature/twitch-live-integration). Always constructed; it
+  // self-degrades to [] / null when creds are missing, so no branching needed here.
+  const twitch = createTwitchClient({
+    clientId: env.TWITCH_CLIENT_ID,
+    clientSecret: env.TWITCH_CLIENT_SECRET,
+    cacheTtlMs: env.TWITCH_CACHE_TTL_MS,
+  });
   const hub = createHub();
   const notify = createNotifier(db, hub);
   const priceCache = createPriceCache({ ttlMs: 10000 });
@@ -77,6 +86,10 @@ export async function createApp({ env: rawEnv, db: existingDb } = {}) {
 
   // streaming (public)
   app.use('/api/stream', streamRouter({ hub }));
+
+  // Twitch "currently live" browse (public). Reads real Helix when creds exist,
+  // otherwise returns an empty/demo list — see routes/twitch.js.
+  app.use('/api/twitch', twitchRouter({ twitch, enabled: env.twitchEnabled }));
 
   // catalog public
   // rooms public (list/detail)
@@ -138,6 +151,7 @@ export async function createApp({ env: rawEnv, db: existingDb } = {}) {
   app._hub = hub;
   app._env = env;
   app._panta = panta;
+  app._twitch = twitch;
   app._interval = interval;
 
   return app;

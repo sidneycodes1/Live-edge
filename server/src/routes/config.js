@@ -10,6 +10,15 @@ export function configRouter(env) {
       features: {
         liveReads: env.effectiveMode !== 'sim',
         previewBuy: env.effectiveMode === 'hybrid',
+        twitchLive: Boolean(env.twitchEnabled),
+      },
+      // Public, non-secret Twitch embed config. `parentDomain` must equal the
+      // bare hosting domain (no protocol) per dev.twitch.tv/docs/embed/;
+      // empty → frontend falls back to location.hostname. Never includes creds.
+      twitch: {
+        enabled: Boolean(env.twitchEnabled),
+        parentDomain: env.TWITCH_PARENT_DOMAIN || '',
+        fallbackChannel: env.TWITCH_FALLBACK_CHANNEL || '',
       },
       sim: {
         feeBps: env.SIM_FEE_BPS,

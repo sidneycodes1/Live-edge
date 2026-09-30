@@ -51,6 +51,7 @@ export const api = {
   upgrade: (email, password) => request('/api/auth/upgrade', { method:'POST', body:{ email, password }, auth:true }),
   listRooms: () => request('/api/rooms'),
   getRoom: (id) => request(`/api/rooms/${id}`),
+  listTwitchLive: (limit=12) => request(`/api/twitch/live?limit=${limit}`),
   createRoom: (title, videoUrl) => request('/api/rooms', { method:'POST', body:{ title, videoUrl }, auth:true }),
   getMarket: (id) => request(`/api/markets/${id}`),
   getCatalog: () => request('/api/markets/catalog'),
