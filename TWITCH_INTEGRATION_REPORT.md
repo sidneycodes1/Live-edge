@@ -283,27 +283,33 @@ Not fixed / NOT VERIFIED (honest status):
   capture the §3.4 BEFORE baseline, then immediately returned to the feature
   branch. **No commit was made to `main`; no force-push was performed.**
 - `main` HEAD at time of this work: `04af8f1` (unchanged).
-- Branch history (`git log --oneline main..HEAD`):
+- Branch history (`git log --oneline main..HEAD`) including the Phase E commit
+  `33c1fbe`:
   ```
+  33c1fbe test(e2e)+docs: Phase E Twitch browser walkthrough + integration report
   a1a5421 feat(creator): optional attach-a-real-channel on room creation (validated)
   a7bb62d feat(room): real Twitch video + chat embeds for Twitch-backed rooms
   b63a3a2 feat(discover): add real 'Live on Twitch' browse grid + /api/twitch/live
   dc74ee9 feat(server): add Twitch Helix client for live channel lookup
   ```
-- Sync with remote before Phase E commit:
+- Phases A–D were pushed during their phases; the branch was in sync with its
+  remote before the Phase E commit (`## feature/twitch-live-integration...origin/
+  feature/twitch-live-integration`, no ahead/behind markers).
+- Phase E commit (this report + `scripts/e2e-twitch.mjs` +
+  `audit/screenshots-twitch/`) and push. The pre-commit `check-secrets` hook ran
+  (not bypassed) and printed `check-secrets PASSED`. Real command + output:
   ```
-  ## feature/twitch-live-integration...origin/feature/twitch-live-integration
-  (no ahead/behind markers) → phases A–D already pushed & in sync.
+  $ git commit -m "test(e2e)+docs: Phase E Twitch browser walkthrough + integration report"
+  check-secrets PASSED
+  [feature/twitch-live-integration 33c1fbe] ... 6 files changed, 457 insertions(+)
+
+  $ git push origin feature/twitch-live-integration
+  To https://github.com/sidneycodes1/Live-edge.git
+     a1a5421..33c1fbe  feature/twitch-live-integration -> feature/twitch-live-integration
   ```
-- Phase E commit + push (this report + `scripts/e2e-twitch.mjs` +
-  `audit/screenshots-twitch/`):
-  ```
-  git add -A :/ TWITCH_INTEGRATION_REPORT.md scripts/e2e-twitch.mjs audit/screenshots-twitch
-  git commit -m "test(e2e)+docs: Phase E Twitch browser walkthrough + integration report"
-  git push origin feature/twitch-live-integration
-  ```
-  Push output is recorded immediately after this commit (see the follow-up note /
-  the ref-update line in the push that publishes this Phase E commit).
+  (PowerShell renders git's stderr progress as a benign `NativeCommandError` /
+  non-zero exit; the `a1a5421..33c1fbe` ref-update line confirms the push landed
+  as a fast-forward. `main` was not touched and no force-push was used.)
 
 ---
 
