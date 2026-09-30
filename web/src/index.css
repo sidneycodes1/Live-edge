@@ -42,3 +42,7 @@ h1,h2,h3 { font-family: 'Space Grotesk', system-ui, sans-serif; }
 .flash-down { animation: flash-down 0.9s ease-out; }
 .mover-up { color: #3DFFB5; }
 .mover-down { color: #FF5E6C; }
+
+/* Horizontal rails / tickers scroll by swipe but shouldn't show a chunky bar. */
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }

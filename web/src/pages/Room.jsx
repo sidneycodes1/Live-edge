@@ -1,4 +1,4 @@
-import { useParams } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 import { useApi } from '../hooks/useApi.js';
 import { api } from '../lib/api.js';
 import { useSSE } from '../hooks/useSSE.js';
@@ -8,6 +8,7 @@ import TwitchChat from '../components/TwitchChat.jsx';
 import { useTwitchConfig } from '../hooks/useTwitchConfig.js';
 import MarketPanel from '../components/MarketPanel.jsx';
 import ChatFeed from '../components/ChatFeed.jsx';
+import RecentBetsTicker from '../components/RecentBetsTicker.jsx';
 import TradeSheet from '../components/TradeSheet.jsx';
 import Skeleton from '../components/Skeleton.jsx';
 import { useState, useEffect } from 'react';
@@ -18,6 +19,21 @@ function LiveHeader({ viewers, lastUpdate }) {
     <div className="flex items-center gap-2 text-xs text-white/50">
       <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse inline-block" /> LIVE · {viewers} {viewers === 1 ? 'viewer' : 'viewers'} · Last updated {lastUpdate ? `${Math.round((Date.now() - lastUpdate.getTime()) / 1000)}s ago` : 'now'}
     </div>
+  );
+}
+
+// Contextual in-room create (plan §6): the primary way to add a bet is FROM the
+// stream you're watching. Reuses the existing Creator cockpit, pre-filled with
+// this room. Top-nav "Create" stays as the standalone secondary path.
+function InRoomCreate({ roomId }) {
+  return (
+    <Link
+      to={`/creator/${roomId}`}
+      data-testid="in-room-create"
+      className="block w-full text-center bg-white/5 hover:bg-white/10 border border-dashed border-white/20 rounded-card py-2.5 text-sm font-semibold text-white/80 transition"
+    >
+      + Start a bet on this stream
+    </Link>
   );
 }
 
@@ -72,6 +88,7 @@ export default function Room() {
         <div className="mt-4 grid md:grid-cols-[1fr_320px] gap-4">
           <div className="space-y-4 min-w-0">
             <TwitchVideo channel={ch} parent={parent} />
+            <RecentBetsTicker events={events} />
             {/* mobile-only switch between chat and market */}
             <div className="md:hidden flex gap-2">
               {['chat', 'market'].map(t => (
@@ -81,7 +98,8 @@ export default function Room() {
                 </button>
               ))}
             </div>
-            <div className={`${mobileTab === 'market' ? 'block' : 'hidden'} md:block`}>
+            <div className={`${mobileTab === 'market' ? 'block' : 'hidden'} md:block space-y-3`}>
+              <InRoomCreate roomId={id} />
               {activeMarket
                 ? <MarketPanel market={activeMarket} onTrade={handleTrade} />
                 : <div className="bg-surface border border-white/10 rounded-card p-4 text-sm text-white/50">No market attached to this channel yet.</div>}
@@ -103,17 +121,32 @@ export default function Room() {
     );
   }
 
-  // ---- Simulated / creator room WITHOUT a real channel: renders exactly as before. ----
+  // ---- Simulated / creator room WITHOUT a real channel. Desktop: video + chat
+  // left, market right. Mobile: video always on top, then a Chat/Market toggle
+  // (F-029) so the market isn't buried under a long chat scroll. ----
   return (
     <div className="max-w-6xl mx-auto px-4 py-6 pb-20">
       <LiveHeader viewers={viewers} lastUpdate={lastUpdate} />
       <h1 className="font-heading font-bold text-xl mt-2">{room.title}</h1>
       <div className="grid md:grid-cols-[65%_35%] gap-4 mt-4">
-        <div className="space-y-4">
+        <div className="space-y-4 min-w-0">
           <VideoStage videoUrl={room.video_url} />
-          <ChatFeed messages={room.chat || []} sseEvents={events} />
+          <RecentBetsTicker events={events} />
+          {/* mobile-only switch between chat and market */}
+          <div className="md:hidden flex gap-2">
+            {['chat', 'market'].map(t => (
+              <button key={t} onClick={() => setMobileTab(t)}
+                className={`flex-1 py-2 rounded-card text-sm font-semibold border ${mobileTab === t ? 'bg-white text-black border-white' : 'bg-surface text-white/70 border-white/10'}`}>
+                {t === 'chat' ? 'Chat' : 'Market'}
+              </button>
+            ))}
+          </div>
+          <div className={`${mobileTab === 'chat' ? 'block' : 'hidden'} md:block`}>
+            <ChatFeed messages={room.chat || []} sseEvents={events} />
+          </div>
         </div>
-        <div className="space-y-4">
+        <div className={`${mobileTab === 'market' ? 'block' : 'hidden'} md:block space-y-4`}>
+          <InRoomCreate roomId={id} />
           {activeMarket && <MarketPanel market={activeMarket} onTrade={handleTrade} />}
           {room.markets && room.markets.length > 1 && (
             <div className="space-y-2">
