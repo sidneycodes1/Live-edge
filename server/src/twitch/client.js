@@ -216,10 +216,50 @@ export function createTwitchClient({
     }
   }
 
+  // Public: never throws. Looks up a user by login via Get Users, which returns
+  // the channel EVEN IF offline (unlike /streams which omits offline channels).
+  // Docs: https://dev.twitch.tv/docs/api/reference#get-users (GET /helix/users?login=)
+  // Returns { id, login, displayName } or null (not found / no creds / error).
+  async function getUserByLogin(login) {
+    if (!hasCreds() || !login) return null;
+    try {
+      const json = await helixGet(`/helix/users?login=${encodeURIComponent(String(login).toLowerCase())}`);
+      const raw = (json.data || [])[0];
+      return raw ? { id: raw.id, login: raw.login, displayName: raw.display_name } : null;
+    } catch (e) {
+      warn(`Twitch getUserByLogin failed → returning null (${e.code || e.name})`);
+      return null;
+    }
+  }
+
+  // Public: never throws. Validates a creator-entered channel: exists (even if
+  // offline) via Get Users, and separately whether it's currently live via
+  // Get Streams. "exists / is live — either is acceptable" per feature spec.
+  // Returns { login, exists, isLive, displayName }. When creds are missing we
+  // cannot validate against Twitch → { exists: false, verifiable: false } so the
+  // caller can decide (creator is warned it's unverified, not silently garbage).
+  async function validateChannel(login) {
+    const norm = String(login || '').trim().toLowerCase();
+    if (!norm) return { login: '', exists: false, isLive: false, verifiable: hasCreds() };
+    if (!hasCreds()) {
+      return { login: norm, exists: false, isLive: false, verifiable: false };
+    }
+    const [user, stream] = await Promise.all([getUserByLogin(norm), getStreamByLogin(norm)]);
+    return {
+      login: norm,
+      exists: Boolean(user),
+      isLive: Boolean(stream),
+      displayName: user?.displayName || stream?.userName || null,
+      verifiable: true,
+    };
+  }
+
   return {
     hasCreds,
     getTopLiveStreams,
     getStreamByLogin,
+    getUserByLogin,
+    validateChannel,
     // exposed for tests / advanced use; internal, may throw
     _requestAppToken: requestAppToken,
     _getAppToken: getAppToken,

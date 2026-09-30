@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { validate } from '../middleware/validate.js';
 import { sanitizeText } from '../services/sanitize.js';
 
-export function roomsRouter({ db, hub }) {
+export function roomsRouter({ db, hub, twitch }) {
   const r = Router();
 
   r.get('/', async (_req, res, next) => {
@@ -120,10 +120,21 @@ export function roomsRouter({ db, hub }) {
       const title = sanitizeText(req.body.title);
       const videoUrl = req.body.videoUrl || null;
       const twitchChannel = (req.body.twitchChannel || '').trim().toLowerCase() || null;
+      // Don't silently accept garbage: when Twitch is verifiable, the channel must
+      // exist (offline is fine — embeds still work). If creds are absent we can't
+      // verify, so we accept but flag it (never block a demo attachment).
+      let twitchVerified = null;
+      if (twitchChannel && twitch) {
+        const v = await twitch.validateChannel(twitchChannel);
+        if (v.verifiable && !v.exists) {
+          return res.status(400).json({ error: { code: 'VALIDATION_ERROR', message: `Twitch channel '${twitchChannel}' does not exist` } });
+        }
+        twitchVerified = v.verifiable;
+      }
       const id = randomUUID();
       await db.query(`insert into rooms(id, owner_id, title, video_url, twitch_channel) values($1,$2,$3,$4,$5)`, [id, req.user.id, title, videoUrl, twitchChannel]);
       const { rows } = await db.query('select * from rooms where id=$1', [id]);
-      res.status(201).json(rows[0]);
+      res.status(201).json({ ...rows[0], twitchVerified });
     } catch (e) {
       next(e);
     }

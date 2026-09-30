@@ -87,3 +87,35 @@ describe('GET /api/twitch/live', () => {
     } finally { await s.close(); }
   });
 });
+
+describe('GET /api/twitch/validate', () => {
+  it('reports a valid existing channel', async () => {
+    const stub = { validateChannel: async (l) => ({ login: l, exists: true, isLive: true, displayName: 'Afro', verifiable: true }) };
+    const s = await start(stub, true);
+    try {
+      const json = await (await fetch(`${s.base}/api/twitch/validate?login=Afro`)).json();
+      assert.equal(json.valid, true);
+      assert.equal(json.exists, true);
+      assert.equal(json.isLive, true);
+    } finally { await s.close(); }
+  });
+
+  it('marks an un-verifiable (no-creds) result as valid:false + verifiable:false', async () => {
+    const stub = { validateChannel: async (l) => ({ login: l, exists: false, isLive: false, verifiable: false }) };
+    const s = await start(stub, false);
+    try {
+      const json = await (await fetch(`${s.base}/api/twitch/validate?login=lofigirl`)).json();
+      assert.equal(json.valid, false);
+      assert.equal(json.verifiable, false);
+    } finally { await s.close(); }
+  });
+
+  it('400 when login is missing', async () => {
+    const stub = { validateChannel: async () => ({ exists: false, verifiable: true }) };
+    const s = await start(stub, true);
+    try {
+      const res = await fetch(`${s.base}/api/twitch/validate`);
+      assert.equal(res.status, 400);
+    } finally { await s.close(); }
+  });
+});

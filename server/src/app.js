@@ -97,7 +97,7 @@ export async function createApp({ env: rawEnv, db: existingDb } = {}) {
   app.use('/api/rooms', (req, res, next) => {
     if (req.method === 'POST') return auth(req, res, next);
     next();
-  }, roomsRouter({ db, hub }));
+  }, roomsRouter({ db, hub, twitch }));
 
   // markets: some public, some auth
   app.use(

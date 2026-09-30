@@ -211,3 +211,73 @@ describe('twitch client — getStreamByLogin', () => {
     assert.equal(await c.getStreamByLogin('afro'), null);
   });
 });
+
+describe('twitch client — getUserByLogin / validateChannel (Phase D)', () => {
+  const USERS = [{ match: 'oauth2/token', res: makeRes({ access_token: 'AT-123', expires_in: 5000000, token_type: 'bearer' }) }];
+
+  it('getUserByLogin returns the documented user fields (exists even if offline)', async () => {
+    const { fn, calls } = mockRouter([...USERS, { match: '/helix/users', res: makeRes({ data: [{ id: '141981764', login: 'twitchdev', display_name: 'TwitchDev' }] }) }]);
+    const c = createTwitchClient({ clientId: CID, clientSecret: SECRET, fetchImpl: fn });
+    const u = await c.getUserByLogin('TwitchDev');
+    assert.equal(u.id, '141981764');
+    assert.equal(u.login, 'twitchdev');
+    assert.equal(u.displayName, 'TwitchDev');
+    assert.ok(calls.some((x) => x.url.includes('/helix/users?login=twitchdev')));
+  });
+
+  it('getUserByLogin → null when not found (empty data) and on error', async () => {
+    const a = mockRouter([...USERS, { match: '/helix/users', res: makeRes({ data: [] }) }]);
+    const cA = createTwitchClient({ clientId: CID, clientSecret: SECRET, fetchImpl: a.fn });
+    assert.equal(await cA.getUserByLogin('nope'), null);
+    const b = mockRouter([...USERS, { match: '/helix/users', res: makeRes({ error: 'x' }, { status: 500 }) }]);
+    const cB = createTwitchClient({ clientId: CID, clientSecret: SECRET, fetchImpl: b.fn, warn: () => {} });
+    assert.equal(await cB.getUserByLogin('nope'), null);
+  });
+
+  it('validateChannel: live channel → exists + isLive', async () => {
+    const { fn } = mockRouter([
+      ...USERS,
+      { match: '/helix/users', res: makeRes({ data: [{ id: '1', login: 'afro', display_name: 'Afro' }] }) },
+      { match: '/helix/streams', res: makeRes(okStreamData()) },
+    ]);
+    const c = createTwitchClient({ clientId: CID, clientSecret: SECRET, fetchImpl: fn });
+    const v = await c.validateChannel('Afro');
+    assert.equal(v.exists, true);
+    assert.equal(v.isLive, true);
+    assert.equal(v.verifiable, true);
+    assert.equal(v.login, 'afro');
+  });
+
+  it('validateChannel: exists but offline → exists true, isLive false', async () => {
+    const { fn } = mockRouter([
+      ...USERS,
+      { match: '/helix/users', res: makeRes({ data: [{ id: '1', login: 'nobody', display_name: 'Nobody' }] }) },
+      { match: '/helix/streams', res: makeRes({ data: [] }) },
+    ]);
+    const c = createTwitchClient({ clientId: CID, clientSecret: SECRET, fetchImpl: fn });
+    const v = await c.validateChannel('nobody');
+    assert.equal(v.exists, true);
+    assert.equal(v.isLive, false);
+  });
+
+  it('validateChannel: nonexistent → exists false', async () => {
+    const { fn } = mockRouter([
+      ...USERS,
+      { match: '/helix/users', res: makeRes({ data: [] }) },
+      { match: '/helix/streams', res: makeRes({ data: [] }) },
+    ]);
+    const c = createTwitchClient({ clientId: CID, clientSecret: SECRET, fetchImpl: fn });
+    const v = await c.validateChannel('garbage-xyz');
+    assert.equal(v.exists, false);
+    assert.equal(v.verifiable, true);
+  });
+
+  it('validateChannel without creds → verifiable:false (never claims garbage is valid)', async () => {
+    const { fn, calls } = mockRouter([]);
+    const c = createTwitchClient({ clientId: undefined, clientSecret: undefined, fetchImpl: fn, warn: () => {} });
+    const v = await c.validateChannel('lofigirl');
+    assert.equal(v.verifiable, false);
+    assert.equal(v.exists, false);
+    assert.equal(calls.length, 0);
+  });
+});

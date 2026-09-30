@@ -31,5 +31,19 @@ export function twitchRouter({ twitch, enabled = false }) {
     }
   });
 
+  // Validate a creator-entered channel (exists even if offline / is live).
+  // Public single Helix lookup. Never 500s: returns verifiable:false when creds
+  // are absent so the UI can say "couldn't verify" instead of silently accepting.
+  r.get('/validate', async (req, res, next) => {
+    try {
+      const login = String(req.query.login || '').trim();
+      if (!login) return res.status(400).json({ error: { code: 'VALIDATION_ERROR', message: 'login required' } });
+      const v = await twitch.validateChannel(login);
+      res.json({ valid: Boolean(v.exists), ...v });
+    } catch (e) {
+      next(e);
+    }
+  });
+
   return r;
 }
