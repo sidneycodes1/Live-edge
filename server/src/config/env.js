@@ -16,6 +16,17 @@ const schema = z.object({
   SIM_GRADUATION_VOLUME: z.coerce.number().default(100),
   SIM_LIQUIDITY_B: z.coerce.number().default(50),
   SIM_CREATE_FEE: z.coerce.number().min(0).default(1),
+  // Twitch live integration (feature/twitch-live-integration). All optional so the
+  // app boots and degrades to demo/fallback mode when creds are absent — the exact
+  // same policy as PANTA_API_KEY. Never logged/echoed (see integrity rules).
+  TWITCH_CLIENT_ID: z.string().optional(),
+  TWITCH_CLIENT_SECRET: z.string().optional(),
+  TWITCH_FALLBACK_CHANNEL: z.string().optional(),
+  // Embed `parent` must be the bare hosting domain (no protocol) per
+  // dev.twitch.tv/docs/embed/video-and-clips/. Driven by env, not hardcoded, so it
+  // doesn't silently break on deploy. Empty → frontend derives it from location.hostname.
+  TWITCH_PARENT_DOMAIN: z.string().optional(),
+  TWITCH_CACHE_TTL_MS: z.coerce.number().min(1000).default(45000),
 });
 
 export function loadEnv(raw = process.env) {
@@ -32,5 +43,11 @@ export function loadEnv(raw = process.env) {
     warnings.push(`PANTA_MODE=${mode} but PANTA_API_KEY missing → running in sim mode`);
     mode = 'sim';
   }
-  return { ...env, effectiveMode: mode, warnings };
+  // Twitch: real Helix calls / embeds need both creds. Missing → demo/fallback mode
+  // (labeled), never a crash. Mirrors the Panta downgrade above.
+  const twitchEnabled = !!(env.TWITCH_CLIENT_ID && env.TWITCH_CLIENT_SECRET);
+  if (!twitchEnabled) {
+    warnings.push('TWITCH_CLIENT_ID/TWITCH_CLIENT_SECRET missing → Twitch live browse runs in demo/fallback mode (no real Helix calls)');
+  }
+  return { ...env, effectiveMode: mode, twitchEnabled, warnings };
 }
