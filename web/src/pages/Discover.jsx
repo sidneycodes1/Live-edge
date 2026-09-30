@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api.js';
 import MarketCard from '../components/MarketCard.jsx';
 import TwitchLiveCard from '../components/TwitchLiveCard.jsx';
@@ -12,6 +13,7 @@ export default function Discover() {
   const [twitch, setTwitch] = useState({ status: 'loading', items: [], enabled: false });
   const [loading, setLoading] = useState(true);
   const [waking, setWaking] = useState(false);
+  const [params] = useSearchParams();
 
   useEffect(() => {
     let cancelled = false;
@@ -45,14 +47,29 @@ export default function Discover() {
   // broken (see feature spec §Phase B).
   const showTwitch = twitch.status === 'ready' && twitch.enabled && twitch.items.length > 0;
 
+  // Client-side search from the top bar (?q=...). Matches the bet question, the
+  // room/stream title, the owner, and the category.
+  const q = (params.get('q') || '').trim().toLowerCase();
+  const visibleRooms = !q
+    ? (rooms || [])
+    : (rooms || []).filter((r) => {
+        const hay = [r.title, r.owner?.displayName, r.heroMarket?.question, r.heroMarket?.category]
+          .filter(Boolean).join(' ').toLowerCase();
+        return hay.includes(q);
+      });
+
   const roomsBlock = (!rooms || rooms.length === 0)
     ? <EmptyState title="No live rooms yet" body="Be the first to create a room and drop a market." />
     : (
       <>
-        <h2 className="font-heading font-bold text-lg mt-2 text-white/80">Live Rooms <span className="text-xs font-normal text-white/40">(your simulated markets)</span></h2>
-        <div className="grid md:grid-cols-3 gap-4 mt-3">
-          {rooms.map(r => <MarketCard key={r.id} room={r} />)}
-        </div>
+        <h2 className="font-heading font-bold text-lg mt-2 text-white/80">Live Rooms <span className="text-xs font-normal text-white/40">{q ? `(matching “${params.get('q')}”)` : '(your simulated markets)'}</span></h2>
+        {visibleRooms.length === 0
+          ? <EmptyState title="No matches" body={`Nothing here matches “${params.get('q')}”.`} />
+          : (
+            <div className="grid md:grid-cols-3 gap-4 mt-3">
+              {visibleRooms.map((r) => <MarketCard key={r.id} room={r} />)}
+            </div>
+          )}
       </>
     );
 

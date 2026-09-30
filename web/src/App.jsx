@@ -1,5 +1,6 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
 import TopNav from './components/TopNav.jsx';
+import SideRail from './components/SideRail.jsx';
 import BottomTabs from './components/BottomTabs.jsx';
 import Discover from './pages/Discover.jsx';
 import Room from './pages/Room.jsx';
@@ -41,23 +42,42 @@ export default function App() {
       <AuthContext.Provider value={authValue}>
         <BalanceContext.Provider value={balanceValue}>
           <BrowserRouter>
-            <TopNav />
-            <Routes>
-              <Route path="/" element={<Discover />} />
-              <Route path="/room/:id" element={<Room />} />
-              <Route path="/twitch/:login" element={<TwitchRoom />} />
-              <Route path="/creator/:roomId" element={<Creator />} />
-              <Route path="/creator" element={<Creator />} />
-              <Route path="/portfolio" element={<Portfolio />} />
-              <Route path="/signin" element={<SignIn />} />
-              <Route path="/about" element={<About />} />
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-            <BottomTabs />
+            <Shell />
             <Toast message={toast} onDone={() => setToast('')} />
           </BrowserRouter>
         </BalanceContext.Provider>
       </AuthContext.Provider>
     </ToastContext.Provider>
+  );
+}
+
+// The persistent channel rail belongs on the Browse surface only. Watch pages
+// (room/twitch), the creator cockpit, portfolio and sign-in use the full width,
+// mirroring how Twitch drops the sidebar on a VOD/theater view — and keeping
+// those pages' first paint lean.
+function Shell() {
+  const { pathname } = useLocation();
+  const showRail = pathname === '/';
+  return (
+    <>
+      <TopNav />
+      <div className="flex items-start">
+        {showRail && <SideRail />}
+        <div className="flex-1 min-w-0">
+          <Routes>
+            <Route path="/" element={<Discover />} />
+            <Route path="/room/:id" element={<Room />} />
+            <Route path="/twitch/:login" element={<TwitchRoom />} />
+            <Route path="/creator/:roomId" element={<Creator />} />
+            <Route path="/creator" element={<Creator />} />
+            <Route path="/portfolio" element={<Portfolio />} />
+            <Route path="/signin" element={<SignIn />} />
+            <Route path="/about" element={<About />} />
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </div>
+      </div>
+      <BottomTabs />
+    </>
   );
 }
