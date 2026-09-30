@@ -26,6 +26,20 @@ export default function Discover() {
     return () => { cancelled = true; clearTimeout(t); };
   }, [loading]);
 
+  // Live motion at the grid level (plan §1.1): re-poll the cheap rooms list every 5s
+  // so card odds drift on their own. OddsBar detects the price change and animates.
+  // Pauses when the tab is hidden to avoid needless background churn.
+  useEffect(() => {
+    if (loading) return;
+    let active = true;
+    const tick = () => {
+      if (document.visibilityState !== 'visible') return;
+      api.listRooms().then((r) => { if (active) setRooms(r); }).catch(() => {});
+    };
+    const id = setInterval(tick, 5000);
+    return () => { active = false; clearInterval(id); };
+  }, [loading]);
+
   // "Live on Twitch" — a clearly-labeled REAL layer, distinct from the simulated
   // rooms below. Hidden entirely when disabled or empty/degraded so it never looks
   // broken (see feature spec §Phase B).
@@ -66,7 +80,7 @@ export default function Discover() {
           <h2 className="font-heading font-bold">Real markets on Panta</h2>
           <p className="text-xs text-white/40">Read-only live catalog</p>
           <div className="flex gap-2 overflow-x-auto mt-2 pb-2">
-            {catalog.items.slice(0, 6).map(m => <div key={m.id || m.question} className="min-w-[220px] bg-surface border border-white/10 rounded-card p-3 text-xs">{m.question || m.title || 'Market'}</div>)}
+            {catalog.items.slice(0, 6).map((m, i) => <div key={m.id || m.marketId || m.question || `cat-${i}`} className="min-w-[220px] bg-surface border border-white/10 rounded-card p-3 text-xs">{m.question || m.title || 'Market'}</div>)}
           </div>
         </div>
       )}

@@ -149,7 +149,13 @@ export function createHybrid({ db, env }) {
       const wallet = typeof quoteIdObj === 'string' ? undefined : (quoteIdObj.wallet || undefined);
       const userId = typeof quoteIdObj === 'string' ? undefined : (quoteIdObj.userId || undefined);
       const maxSlippageBps = typeof quoteIdObj === 'string' ? undefined : (quoteIdObj.maxSlippageBps || 100);
-      const { rows } = await db.query('select market_id, wallet, user_id from orders where id=$1', [quoteId]);
+      // F-021: `orders` has no `wallet` column — joining to `users` is the only
+      // correct way to resolve the order owner's wallet here. (Selecting orders.wallet
+      // threw a schema error that masked every hybrid trade as a 500.)
+      const { rows } = await db.query(
+        'select o.market_id, o.user_id, u.wallet from orders o join users u on u.id = o.user_id where o.id=$1',
+        [quoteId],
+      );
       if (rows.length) {
         const { rows: mRows } = await db.query('select source from markets where id=$1', [rows[0].market_id]);
         if (mRows[0]?.source === 'panta' && live) {

@@ -40,6 +40,13 @@ export function roomsRouter({ db, hub, twitch }) {
                 noPrice: Number(hero.no_price),
                 status: hero.status,
                 isSeed: hero.is_seed,
+                // Additive fields the Discover card needs to read as a live tile:
+                // thumbnail, category (rails/filters), volume (social proof), and
+                // end_time (countdown). No behavior change to existing consumers.
+                category: hero.category,
+                image_url: hero.image_url,
+                volume: Number(hero.volume),
+                end_time: hero.end_time,
               }
             : null,
         });
