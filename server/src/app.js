@@ -37,7 +37,7 @@ export async function createApp({ env: rawEnv, db: existingDb } = {}) {
   const db = existingDb || (await createDb(env));
   if (!existingDb) {
     await migrate(db);
-    await seed(db);
+    await seed(db, { fallbackChannel: env.TWITCH_FALLBACK_CHANNEL });
   }
   const panta = createPanta({ db, env });
   // Twitch live client (feature/twitch-live-integration). Always constructed; it

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-export async function seed(db) {
+export async function seed(db, { fallbackChannel } = {}) {
   const { rows: existing } = await db.query('select count(*) as c from rooms');
   if (Number(existing[0].c) > 0) return;
 
@@ -14,7 +14,12 @@ export async function seed(db) {
 
   const r1 = randomUUID();
   const r2 = randomUUID();
-  await db.query(`insert into rooms(id, owner_id, title, video_url, status, is_seed) values($1,$2,$3,$4,'live',true)`, [r1, u1, 'Elder Ring - First Try Malenia', 'https://example.com/stream1']);
+  // r1 optionally becomes the guaranteed "always-live" demo room: when a reliable
+  // 24/7 channel is configured (TWITCH_FALLBACK_CHANNEL) we bind it so judges always
+  // have one real video+chat+market room. Embeds don't need API creds; if unset, this
+  // stays a normal simulated room (we never fake a live channel).
+  const ch1 = (fallbackChannel || '').trim().toLowerCase() || null;
+  await db.query(`insert into rooms(id, owner_id, title, video_url, twitch_channel, status, is_seed) values($1,$2,$3,$4,$5,'live',true)`, [r1, u1, 'Elder Ring - First Try Malenia', 'https://example.com/stream1', ch1]);
   await db.query(`insert into rooms(id, owner_id, title, video_url, status, is_seed) values($1,$2,$3,$4,'live',true)`, [r2, u2, 'Speedrun: Any% in 30 min?', 'https://example.com/stream2']);
 
   const now = new Date();

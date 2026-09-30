@@ -21,7 +21,7 @@ let port = env.PORT;
 async function start() {
   const db = await createDb(env);
   await migrate(db);
-  await seed(db);
+  await seed(db, { fallbackChannel: env.TWITCH_FALLBACK_CHANNEL });
   const app = await createApp({ env, db });
   for (const w of env.warnings || []) console.warn(w);
   console.warn(`LiveEdge effectiveMode=${env.effectiveMode} requested=${env.PANTA_MODE}`);

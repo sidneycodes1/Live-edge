@@ -27,6 +27,7 @@ export function roomsRouter({ db, hub }) {
           id: room.id,
           title: room.title,
           video_url: room.video_url,
+          twitch_channel: room.twitch_channel || null,
           status: room.status,
           isSeed: room.is_seed,
           owner: { displayName: room.owner_name, wallet: room.owner_wallet },
@@ -66,6 +67,7 @@ export function roomsRouter({ db, hub }) {
         id: room.id,
         title: room.title,
         video_url: room.video_url,
+        twitch_channel: room.twitch_channel || null,
         status: room.status,
         isSeed: room.is_seed,
         owner: { displayName: room.owner_name },
@@ -107,6 +109,9 @@ export function roomsRouter({ db, hub }) {
   const createSchema = z.object({
     title: z.string().min(3).max(80),
     videoUrl: z.string().url().optional().or(z.literal('')).optional(),
+    // Optional real Twitch channel login to bind to this room (Phase C/D). Stored
+    // lowercased; validated server-side at creation time (Phase D).
+    twitchChannel: z.string().min(1).max(100).optional().or(z.literal('')).optional(),
   });
 
   r.post('/', validate(createSchema), async (req, res, next) => {
@@ -114,8 +119,9 @@ export function roomsRouter({ db, hub }) {
       if (!req.user) return res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Unauthorized' } });
       const title = sanitizeText(req.body.title);
       const videoUrl = req.body.videoUrl || null;
+      const twitchChannel = (req.body.twitchChannel || '').trim().toLowerCase() || null;
       const id = randomUUID();
-      await db.query(`insert into rooms(id, owner_id, title, video_url) values($1,$2,$3,$4)`, [id, req.user.id, title, videoUrl]);
+      await db.query(`insert into rooms(id, owner_id, title, video_url, twitch_channel) values($1,$2,$3,$4,$5)`, [id, req.user.id, title, videoUrl, twitchChannel]);
       const { rows } = await db.query('select * from rooms where id=$1', [id]);
       res.status(201).json(rows[0]);
     } catch (e) {
