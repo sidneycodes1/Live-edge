@@ -1,8 +1,13 @@
-import { useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api.js';
 import MarketCard from '../components/MarketCard.jsx';
 import TwitchLiveCard from '../components/TwitchLiveCard.jsx';
+import Rail from '../components/Rail.jsx';
+import CategoryChips from '../components/CategoryChips.jsx';
+import OddsBar from '../components/OddsBar.jsx';
+import LiveThumb from '../components/LiveThumb.jsx';
+import MoneyChip from '../components/MoneyChip.jsx';
 import Skeleton from '../components/Skeleton.jsx';
 import EmptyState from '../components/EmptyState.jsx';
 import WakeServer from '../components/WakeServer.jsx';
@@ -14,6 +19,7 @@ export default function Discover() {
   const [loading, setLoading] = useState(true);
   const [waking, setWaking] = useState(false);
   const [params] = useSearchParams();
+  const [cat, setCat] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -42,6 +48,26 @@ export default function Discover() {
     return () => { active = false; clearInterval(id); };
   }, [loading]);
 
+  // "Biggest movers" needs price history across polls. Track the last-seen YES price
+  // per market in a ref and surface only rooms whose odds actually moved — honest
+  // motion, never a fabricated number. Empty on first paint (nothing has moved yet).
+  const prevPrices = useRef(new Map());
+  const [movers, setMovers] = useState([]);
+  useEffect(() => {
+    if (!rooms) return;
+    const scored = rooms.map((r) => {
+      const hm = r.heroMarket;
+      if (!hm || hm.yesPrice == null) return { r, delta: 0 };
+      const prev = prevPrices.current.get(hm.id);
+      const delta = prev == null ? 0 : hm.yesPrice - prev;
+      prevPrices.current.set(hm.id, hm.yesPrice);
+      return { r, delta };
+    });
+    setMovers(scored.filter((x) => Math.abs(x.delta) > 0).sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta)).map((x) => x.r));
+  }, [rooms]);
+
+  const all = rooms || [];
+
   // "Live on Twitch" — a clearly-labeled REAL layer, distinct from the simulated
   // rooms below. Hidden entirely when disabled or empty/degraded so it never looks
   // broken (see feature spec §Phase B).
@@ -50,28 +76,26 @@ export default function Discover() {
   // Client-side search from the top bar (?q=...). Matches the bet question, the
   // room/stream title, the owner, and the category.
   const q = (params.get('q') || '').trim().toLowerCase();
-  const visibleRooms = !q
-    ? (rooms || [])
-    : (rooms || []).filter((r) => {
+  const searched = !q
+    ? all
+    : all.filter((r) => {
         const hay = [r.title, r.owner?.displayName, r.heroMarket?.question, r.heroMarket?.category]
           .filter(Boolean).join(' ').toLowerCase();
         return hay.includes(q);
       });
+  const gridRooms = cat ? searched.filter((r) => r.heroMarket?.category === cat) : searched;
 
-  const roomsBlock = (!rooms || rooms.length === 0)
-    ? <EmptyState title="No live rooms yet" body="Be the first to create a room and drop a market." />
-    : (
-      <>
-        <h2 className="font-heading font-bold text-lg mt-2 text-white/80">Live Rooms <span className="text-xs font-normal text-white/40">{q ? `(matching “${params.get('q')}”)` : '(your simulated markets)'}</span></h2>
-        {visibleRooms.length === 0
-          ? <EmptyState title="No matches" body={`Nothing here matches “${params.get('q')}”.`} />
-          : (
-            <div className="grid md:grid-cols-3 gap-4 mt-3">
-              {visibleRooms.map((r) => <MarketCard key={r.id} room={r} />)}
-            </div>
-          )}
-      </>
-    );
+  // Categories are derived from the live rooms only (no invented taxonomy).
+  const categories = Array.from(new Set(all.map((r) => r.heroMarket?.category).filter(Boolean))).sort();
+
+  // Rails re-present the same rooms through different lenses (abundance by
+  // re-sorting, never fabrication).
+  const trending = [...all].filter((r) => r.heroMarket).sort((a, b) => (b.heroMarket.volume || 0) - (a.heroMarket.volume || 0)).slice(0, 10);
+  const closing = [...all]
+    .filter((r) => r.heroMarket && r.heroMarket.status === 'open' && r.heroMarket.end_time)
+    .sort((a, b) => new Date(a.heroMarket.end_time) - new Date(b.heroMarket.end_time))
+    .slice(0, 10);
+  const featured = trending.find((r) => r.heroMarket.status === 'open') || null;
 
   if (loading) return <div className="max-w-6xl mx-auto px-4 py-6">{waking && <WakeServer />}<div className="grid md:grid-cols-3 gap-4 mt-4"><Skeleton className="h-48" /><Skeleton className="h-48" /><Skeleton className="h-48" /></div></div>;
 
@@ -90,7 +114,48 @@ export default function Discover() {
         </section>
       )}
 
-      {roomsBlock}
+      {featured && (
+        <Link to={`/room/${featured.id}`} data-testid="featured-hero" className="group block mt-2 rounded-card overflow-hidden border border-white/10 bg-surface hover:border-white/25 transition">
+          <div className="grid md:grid-cols-2">
+            <div className="order-2 md:order-1 p-5 flex flex-col justify-center">
+              <span className="text-[11px] uppercase tracking-wide text-live font-bold">Featured · live now</span>
+              <h3 className="font-heading font-bold text-2xl mt-1.5 leading-tight line-clamp-3">{featured.heroMarket.question}</h3>
+              <div className="mt-4"><OddsBar yesPrice={featured.heroMarket.yesPrice} noPrice={featured.heroMarket.noPrice} /></div>
+              <div className="flex items-center gap-3 mt-3 text-xs text-white/55">
+                <MoneyChip />
+                <span className="num">{Math.round((featured.heroMarket.volume || 0) / 10)} betting</span>
+                <span className="truncate">{featured.owner?.displayName}</span>
+              </div>
+            </div>
+            <div className="order-1 md:order-2"><LiveThumb imageUrl={featured.heroMarket.image_url} title={featured.heroMarket.question} viewers={featured.viewers} /></div>
+          </div>
+        </Link>
+      )}
+
+      {categories.length > 0 && (
+        <div className="mt-6">
+          <CategoryChips categories={categories} active={cat} onSelect={setCat} />
+        </div>
+      )}
+
+      <Rail title="🔥 Biggest movers" rooms={movers} testid="rail-movers" />
+      <Rail title="⏳ Closing soon" rooms={closing} testid="rail-closing" />
+      <Rail title="📈 Trending now" rooms={trending} testid="rail-trending" />
+
+      {all.length === 0 ? (
+        <EmptyState title="No live rooms yet" body="Be the first to create a room and drop a market." />
+      ) : (
+        <>
+          <h2 className="font-heading font-bold text-lg mt-8 text-white/80">Live Rooms <span className="text-xs font-normal text-white/40">{q ? `(matching “${params.get('q')}”)` : '(your simulated markets)'}</span></h2>
+          {gridRooms.length === 0
+            ? <EmptyState title="No matches" body={`Nothing here matches ${q ? `“${params.get('q')}”` : 'this filter'}.`} />
+            : (
+              <div className="grid md:grid-cols-3 gap-4 mt-3">
+                {gridRooms.map((r) => <MarketCard key={r.id} room={r} />)}
+              </div>
+            )}
+        </>
+      )}
 
       {catalog && catalog.items && catalog.items.length > 0 && (
         <div className="mt-8">

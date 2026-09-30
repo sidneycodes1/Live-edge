@@ -92,6 +92,10 @@ async function main() {
 
   // ---- 3. Twitch-backed MARKET room: video + chat + working market together ----
   await page.goto(`${WEB}/room/${TWITCH_MARKET_ROOM_ID}`, { waitUntil: 'domcontentloaded' });
+  // Video, chat and the market commit in the SAME render once the (stubbed) room
+  // fetch resolves. Wait for the branch to mount before sampling so this isn't a
+  // race against first paint — the assertion itself (>=1) is unchanged.
+  await page.getByTestId('twitch-video-embed').waitFor({ state: 'attached', timeout: 8000 }).catch(() => {});
   const mVideo = await page.getByTestId('twitch-video-embed').count();
   const mChat = await page.locator('iframe[src*="/embed/lofigirl/chat"]').count();
   const yesBtn = await page.getByRole('button', { name: 'YES', exact: true }).count();
@@ -103,6 +107,7 @@ async function main() {
   // ---- 4. Mobile layout ----
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${WEB}/room/${TWITCH_MARKET_ROOM_ID}`, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Chat' }).first().waitFor({ state: 'attached', timeout: 8000 }).catch(() => {});
   const hasToggle = await page.getByRole('button', { name: 'Chat' }).count();
   rec('Mobile shows the Chat/Market toggle (no permanent sidebar overlap)', hasToggle >= 1, `toggle=${hasToggle}`);
   await page.screenshot({ path: `${SHOTS}/04-market-room-mobile.png`, fullPage: true });
