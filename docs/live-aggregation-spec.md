@@ -226,7 +226,13 @@ them as best-effort with the floor/empty fallback behind them.
 ## 7. Config & env (server) — additive, all optional → degrade like Twitch
 
 Existing (`config/env.js`): `TWITCH_CLIENT_ID/SECRET/FALLBACK_CHANNEL/PARENT_DOMAIN/CACHE_TTL_MS`,
-already surfaced via `/api/config` as `{ twitch: { enabled, parent } }`.
+already surfaced via `/api/config` as `{ twitch: { enabled, parentDomain, fallbackChannel } }`.
+
+> **Verifier ruling (2026-10-01):** the JSON key is **`parentDomain`** (bare host, no
+> protocol), NOT `parent`. `parent` exists only as the Twitch *embed query param* the
+> frontend builds from `parentDomain` (`…&parent=<parentDomain>`). The shipped
+> `routes/config.js` and Agent B's browser-verified frontend both use `parentDomain`;
+> the doc is corrected to match them. Do NOT rename working code to chase the old doc.
 
 **Add (env.js, zod, optional; each absent key disables its source, no boot error):**
 
@@ -242,12 +248,12 @@ LIVE_CACHE_TTL_MS   (grid cache, default 30000)
 
 ```
 features: { twitchLive, kickLive, youtubeLive, floorLive },   // booleans from creds
-twitch: { enabled, parent },                                   // unchanged
+twitch: { enabled, parentDomain, fallbackChannel },            // back-compat block (see ruling above)
 kick:    { enabled },
 youtube: { enabled },
 floor:   { enabled, hlsBase }
 ```
-Only ever exposes `enabled`/`parent`/`hlsBase` — **never** a secret or a token.
+Only ever exposes `enabled` / `parentDomain` / `fallbackChannel` / `hlsBase` — **never** a secret or a token.
 
 ---
 
