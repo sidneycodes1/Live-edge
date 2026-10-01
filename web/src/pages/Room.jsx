@@ -2,7 +2,7 @@ import { useParams, Link } from 'react-router-dom';
 import { useApi } from '../hooks/useApi.js';
 import { api } from '../lib/api.js';
 import { useSSE } from '../hooks/useSSE.js';
-import VideoStage from '../components/VideoStage.jsx';
+import RoomFeed from '../components/RoomFeed.jsx';
 import TwitchVideo from '../components/TwitchVideo.jsx';
 import TwitchChat from '../components/TwitchChat.jsx';
 import { useTwitchConfig } from '../hooks/useTwitchConfig.js';
@@ -130,7 +130,7 @@ export default function Room() {
       <h1 className="font-heading font-bold text-xl mt-2">{room.title}</h1>
       <div className="grid md:grid-cols-[65%_35%] gap-4 mt-4">
         <div className="space-y-4 min-w-0">
-          <VideoStage videoUrl={room.video_url} />
+          <RoomFeed videoUrl={room.video_url} parent={parent} />
           <RecentBetsTicker events={events} />
           {/* mobile-only switch between chat and market */}
           <div className="md:hidden flex gap-2">
