@@ -44,8 +44,10 @@ function throwingTwitch(label) {
 }
 
 // Baseline no-op floor so ladder tests can opt-in/out of the guaranteed rung.
+// Tests that need the guaranteed rung define a floor stub inline with the
+// specific getGuaranteedChannel() payload they assert on, so nothing here is
+// reused across scenarios that would hide a change in expectations.
 const floorOff = { getGuaranteedChannel: () => [] };
-const floorOn = { getGuaranteedChannel: () => [ch('floor', 'guaranteed', 0, { watchUrl: 'https://floor/hls.m3u8', title: 'Always-on' })] };
 
 // Silence warn output from the aggregator (it warns on every degraded source).
 const quiet = { warn: () => {} };
