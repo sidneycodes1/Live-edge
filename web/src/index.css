@@ -46,3 +46,27 @@ h1,h2,h3 { font-family: 'Space Grotesk', system-ui, sans-serif; }
 /* Horizontal rails / tickers scroll by swipe but shouldn't show a chunky bar. */
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 .no-scrollbar::-webkit-scrollbar { display: none; }
+
+/* Design-system MASTER (design-system/liveedge/MASTER.md): visible keyboard focus
+   is required for a11y. A high-contrast ring that reads on the cinema-dark surface
+   for every interactive element, shown only for keyboard/AT focus (:focus-visible),
+   so mouse clicks aren't noisy. */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid #FFFFFF;
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* Honour prefers-reduced-motion: freeze the ambient "live" animations and kill
+   transition/animation churn. The motion is decorative, so the UI stays fully
+   usable when it's disabled (design MASTER + WCAG 2.3.3). */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+  .eq-bar, .sweep, .kenburns, .flash-up, .flash-down { animation: none !important; }
+  .animate-pulse { animation: none !important; }
+}

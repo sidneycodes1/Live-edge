@@ -1,6 +1,7 @@
 // F-014: this is a deliberate animated "simulated live feed" preview, not a dead
 // placeholder. A real clip (an .mp4 video_url) always takes priority and plays
 // inline; everything else renders the branded mock so the room never looks broken.
+import { IconPlay } from './Icons.jsx';
 const BARS = [0.9, 0.5, 1.2, 0.7, 1.05, 0.6, 1.3, 0.8, 0.55, 1.1, 0.75, 1.0];
 
 export default function VideoStage({ videoUrl }) {
@@ -19,8 +20,8 @@ export default function VideoStage({ videoUrl }) {
       <div className="absolute top-3 right-3 text-[11px] text-white/40">Simulated feed</div>
       {/* centered glyph + equalizer */}
       <div className="absolute inset-0 flex flex-col items-center justify-center gap-4">
-        <div className="w-16 h-16 rounded-full bg-white/5 border border-white/10 flex items-center justify-center">
-          <span className="text-2xl translate-x-[2px]">▶</span>
+        <div className="w-16 h-16 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-white/80">
+          <IconPlay className="w-7 h-7 translate-x-[1px]" />
         </div>
         <div className="flex items-end gap-1.5 h-10" aria-hidden="true">
           {BARS.map((d, i) => (

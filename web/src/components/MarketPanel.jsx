@@ -1,5 +1,6 @@
 import OddsBar from './OddsBar.jsx';
 import MoneyChip from './MoneyChip.jsx';
+import { IconClock } from './Icons.jsx';
 import { fmtTimeLeft } from '../lib/format.js';
 
 export default function MarketPanel({ market, onTrade }) {
@@ -12,7 +13,7 @@ export default function MarketPanel({ market, onTrade }) {
       <div className="flex items-center gap-2 text-xs">
         <span className={`px-2 py-1 rounded-full text-xs ${market.status==='open'?'bg-live text-black':'bg-white/10'}`}>{market.status}</span>
         {timeLeft && timeLeft !== 'closed' && (
-          <span data-testid="market-countdown" className="num inline-flex items-center gap-1 px-2 py-1 rounded-full bg-white/5 border border-white/10 text-white/60">⏳ {timeLeft}</span>
+          <span data-testid="market-countdown" className="num inline-flex items-center gap-1 px-2 py-1 rounded-full bg-white/5 border border-white/10 text-white/60"><IconClock className="w-3.5 h-3.5" /> {timeLeft}</span>
         )}
         <span className="ml-auto flex items-center gap-2">
           {market.graduated && <span className="text-yes">graduated</span>}
