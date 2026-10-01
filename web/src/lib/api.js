@@ -52,6 +52,9 @@ export const api = {
   listRooms: () => request('/api/rooms'),
   getRoom: (id) => request(`/api/rooms/${id}`),
   listTwitchLive: (limit=12) => request(`/api/twitch/live?limit=${limit}`),
+  // Multi-provider live grid (docs/live-aggregation-spec.md §3). Never 500s; the
+  // response carries the never-empty ladder flags. Normalized in lib/live.js.
+  getLive: (limit=24) => request(`/api/live?limit=${limit}`),
   createRoom: (title, videoUrl, twitchChannel) => request('/api/rooms', { method:'POST', body:{ title, videoUrl, twitchChannel: twitchChannel || undefined }, auth:true }),
   validateTwitchChannel: (login) => request(`/api/twitch/validate?login=${encodeURIComponent(login)}`),
   getMarket: (id) => request(`/api/markets/${id}`),
