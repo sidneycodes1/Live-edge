@@ -12,6 +12,13 @@ export function configRouter(env) {
         previewBuy: env.effectiveMode === 'hybrid',
         twitchLive: Boolean(env.twitchEnabled),
       },
+      // Multi-source live feed (GET /api/live). Per-source `enabled` = kill-switch
+      // flag AND creds (see config/env.js liveSources). Non-secret only.
+      live: {
+        sources: env.liveSources || { twitch: false, kick: false, youtube: false, floor: false },
+        // The never-empty ladder order the aggregator falls through.
+        ladder: ['twitch', 'kick', 'youtube', 'stale', 'floor'],
+      },
       // Public, non-secret Twitch embed config. `parentDomain` must equal the
       // bare hosting domain (no protocol) per dev.twitch.tv/docs/embed/;
       // empty → frontend falls back to location.hostname. Never includes creds.

@@ -9,6 +9,10 @@ import { migrate } from './db/migrate.js';
 import { seed } from './db/seed.js';
 import { createPanta } from './panta/index.js';
 import { createTwitchClient } from './twitch/client.js';
+import { createKickClient } from './kick/client.js';
+import { createYouTubeClient } from './youtube/client.js';
+import { createFloorClient } from './floor/client.js';
+import { createLiveAggregator } from './aggregator/index.js';
 import { createHub } from './services/sse.js';
 import { createPriceCache } from './services/priceCache.js';
 import { healthRouter } from './routes/health.js';
@@ -25,6 +29,7 @@ import { streamerRouter } from './routes/streamer.js';
 import { faucetRouter } from './routes/faucet.js';
 import { notificationsRouter } from './routes/notifications.js';
 import { twitchRouter } from './routes/twitch.js';
+import { liveRouter } from './routes/live.js';
 import { ledgerRouter } from './routes/ledger.js';
 import { createNotifier } from './services/notify.js';
 import { createAuth } from './middleware/auth.js';
@@ -47,6 +52,40 @@ export async function createApp({ env: rawEnv, db: existingDb } = {}) {
     clientSecret: env.TWITCH_CLIENT_SECRET,
     cacheTtlMs: env.TWITCH_CACHE_TTL_MS,
   });
+  // Multi-source live feed (feature/streaming-ui-overhaul → live-aggregation). All
+  // clients are always constructed and self-degrade ([] / no network) when creds
+  // are absent, exactly like twitch above. `liveSources` comes from loadEnv in prod;
+  // the fallback here keeps hand-built test envs (no loadEnv) booting unchanged.
+  const kick = createKickClient({
+    clientId: env.KICK_CLIENT_ID,
+    clientSecret: env.KICK_CLIENT_SECRET,
+    cacheTtlMs: env.KICK_CACHE_TTL_MS,
+  });
+  const youtube = createYouTubeClient({
+    apiKey: env.YOUTUBE_API_KEY,
+    query: env.YOUTUBE_LIVE_QUERY,
+    cacheTtlMs: env.YOUTUBE_CACHE_TTL_MS,
+  });
+  const floorFallback = env.floorFallback || {
+    url: env.FLOOR_LIVEPEER_URL || '',
+    title: env.FLOOR_TITLE || '',
+    channelName: env.FLOOR_CHANNEL_NAME || '',
+    category: env.FLOOR_CATEGORY || '',
+    thumbnailUrl: env.FLOOR_THUMBNAIL_URL || '',
+  };
+  const floor = createFloorClient({
+    apiKey: env.LIVEPEER_API_KEY,
+    hlsBase: env.LIVEPEER_HLS_BASE,
+    fallback: floorFallback,
+    cacheTtlMs: env.FLOOR_CACHE_TTL_MS,
+  });
+  const liveSources = env.liveSources || {
+    twitch: Boolean(env.TWITCH_CLIENT_ID && env.TWITCH_CLIENT_SECRET),
+    kick: Boolean(env.KICK_CLIENT_ID && env.KICK_CLIENT_SECRET),
+    youtube: Boolean(env.YOUTUBE_API_KEY),
+    floor: Boolean(env.FLOOR_LIVEPEER_URL || env.LIVEPEER_API_KEY),
+  };
+  const liveAggregator = createLiveAggregator({ twitch, kick, youtube, floor, enabled: liveSources });
   const hub = createHub();
   const notify = createNotifier(db, hub);
   const priceCache = createPriceCache({ ttlMs: 10000 });
@@ -90,6 +129,10 @@ export async function createApp({ env: rawEnv, db: existingDb } = {}) {
   // Twitch "currently live" browse (public). Reads real Helix when creds exist,
   // otherwise returns an empty/demo list — see routes/twitch.js.
   app.use('/api/twitch', twitchRouter({ twitch, enabled: env.twitchEnabled }));
+
+  // Resilient multi-source live feed (public): merges Twitch/Kick/YouTube/Floor into
+  // LiveChannel[] with a never-empty ladder. Never 500s — see routes/live.js.
+  app.use('/api/live', liveRouter({ aggregator: liveAggregator, enabled: liveSources }));
 
   // catalog public
   // rooms public (list/detail)
@@ -152,6 +195,8 @@ export async function createApp({ env: rawEnv, db: existingDb } = {}) {
   app._env = env;
   app._panta = panta;
   app._twitch = twitch;
+  app._liveAggregator = liveAggregator;
+  app._liveSources = liveSources;
   app._interval = interval;
 
   return app;
