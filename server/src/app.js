@@ -63,19 +63,22 @@ export async function createApp({ env: rawEnv, db: existingDb } = {}) {
   });
   const youtube = createYouTubeClient({
     apiKey: env.YOUTUBE_API_KEY,
-    query: env.YOUTUBE_LIVE_QUERY,
+    query: env.YOUTUBE_QUERY,
     cacheTtlMs: env.YOUTUBE_CACHE_TTL_MS,
   });
+  // The floor client's `fallback` arg is the network-free guaranteed card (§3).
+  // loadEnv already builds `floorFallback`; the literal here keeps hand-built test
+  // envs booting unchanged. thumbnailUrl stays empty (§1/§4: never fabricate a preview).
   const floorFallback = env.floorFallback || {
-    url: env.FLOOR_LIVEPEER_URL || '',
-    title: env.FLOOR_TITLE || '',
-    channelName: env.FLOOR_CHANNEL_NAME || '',
-    category: env.FLOOR_CATEGORY || '',
-    thumbnailUrl: env.FLOOR_THUMBNAIL_URL || '',
+    url: env.FLOOR_FALLBACK_URL || '',
+    title: env.FLOOR_FALLBACK_TITLE || '',
+    channelName: env.FLOOR_FALLBACK_CHANNEL || '',
+    category: env.FLOOR_FALLBACK_CATEGORY || '',
+    thumbnailUrl: '',
   };
   const floor = createFloorClient({
     apiKey: env.LIVEPEER_API_KEY,
-    hlsBase: env.LIVEPEER_HLS_BASE,
+    hlsBase: env.FLOOR_HLS_BASE,
     fallback: floorFallback,
     cacheTtlMs: env.FLOOR_CACHE_TTL_MS,
   });
@@ -83,7 +86,7 @@ export async function createApp({ env: rawEnv, db: existingDb } = {}) {
     twitch: Boolean(env.TWITCH_CLIENT_ID && env.TWITCH_CLIENT_SECRET),
     kick: Boolean(env.KICK_CLIENT_ID && env.KICK_CLIENT_SECRET),
     youtube: Boolean(env.YOUTUBE_API_KEY),
-    floor: Boolean(env.FLOOR_LIVEPEER_URL || env.LIVEPEER_API_KEY),
+    floor: Boolean(env.FLOOR_FALLBACK_URL || env.LIVEPEER_API_KEY),
   };
   const liveAggregator = createLiveAggregator({ twitch, kick, youtube, floor, enabled: liveSources });
   const hub = createHub();

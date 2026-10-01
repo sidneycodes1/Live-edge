@@ -27,40 +27,35 @@ const schema = z.object({
   // doesn't silently break on deploy. Empty → frontend derives it from location.hostname.
   TWITCH_PARENT_DOMAIN: z.string().optional(),
   TWITCH_CACHE_TTL_MS: z.coerce.number().min(1000).default(45000),
-  // Multi-source live feed (feature/streaming-ui-overhaul → live-aggregation).
-  // Every source is OPTIONAL and creds-gated exactly like Twitch: flag on + creds
-  // present = real calls; otherwise the source self-degrades (never a crash). The
-  // per-source *_ENABLED flags let us turn a provider off at the edge (kill switch)
-  // independent of creds. Strict 'true'/'false' enums (no loose boolean coercion).
-  LIVE_TWITCH_ENABLED: z.enum(['true', 'false']).default('true'),
-  LIVE_KICK_ENABLED: z.enum(['true', 'false']).default('true'),
-  LIVE_YOUTUBE_ENABLED: z.enum(['true', 'false']).default('true'),
-  LIVE_FLOOR_ENABLED: z.enum(['true', 'false']).default('true'),
+  // Multi-source live feed (docs/live-aggregation-spec.md §7). Every key is
+  // OPTIONAL: an absent cred disables that source (no boot error) and its client
+  // self-degrades exactly like Twitch. Strict parsing; secrets never logged/echoed.
   // Kick Developer API (client-credentials app token, mirrors Twitch Helix).
   KICK_CLIENT_ID: z.string().optional(),
   KICK_CLIENT_SECRET: z.string().optional(),
   KICK_CACHE_TTL_MS: z.coerce.number().min(1000).default(45000),
-  // YouTube Data API v3 (single API key, no OAuth).
+  // YouTube Data API v3 (single API key). YOUTUBE_QUERY seeds the live search.
   YOUTUBE_API_KEY: z.string().optional(),
-  // Free-text query used to seed the live search; "live" surfaces broad live cams.
-  YOUTUBE_LIVE_QUERY: z.string().default('live'),
+  YOUTUBE_QUERY: z.string().default('live'),
   YOUTUBE_CACHE_TTL_MS: z.coerce.number().min(1000).default(45000),
-  // Floor (Livepeer): optional Studio discovery key + the network-free guaranteed
-  // fallback channel that terminates the never-empty ladder. FLOOR_LIVEPEER_URL is
-  // the only field required for the guarantee; the rest are cosmetic.
+  // Floor = the self-hosted terminal rung (§3). FLOOR_PROVIDER selects the backend
+  // (only 'livepeer' this round); LIVEPEER_API_KEY is optional Studio discovery;
+  // FLOOR_FALLBACK_URL is the network-free guaranteed channel that makes the grid
+  // never-empty. The remaining FLOOR_FALLBACK_* fields are cosmetic labels for that
+  // one card (§1 forbids inventing data, so a thumbnail is intentionally absent).
+  FLOOR_PROVIDER: z.enum(['livepeer']).default('livepeer'),
   LIVEPEER_API_KEY: z.string().optional(),
-  LIVEPEER_HLS_BASE: z.string().default('https://stream.livepeer.com'),
-  FLOOR_LIVEPEER_URL: z.string().optional(),
-  FLOOR_TITLE: z.string().optional(),
-  FLOOR_CHANNEL_NAME: z.string().optional(),
-  FLOOR_CATEGORY: z.string().optional(),
-  FLOOR_THUMBNAIL_URL: z.string().optional(),
+  FLOOR_HLS_BASE: z.string().default('https://stream.livepeer.com'),
+  FLOOR_FALLBACK_URL: z.string().optional(),
+  FLOOR_FALLBACK_TITLE: z.string().optional(),
+  FLOOR_FALLBACK_CHANNEL: z.string().optional(),
+  FLOOR_FALLBACK_CATEGORY: z.string().optional(),
   FLOOR_CACHE_TTL_MS: z.coerce.number().min(1000).default(45000),
+  // Grid-level cache TTL (§3 step 4). Parsed per §7 and forwarded to the
+  // aggregator; the base aggregator currently leans on each client's own cache —
+  // this is the contract hook for the verifier's grid-cache decision.
+  LIVE_CACHE_TTL_MS: z.coerce.number().min(1000).default(30000),
 });
-
-function isEnabled(v) {
-  return v === 'true';
-}
 
 export function loadEnv(raw = process.env) {
   const env = schema.parse(raw);
@@ -82,36 +77,29 @@ export function loadEnv(raw = process.env) {
   if (!twitchEnabled) {
     warnings.push('TWITCH_CLIENT_ID/TWITCH_CLIENT_SECRET missing → Twitch live browse runs in demo/fallback mode (no real Helix calls)');
   }
-  // Per-source "live feed" enablement = kill-switch flag AND creds. This is what the
-  // aggregator + /api/config consume; a source is only tried when its entry is true.
+  // Per-source enablement is derived from creds/config ONLY (§7: "booleans from
+  // creds"). No separate kill-switch env exists — that was a divergence from the
+  // frozen spec and has been removed so /api/config's features match §7 exactly.
   const kickEnabled = !!(env.KICK_CLIENT_ID && env.KICK_CLIENT_SECRET);
   const youtubeEnabled = !!env.YOUTUBE_API_KEY;
-  const floorHasFallback = !!env.FLOOR_LIVEPEER_URL;
+  const floorHasFallback = !!env.FLOOR_FALLBACK_URL;
   const floorHasDiscovery = !!env.LIVEPEER_API_KEY;
-  const liveSources = {
-    twitch: isEnabled(env.LIVE_TWITCH_ENABLED) && twitchEnabled,
-    kick: isEnabled(env.LIVE_KICK_ENABLED) && kickEnabled,
-    youtube: isEnabled(env.LIVE_YOUTUBE_ENABLED) && youtubeEnabled,
-    // Floor's core job (the guaranteed last rung) needs only FLOOR_LIVEPEER_URL; the
-    // discovery key is an optional extra. On if flagged AND it can contribute either.
-    floor: isEnabled(env.LIVE_FLOOR_ENABLED) && (floorHasFallback || floorHasDiscovery),
-  };
+  // Floor is "enabled" if it can contribute EITHER live discovery (key) OR the
+  // guaranteed network-free fallback card (url).
+  const floorEnabled = floorHasFallback || floorHasDiscovery;
+  const liveSources = { twitch: twitchEnabled, kick: kickEnabled, youtube: youtubeEnabled, floor: floorEnabled };
   // Loud-but-non-fatal signals so an operator knows which providers will be silent.
-  if (isEnabled(env.LIVE_KICK_ENABLED) && !kickEnabled) {
-    warnings.push('KICK_CLIENT_ID/KICK_CLIENT_SECRET missing → Kick contributes no live channels');
-  }
-  if (isEnabled(env.LIVE_YOUTUBE_ENABLED) && !youtubeEnabled) {
-    warnings.push('YOUTUBE_API_KEY missing → YouTube contributes no live channels');
-  }
-  if (isEnabled(env.LIVE_FLOOR_ENABLED) && !floorHasFallback && !floorHasDiscovery) {
-    warnings.push('FLOOR_LIVEPEER_URL/LIVEPEER_API_KEY missing → the never-empty floor cannot guarantee a channel');
-  }
+  if (!kickEnabled) warnings.push('KICK_CLIENT_ID/KICK_CLIENT_SECRET missing → Kick contributes no live channels');
+  if (!youtubeEnabled) warnings.push('YOUTUBE_API_KEY missing → YouTube contributes no live channels');
+  if (!floorEnabled) warnings.push('FLOOR_FALLBACK_URL/LIVEPEER_API_KEY missing → the never-empty floor cannot guarantee a channel');
+  // Shape the floor CLIENT expects (its `fallback` arg); thumbnailUrl is intentionally
+  // empty per §1/§4 (no fabricated preview).
   const floorFallback = {
-    url: env.FLOOR_LIVEPEER_URL || '',
-    title: env.FLOOR_TITLE || '',
-    channelName: env.FLOOR_CHANNEL_NAME || '',
-    category: env.FLOOR_CATEGORY || '',
-    thumbnailUrl: env.FLOOR_THUMBNAIL_URL || '',
+    url: floorHasFallback ? env.FLOOR_FALLBACK_URL : '',
+    title: env.FLOOR_FALLBACK_TITLE || '',
+    channelName: env.FLOOR_FALLBACK_CHANNEL || '',
+    category: env.FLOOR_FALLBACK_CATEGORY || '',
+    thumbnailUrl: '',
   };
   return { ...env, effectiveMode: mode, twitchEnabled, liveSources, floorFallback, warnings };
 }

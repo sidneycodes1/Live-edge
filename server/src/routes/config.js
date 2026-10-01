@@ -10,22 +10,28 @@ export function configRouter(env) {
       features: {
         liveReads: env.effectiveMode !== 'sim',
         previewBuy: env.effectiveMode === 'hybrid',
-        twitchLive: Boolean(env.twitchEnabled),
+        // Per-source live-feed booleans, derived from creds only (§7). A source is
+        // "live" for the grid iff its client has something to call.
+        twitchLive: Boolean(env.liveSources ? env.liveSources.twitch : env.twitchEnabled),
+        kickLive: Boolean(env.liveSources && env.liveSources.kick),
+        youtubeLive: Boolean(env.liveSources && env.liveSources.youtube),
+        floorLive: Boolean(env.liveSources && env.liveSources.floor),
       },
-      // Multi-source live feed (GET /api/live). Per-source `enabled` = kill-switch
-      // flag AND creds (see config/env.js liveSources). Non-secret only.
-      live: {
-        sources: env.liveSources || { twitch: false, kick: false, youtube: false, floor: false },
-        // The never-empty ladder order the aggregator falls through.
-        ladder: ['twitch', 'kick', 'youtube', 'stale', 'floor'],
-      },
-      // Public, non-secret Twitch embed config. `parentDomain` must equal the
-      // bare hosting domain (no protocol) per dev.twitch.tv/docs/embed/;
+      // Public, non-secret Twitch embed config (kept for back-compat). `parentDomain`
+      // must equal the bare hosting domain (no protocol) per dev.twitch.tv/docs/embed/;
       // empty → frontend falls back to location.hostname. Never includes creds.
       twitch: {
         enabled: Boolean(env.twitchEnabled),
         parentDomain: env.TWITCH_PARENT_DOMAIN || '',
         fallbackChannel: env.TWITCH_FALLBACK_CHANNEL || '',
+      },
+      // Per-source config for the multi-provider grid (§7). Only ever `enabled` /
+      // `hlsBase` — never a secret or token.
+      kick: { enabled: Boolean(env.liveSources && env.liveSources.kick) },
+      youtube: { enabled: Boolean(env.liveSources && env.liveSources.youtube) },
+      floor: {
+        enabled: Boolean(env.liveSources && env.liveSources.floor),
+        hlsBase: env.FLOOR_HLS_BASE || '',
       },
       sim: {
         feeBps: env.SIM_FEE_BPS,
