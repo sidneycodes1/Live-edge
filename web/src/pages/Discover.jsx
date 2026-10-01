@@ -1,7 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api.js';
+import { normalizeLive } from '../lib/live.js';
+import { mapToDisplay, isFootball, bucketsWithData } from '../lib/categories.js';
 import MarketCard from '../components/MarketCard.jsx';
+import LiveRail from '../components/LiveRail.jsx';
+import LiveStatus from '../components/LiveStatus.jsx';
 import TwitchLiveCard from '../components/TwitchLiveCard.jsx';
 import Rail from '../components/Rail.jsx';
 import CategoryChips from '../components/CategoryChips.jsx';
@@ -11,10 +15,12 @@ import MoneyChip from '../components/MoneyChip.jsx';
 import Skeleton from '../components/Skeleton.jsx';
 import EmptyState from '../components/EmptyState.jsx';
 import WakeServer from '../components/WakeServer.jsx';
+import { IconBall, IconFlame, IconClock, IconTrending, IconTrending as IconMovers } from '../components/Icons.jsx';
 
 export default function Discover() {
   const [rooms, setRooms] = useState(null);
   const [catalog, setCatalog] = useState(null);
+  const [live, setLive] = useState(null);
   const [twitch, setTwitch] = useState({ status: 'loading', items: [], enabled: false });
   const [loading, setLoading] = useState(true);
   const [waking, setWaking] = useState(false);
@@ -26,6 +32,11 @@ export default function Discover() {
     const t = setTimeout(() => { if (loading) setWaking(true); }, 2500);
     api.listRooms().then(r => { if (!cancelled) { setRooms(r); setLoading(false); } }).catch(() => { if (!cancelled) setLoading(false); });
     api.getCatalog().then(setCatalog).catch(() => {});
+    // Multi-provider live grid. Independent + never-blocking: a slow/failing /api/live
+    // degrades to null (the rooms rails still render) rather than hanging the page.
+    api.getLive(24)
+      .then(r => { if (!cancelled) setLive(normalizeLive(r)); })
+      .catch(() => { if (!cancelled) setLive(null); });
     // Independent of the simulated rooms: a slow/failing Twitch fetch must never
     // block or break the rest of Discover.
     api.listTwitchLive(12)
@@ -67,6 +78,7 @@ export default function Discover() {
   }, [rooms]);
 
   const all = rooms || [];
+  const liveChannels = live ? live.items : [];
 
   // "Live on Twitch" — a clearly-labeled REAL layer, distinct from the simulated
   // rooms below. Hidden entirely when disabled or empty/degraded so it never looks
@@ -83,10 +95,16 @@ export default function Discover() {
           .filter(Boolean).join(' ').toLowerCase();
         return hay.includes(q);
       });
-  const gridRooms = cat ? searched.filter((r) => r.heroMarket?.category === cat) : searched;
+  // Chips filter the grid by DISPLAY bucket (fixed §2 taxonomy), not raw labels.
+  const gridRooms = cat ? searched.filter((r) => mapToDisplay(r.heroMarket?.category) === cat) : searched;
 
-  // Categories are derived from the live rooms only (no invented taxonomy).
-  const categories = Array.from(new Set(all.map((r) => r.heroMarket?.category).filter(Boolean))).sort();
+  // Category chips come from the FIXED display superset, but only those buckets that
+  // OBSERVED data actually maps into (rooms + live). No invented categories, no
+  // empty chips (docs §2).
+  const categories = bucketsWithData([
+    ...all.map((r) => r.heroMarket?.category),
+    ...liveChannels.map((c) => c.category),
+  ]);
 
   // Rails re-present the same rooms through different lenses (abundance by
   // re-sorting, never fabrication).
@@ -97,12 +115,20 @@ export default function Discover() {
     .slice(0, 10);
   const featured = trending.find((r) => r.heroMarket.status === 'open') || null;
 
+  // Live Football = the watch-party vertical (§2). Rows are rooms genuinely tagged
+  // football, or genuinely-embeddable football talk/analysis live channels. Hidden
+  // when there is no real football data — never a fabricated or blank section.
+  const footballRooms = all.filter((r) => isFootball(r.heroMarket?.category));
+
   if (loading) return <div className="max-w-6xl mx-auto px-4 py-6">{waking && <WakeServer />}<div className="grid md:grid-cols-3 gap-4 mt-4"><Skeleton className="h-48" /><Skeleton className="h-48" /><Skeleton className="h-48" /></div></div>;
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-6 pb-20">
+      {live && <LiveStatus servedFrom={live.servedFrom} degraded={live.degraded} />}
+      <LiveRail title="Live now" icon={<IconFlame className="w-5 h-5" />} channels={liveChannels} testid="rail-live" />
+
       {showTwitch && (
-        <section className="mb-8" data-testid="twitch-live-section">
+        <section className="mb-8 mt-7" data-testid="twitch-live-section">
           <div className="flex items-center gap-2">
             <h2 className="font-heading font-bold text-xl">Live on Twitch</h2>
             <span className="text-[10px] font-semibold uppercase tracking-wide bg-live/20 text-live px-2 py-0.5 rounded-full">real</span>
@@ -115,7 +141,7 @@ export default function Discover() {
       )}
 
       {featured && (
-        <Link to={`/room/${featured.id}`} data-testid="featured-hero" className="group block mt-2 rounded-card overflow-hidden border border-white/10 bg-surface hover:border-white/25 transition">
+        <Link to={`/room/${featured.id}`} data-testid="featured-hero" className="group block mt-2 rounded-card overflow-hidden border border-white/10 bg-surface hover:border-white/25 transition cursor-pointer">
           <div className="grid md:grid-cols-2">
             <div className="order-2 md:order-1 p-5 flex flex-col justify-center">
               <span className="text-[11px] uppercase tracking-wide text-live font-bold">Featured · live now</span>
@@ -132,15 +158,17 @@ export default function Discover() {
         </Link>
       )}
 
+      <Rail title="Live Football" icon={<IconBall className="w-5 h-5" />} rooms={footballRooms} testid="rail-football" />
+      <Rail title="Trending bets" icon={<IconTrending className="w-5 h-5" />} rooms={trending} testid="rail-trending" />
+      <Rail title="Closing soon" icon={<IconClock className="w-5 h-5" />} rooms={closing} testid="rail-closing" />
+
       {categories.length > 0 && (
         <div className="mt-6">
           <CategoryChips categories={categories} active={cat} onSelect={setCat} />
         </div>
       )}
 
-      <Rail title="🔥 Biggest movers" rooms={movers} testid="rail-movers" />
-      <Rail title="⏳ Closing soon" rooms={closing} testid="rail-closing" />
-      <Rail title="📈 Trending now" rooms={trending} testid="rail-trending" />
+      <Rail title="Biggest movers" icon={<IconMovers className="w-5 h-5" />} rooms={movers} testid="rail-movers" />
 
       {all.length === 0 ? (
         <EmptyState title="No live rooms yet" body="Be the first to create a room and drop a market." />
