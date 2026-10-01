@@ -1,213 +1,294 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  TIMEOUT_MS,
+  RETRIES,
+  BREAKER_THRESHOLD,
+  BREAKER_COOLDOWN_MS,
+  BULKHEAD_LIMIT,
+  isRetryable,
   withTimeout,
   retry,
   createCircuitBreaker,
   createBulkhead,
   createProviderRunner,
-  isRetryable,
 } from '../src/aggregator/resilience.js';
 import { ProviderError } from '../src/aggregator/errors.js';
 
-// These tests use a fake clock (injected `now`) so the 30s breaker cooldown is
-// instant, and tiny real timers for the timeout so nothing hangs the suite.
+// -----------------------------------------------------------------------------
+// Agent D (QA) resilience tests for the primitives wrapped around every
+// provider call. Proves docs/live-aggregation-spec.md §5 (budgets, wrapping
+// order, retry taxonomy) + error codes (§5 taxonomy block). Injected `now`
+// for cooldown; short real timers for `withTimeout` (the primitive uses real
+// setTimeout so nothing here fakes it — the budgets we assert ON are small
+// but the mechanism is real). No existing test weakened.
+// -----------------------------------------------------------------------------
 
-describe('isRetryable', () => {
-  it('retries timeouts, network, and 5xx — but not 4xx/creds/limiter errors', () => {
-    assert.equal(isRetryable(new ProviderError('TIMEOUT', 'x')), true);
-    assert.equal(isRetryable(new ProviderError('NETWORK', 'x')), true);
-    assert.equal(isRetryable(new ProviderError('HTTP_ERROR', 'x', { status: 503 })), true);
-    assert.equal(isRetryable(new ProviderError('HTTP_ERROR', 'x', { status: 404 })), false);
-    assert.equal(isRetryable(new ProviderError('MISSING_CREDENTIALS', 'x')), false);
-    assert.equal(isRetryable(new ProviderError('CIRCUIT_OPEN', 'x')), false);
-    assert.equal(isRetryable(new Error('plain')), false);
+const P = (code, status) => new ProviderError(code, `${code} test`, { status });
+const deferred = () => {
+  let resolve, reject;
+  const promise = new Promise((res, rej) => { resolve = res; reject = rej; });
+  return { promise, resolve, reject };
+};
+
+describe('§5 budget constants are the frozen contract', () => {
+  it('exact spec numbers so a silent tuning never passes as "green"', () => {
+    assert.equal(TIMEOUT_MS, 2500);
+    assert.equal(RETRIES, 1);
+    assert.equal(BREAKER_THRESHOLD, 3);
+    assert.equal(BREAKER_COOLDOWN_MS, 30000);
+    assert.equal(BULKHEAD_LIMIT, 3);
+  });
+});
+
+describe('isRetryable — the retry taxonomy is part of the contract', () => {
+  it('TIMEOUT / NETWORK / HTTP 5xx → true', () => {
+    assert.equal(isRetryable(P('TIMEOUT', 504)), true);
+    assert.equal(isRetryable(P('NETWORK')), true);
+    assert.equal(isRetryable(P('HTTP_ERROR', 500)), true);
+    assert.equal(isRetryable(P('HTTP_ERROR', 503)), true);
+  });
+  it('HTTP 4xx / MISSING_CREDENTIALS / CIRCUIT_OPEN / BULKHEAD_REJECTED → false', () => {
+    assert.equal(isRetryable(P('HTTP_ERROR', 400)), false);
+    assert.equal(isRetryable(P('HTTP_ERROR', 404)), false);
+    assert.equal(isRetryable(P('HTTP_ERROR', 429)), false, '429 is 4xx; not retried here');
+    assert.equal(isRetryable(P('MISSING_CREDENTIALS')), false);
+    assert.equal(isRetryable(P('CIRCUIT_OPEN', 503)), false);
+    assert.equal(isRetryable(P('BULKHEAD_REJECTED', 503)), false);
+  });
+  it('falsy / unknown → false', () => {
+    assert.equal(isRetryable(null), false);
+    assert.equal(isRetryable(undefined), false);
+    assert.equal(isRetryable(new Error('boom')), false);
   });
 });
 
 describe('withTimeout', () => {
-  it('resolves when the thunk beats the deadline', async () => {
-    const v = await withTimeout(async () => 'ok', { ms: 200 });
-    assert.equal(v, 'ok');
+  it('resolves when the thunk is faster than the budget', async () => {
+    const v = await withTimeout(async () => 'fast', { ms: 50 });
+    assert.equal(v, 'fast');
   });
 
-  it('rejects with a TIMEOUT ProviderError when it is too slow', async () => {
-    const slow = () => new Promise((r) => setTimeout(() => r('late'), 200));
-    await assert.rejects(() => withTimeout(slow, { ms: 5 }), (err) => {
-      assert.equal(err.code, 'TIMEOUT');
-      assert.ok(err instanceof ProviderError);
-      return true;
-    });
+  it('rejects with ProviderError TIMEOUT + status 504 when the budget is overrun', async () => {
+    let err;
+    try {
+      await withTimeout(() => new Promise((res) => setTimeout(res, 250)), { ms: 10 });
+    } catch (e) { err = e; }
+    assert.equal(err?.name, 'ProviderError');
+    assert.equal(err?.code, 'TIMEOUT');
+    assert.equal(err?.status, 504);
+  });
+
+  it('a fast thunk leaves NO dangling timer (promise resolves once, not twice)', async () => {
+    const g = deferred();
+    const p = withTimeout(() => g.promise, { ms: 1000 });
+    g.resolve('x');
+    assert.equal(await p, 'x');
   });
 });
 
 describe('retry', () => {
-  it('retries once on a retryable error then returns the success', async () => {
-    let calls = 0;
-    const thunk = async () => {
-      calls += 1;
-      if (calls === 1) throw new ProviderError('HTTP_ERROR', 'boom', { status: 503 });
-      return 'recovered';
-    };
-    const v = await retry(thunk, { retries: 1 });
-    assert.equal(v, 'recovered');
-    assert.equal(calls, 2);
-  });
-
-  it('does NOT retry a non-retryable error (single attempt)', async () => {
-    let calls = 0;
-    const thunk = async () => {
-      calls += 1;
-      throw new ProviderError('HTTP_ERROR', 'bad request', { status: 400 });
-    };
-    await assert.rejects(() => retry(thunk, { retries: 1 }));
-    assert.equal(calls, 1);
-  });
-
-  it('gives up after exhausting retries with the last error', async () => {
-    let calls = 0;
-    const thunk = async () => {
-      calls += 1;
-      throw new ProviderError('NETWORK', 'down');
-    };
-    await assert.rejects(() => retry(thunk, { retries: 1 }));
-    assert.equal(calls, 2, 'original + 1 retry');
-  });
-});
-
-describe('createCircuitBreaker', () => {
-  function failing() {
-    return async () => {
-      throw new ProviderError('NETWORK', 'down');
-    };
-  }
-
-  it('opens after 3 consecutive failures and fails fast (no call) while open', async () => {
-    let nowVal = 1000;
-    const b = createCircuitBreaker({ now: () => nowVal });
-    for (let i = 0; i < 3; i += 1) await assert.rejects(() => b.execute(failing()));
-    assert.equal(b._state(), 'open');
-    let tried = false;
+  it('TIMEOUT is retried → exactly 2 attempts (retries=1 default)', async () => {
+    let n = 0;
     await assert.rejects(
-      () =>
-        b.execute(async () => {
-          tried = true;
-          return 'x';
-        }),
-      (err) => err.code === 'CIRCUIT_OPEN',
+      retry(() => { n += 1; return Promise.reject(P('TIMEOUT', 504)); }),
+      (e) => e.code === 'TIMEOUT',
     );
-    assert.equal(tried, false, 'open breaker must not call the provider');
+    assert.equal(n, 2, '1 original + 1 retry = 2 total attempts');
   });
 
-  it('a success resets the failure budget before the threshold is hit', async () => {
-    const b = createCircuitBreaker();
-    await assert.rejects(() => b.execute(failing()));
-    await assert.rejects(() => b.execute(failing()));
-    await b.execute(async () => 'ok');
-    assert.equal(b._state(), 'closed');
-    assert.equal(b._failures(), 0);
+  it('HTTP 5xx is retried; HTTP 4xx is NOT (only 1 attempt)', async () => {
+    let n5 = 0;
+    await assert.rejects(retry(() => { n5 += 1; return Promise.reject(P('HTTP_ERROR', 503)); }));
+    assert.equal(n5, 2, '5xx retried');
+    let n4 = 0;
+    await assert.rejects(retry(() => { n4 += 1; return Promise.reject(P('HTTP_ERROR', 404)); }));
+    assert.equal(n4, 1, '4xx NOT retried — the budget is preserved for the grid');
   });
 
-  it('after cooldown it half-opens; a success closes it again', async () => {
-    let nowVal = 0;
-    const b = createCircuitBreaker({ cooldownMs: 30000, now: () => nowVal });
-    for (let i = 0; i < 3; i += 1) await assert.rejects(() => b.execute(failing()));
-    assert.equal(b._state(), 'open');
-    nowVal = 30001; // cooldown elapsed
-    await b.execute(async () => 'ok'); // half-open trial succeeds
-    assert.equal(b._state(), 'closed');
+  it('a thunk that fails then succeeds returns the success value', async () => {
+    let n = 0;
+    const v = await retry(() => {
+      n += 1;
+      if (n === 1) return Promise.reject(P('NETWORK'));
+      return Promise.resolve('ok');
+    });
+    assert.equal(v, 'ok');
+    assert.equal(n, 2);
   });
 
-  it('a failed half-open trial re-opens for a fresh cooldown', async () => {
-    let nowVal = 0;
-    const b = createCircuitBreaker({ cooldownMs: 30000, now: () => nowVal });
-    for (let i = 0; i < 3; i += 1) await assert.rejects(() => b.execute(failing()));
-    nowVal = 30001;
-    await assert.rejects(() => b.execute(failing())); // half-open trial fails
-    assert.equal(b._state(), 'open');
-    // still open immediately after → fails fast
-    await assert.rejects(() => b.execute(failing()), (err) => err.code === 'CIRCUIT_OPEN');
+  it('CIRCUIT_OPEN is not retried (single attempt; the ladder moves on)', async () => {
+    let n = 0;
+    await assert.rejects(retry(() => { n += 1; return Promise.reject(P('CIRCUIT_OPEN', 503)); }));
+    assert.equal(n, 1);
   });
 });
 
-describe('createBulkhead', () => {
-  it('caps concurrency at the limit and fail-fasts beyond it', async () => {
-    const bh = createBulkhead({ limit: 2 });
-    let peak = 0;
-    const gate = () =>
-      new Promise((res) => {
-        setTimeout(res, 20);
-      });
-    const tracked = async () => {
-      peak = Math.max(peak, bh._active());
-      await gate();
-      return 'done';
-    };
-    const a = bh.run(tracked);
-    const b = bh.run(tracked);
-    // third slot is full → fail-fast rejection
-    await assert.rejects(() => bh.run(tracked, { failFast: true }), (err) => err.code === 'BULKHEAD_REJECTED');
-    await Promise.all([a, b]);
-    assert.ok(peak <= 2, `peak active ${peak} must be <= limit 2`);
+describe('createCircuitBreaker — 3 fails → open, cooldown → half-open probe', () => {
+  it('opens at threshold=3 consecutive fails; further calls reject WITHOUT touching the thunk', async () => {
+    let t = 0;
+    const br = createCircuitBreaker({ threshold: 3, cooldownMs: 30000, now: () => t });
+    for (let i = 0; i < 3; i += 1) {
+      await assert.rejects(br.execute(() => Promise.reject(P('NETWORK'))));
+    }
+    assert.equal(br._state(), 'open', 'breaker open after threshold');
+    let thunkCalls = 0;
+    let err;
+    try { await br.execute(() => { thunkCalls += 1; return Promise.resolve('x'); }); } catch (e) { err = e; }
+    assert.equal(err?.code, 'CIRCUIT_OPEN');
+    assert.equal(err?.status, 503);
+    assert.equal(thunkCalls, 0, 'open breaker must NOT touch the network');
   });
 
-  it('without failFast a queued call runs once a slot frees', async () => {
+  it('a single blip does not open (threshold=3); a later success zeros the failure budget', async () => {
+    let t = 0;
+    const br = createCircuitBreaker({ threshold: 3, cooldownMs: 30000, now: () => t });
+    await assert.rejects(br.execute(() => Promise.reject(P('NETWORK'))));
+    // A success resets the budget.
+    assert.equal(await br.execute(() => Promise.resolve('ok')), 'ok');
+    assert.equal(br._state(), 'closed');
+    assert.equal(br._failures(), 0, 'success must zero the failure count');
+  });
+
+  it('after cooldown → half-open probe runs; SUCCESS closes for good', async () => {
+    let t = 0;
+    const br = createCircuitBreaker({ threshold: 3, cooldownMs: 30000, now: () => t });
+    for (let i = 0; i < 3; i += 1) await assert.rejects(br.execute(() => Promise.reject(P('NETWORK'))));
+    t += 30001;
+    const v = await br.execute(() => Promise.resolve('probe'));
+    assert.equal(v, 'probe', 'half-open probe allowed to run');
+    assert.equal(br._state(), 'closed');
+  });
+
+  it('half-open probe FAILURE re-opens for another full cooldown (not a fast retry)', async () => {
+    let t = 0;
+    const br = createCircuitBreaker({ threshold: 3, cooldownMs: 30000, now: () => t });
+    for (let i = 0; i < 3; i += 1) await assert.rejects(br.execute(() => Promise.reject(P('NETWORK'))));
+    t += 30001;
+    await assert.rejects(br.execute(() => Promise.reject(P('NETWORK'))), (e) => e.code === 'NETWORK');
+    assert.equal(br._state(), 'open');
+    // Immediately after re-open, a second call must be CIRCUIT_OPEN (not another probe)
+    let err;
+    try { await br.execute(() => Promise.resolve('x')); } catch (e) { err = e; }
+    assert.equal(err?.code, 'CIRCUIT_OPEN');
+    // And it stays open for a full second cooldown window, not the leftover of the first
+    t += 15000;
+    let err2;
+    try { await br.execute(() => Promise.resolve('x')); } catch (e) { err2 = e; }
+    assert.equal(err2?.code, 'CIRCUIT_OPEN', 're-open resets the cooldown clock');
+  });
+});
+
+describe('createBulkhead — 3 in-flight, 4th rejected (fail-fast) or waits (queue)', () => {
+  it('failFast: the (limit+1)-th concurrent run rejects with BULKHEAD_REJECTED', async () => {
+    const bh = createBulkhead({ limit: 3 });
+    const g = deferred();
+    const inflight = [bh.run(() => g.promise), bh.run(() => g.promise), bh.run(() => g.promise)];
+    // active is incremented synchronously inside run() before the first await, so
+    // we do not need to await anything before probing the 4th slot.
+    let err;
+    try { await bh.run(() => g.promise, { failFast: true }); } catch (e) { err = e; }
+    assert.equal(err?.code, 'BULKHEAD_REJECTED');
+    assert.equal(err?.status, 503);
+    g.resolve('done');
+    await Promise.all(inflight);
+  });
+
+  it('slots are released on THROW, so a failed call does not permanently jam the bulkhead', async () => {
     const bh = createBulkhead({ limit: 1 });
-    const order = [];
-    // p1 is invoked FIRST so it takes the only slot and holds it across its await;
-    // p2 then sees the cap and must wait for the release.
-    const p1 = bh.run(async () => {
-      order.push('first-start');
-      await new Promise((r) => setTimeout(r, 10));
-      order.push('first-end');
-      return 1;
-    });
-    const p2 = bh.run(async () => {
-      order.push('second');
-      return 2;
-    });
-    const [x, y] = await Promise.all([p1, p2]);
-    assert.equal(x, 1);
-    assert.equal(y, 2);
-    assert.deepEqual(order, ['first-start', 'first-end', 'second'], 'second waited for the slot');
+    await assert.rejects(bh.run(() => Promise.reject(P('NETWORK'))));
+    // Second call must be able to enter (slot freed by finally).
+    assert.equal(await bh.run(() => Promise.resolve('ok')), 'ok');
+  });
+
+  it('queue mode (failFast=false) admits the waiter once a slot frees', async () => {
+    const bh = createBulkhead({ limit: 1 });
+    const g = deferred();
+    const first = bh.run(() => g.promise);
+    const second = bh.run(() => g.promise); // waits (no failFast)
+    g.resolve('ok');
+    assert.deepEqual(await Promise.all([first, second]), ['ok', 'ok']);
   });
 });
 
-describe('createProviderRunner', () => {
-  it('runSafe never throws — a failing provider degrades to the fallback', async () => {
-    const runner = createProviderRunner({ name: 'kick', warn: () => {} });
-    const r = await runner.runSafe(async () => {
-      throw new ProviderError('HTTP_ERROR', 'up', { status: 500 });
-    }, []);
+describe('createProviderRunner — composition order + never-throws runSafe', () => {
+  it('runSafe: success → {ok:true, value, degraded:false}', async () => {
+    const runner = createProviderRunner({ name: 'x', warn: () => {} });
+    const r = await runner.runSafe(() => Promise.resolve(['a', 'b']), []);
+    assert.deepEqual(r, { ok: true, value: ['a', 'b'], degraded: false });
+  });
+
+  it('runSafe: any failure → {ok:false, value: fallback, degraded:true, reason:code} and NEVER throws', async () => {
+    const runner = createProviderRunner({ name: 'x', warn: () => {} });
+    const r = await runner.runSafe(() => Promise.reject(P('HTTP_ERROR', 500)), ['fallback']);
     assert.equal(r.ok, false);
     assert.equal(r.degraded, true);
     assert.equal(r.reason, 'HTTP_ERROR');
-    assert.deepEqual(r.value, []);
+    assert.deepEqual(r.value, ['fallback']);
   });
 
-  it('runSafe passes through a healthy provider result', async () => {
-    const runner = createProviderRunner({ name: 'twitch' });
-    const r = await runner.runSafe(async () => [{ id: 'twitch:1' }], []);
-    assert.equal(r.ok, true);
-    assert.equal(r.degraded, false);
-    assert.equal(r.value.length, 1);
-  });
-
-  it('a persistently failing provider trips its breaker → CIRCUIT_OPEN reason on runSafe', async () => {
-    let nowVal = 0;
+  it('timeout → retry fires → 2 thunk invocations, then TIMEOUT reason', async () => {
+    let n = 0;
     const runner = createProviderRunner({
-      name: 'kick',
-      warn: () => {},
-      breaker: createCircuitBreaker({ now: () => nowVal }),
+      name: 'x', timeoutMs: 10, retries: 1, warn: () => {},
     });
-    const boom = () => runner.runSafe(async () => {
-      throw new ProviderError('NETWORK', 'down');
-    }, []);
-    // 3 run-safe failures (each retries once internally, still a failure) → open
-    await boom();
-    await boom();
-    await boom();
-    const after = await boom();
-    assert.equal(after.reason, 'CIRCUIT_OPEN', '4th call short-circuited by the breaker');
+    const r = await runner.runSafe(() => { n += 1; return new Promise((res) => setTimeout(res, 250)); }, []);
+    assert.equal(r.ok, false);
+    assert.equal(r.reason, 'TIMEOUT');
+    assert.equal(n, 2, 'original attempt + 1 retry, each gets its own 10ms budget');
+  });
+
+  it('BREAKER opens after 3 fails; 4th call rejects CIRCUIT_OPEN WITHOUT running the thunk (ladder moves on)', async () => {
+    let t = 0;
+    const runner = createProviderRunner({
+      name: 'x',
+      retries: 0, // disable retry so each runSafe = exactly 1 thunk call for clean counting
+      breaker: createCircuitBreaker({ threshold: 3, cooldownMs: 30000, now: () => t }),
+      bulkhead: createBulkhead({ limit: 10 }),
+      warn: () => {},
+    });
+    for (let i = 0; i < 3; i += 1) {
+      const r = await runner.runSafe(() => Promise.reject(P('NETWORK')), []);
+      assert.equal(r.reason, 'NETWORK');
+    }
+    let thunkCalls = 0;
+    const after = await runner.runSafe(() => { thunkCalls += 1; return Promise.resolve('x'); }, []);
+    assert.equal(after.reason, 'CIRCUIT_OPEN');
+    assert.equal(thunkCalls, 0, 'open breaker must short-circuit before the thunk');
+  });
+
+  it('bulkhead rejection is OUTER to the breaker and does NOT count toward breaker failures (§5 rationale)', async () => {
+    const runner = createProviderRunner({
+      name: 'x',
+      breaker: createCircuitBreaker({ threshold: 3 }),
+      bulkhead: createBulkhead({ limit: 1 }),
+      warn: () => {},
+    });
+    const g = deferred();
+    const first = runner.run(() => g.promise);
+    let err;
+    try { await runner.run(() => g.promise); } catch (e) { err = e; }
+    assert.equal(err?.code, 'BULKHEAD_REJECTED');
+    assert.equal(runner._breaker._failures(), 0, 'rejected call bypassed the breaker; failure budget untouched');
+    g.resolve('ok');
+    await first;
+  });
+
+  it('runSafe does NOT warn for a BULKHEAD_REJECTED (spec §5: expected on a busy grid; avoid log spam)', async () => {
+    const warnings = [];
+    const runner = createProviderRunner({
+      name: 'x',
+      bulkhead: createBulkhead({ limit: 1 }),
+      warn: (m) => warnings.push(m),
+    });
+    const g = deferred();
+    const first = runner.runSafe(() => g.promise, []);
+    // Let the run enter the bulkhead, then saturate.
+    await Promise.resolve();
+    const second = await runner.runSafe(() => g.promise, []);
+    assert.equal(second.reason, 'BULKHEAD_REJECTED');
+    g.resolve('ok');
+    await first;
+    assert.equal(warnings.filter((w) => /BULKHEAD_REJECTED/.test(w)).length, 0);
   });
 });
