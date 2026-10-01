@@ -94,13 +94,17 @@ Rules:
 
 ## 3. The never-empty ladder
 
-Implemented by `server/src/aggregator/index.js` → `createLiveAggregator()`
-(**OPEN** — file does not exist yet). Composition contract:
+Implemented in `server/src/aggregator/index.js` → `createLiveAggregator()`
+(**DONE** on base — verify + cover it, do not rewrite). Composition contract:
 
 ```
-createLiveAggregator({ twitch, kick, youtube, floor, cacheTtlMs = 30000, now, warn })
-  .getLive({ limit }) -> LiveResponse   // never throws
+createLiveAggregator({ twitch, kick, youtube, floor, enabled, limits, resilience, now, warn })
+  .getChannels(limit = 24) -> AggResult   // never throws
 ```
+
+`AggResult` (the aggregator's **internal** return — the route maps this to HTTP):
+`{ items: LiveChannel[], sources: { [name]: count }, degraded: [{ source, reason }],
+  usedStale: boolean, usedFloor: boolean, generatedAt: number }`.
 
 Priority order (earliest wins merge order, later rungs fill when earlier are empty):
 
@@ -123,6 +127,10 @@ Algorithm (must match tests):
    client's own per-provider cache).
 
 ### `/api/live` response shape (public, never 500s — mirrors `/api/twitch`)
+
+`routes/live.js` (**OPEN**, Agent A) calls `getChannels()` and maps `AggResult` →
+HTTP `servedFrom` (`usedStale`→`'stale'`, `usedFloor`→`'floor'`, empty items→`'empty'`,
+else `'live'`) and per-source `enabled/ok/count/degraded`.
 
 ```
 {
@@ -256,10 +264,11 @@ No auth changes this round.
 
 - **Lead / Verifier (base branch):** this spec; the scaffold commit; worktrees; the
   verification gate; merges.
-- **Agent A — Backend (`feat/live-aggregation`):** `aggregator/index.js` (the ladder
-  §3), `routes/live.js` (`/api/live` §3), `env.js` keys + `/api/config` flags (§7),
-  wire into `app.js`, `services` construction of kick/youtube/floor clients with
-  provider runners. Clients already exist — extend, don't rebuild.
+- **Agent A — Backend (`feat/live-aggregation`):** the provider clients and the
+  ladder `aggregator/index.js` already exist on base — **verify, don't rewrite**.
+  Remaining: `routes/live.js` (`/api/live` §3), `env.js` keys + `/api/config` flags
+  (§7), wire into `app.js`, and construct the kick/youtube/floor clients wired to
+  their provider runners for the route.
 - **Agent B — Frontend (`feat/live-ui-football`):** consume `/api/live`; provider-
   agnostic cards + embed map (§6); football `⚽` rail + watch-party room + category
   chips (§2); never-empty / degraded / stale states (§4). **UI/UX Pro Max (Qoder)**
