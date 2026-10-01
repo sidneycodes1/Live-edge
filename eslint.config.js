@@ -108,6 +108,6 @@ export default [
   },
   prettier,
   {
-    ignores: ['**/dist/**', '**/node_modules/**', '**/.data/**', 'web/dist/**'],
+    ignores: ['**/dist/**', '**/node_modules/**', '**/.data/**', 'web/dist/**', '.worktrees/**', '.qoder/**'],
   },
 ];

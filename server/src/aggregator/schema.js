@@ -1,12 +1,12 @@
 // ---------------------------------------------------------------------------
 // LiveChannel — the single merged shape GET /api/live returns, from every source.
 //
-// NOTE (verifier): docs/live-aggregation-spec.md — the frozen schema/taxonomy — is
-// ABSENT from the repo (confirmed via git ls-files + glob). This module is built
-// strictly additive to the ALREADY-SHIPPED twitch shape (../twitch/client.js
-// normalizeStream) so nothing downstream breaks; it is a faithful superset, NOT a
-// new authority. If the frozen spec differs, request the delta through the verifier
-// rather than editing here.
+// CONTRACT: docs/live-aggregation-spec.md §1 (LiveChannel) + §2 (taxonomy) are the
+// frozen authority (present in-repo since ba5753b). This module is a faithful,
+// additive superset of the ALREADY-SHIPPED twitch shape (../twitch/client.js
+// normalizeStream) so nothing downstream breaks. Edits here are NOT spec changes: if
+// code and §1 ever diverge, reconcile through the verifier (who owns the spec),
+// never by silently rewriting either side.
 //
 // `category` carries the SOURCE-NATIVE label only (Twitch game_name, Kick category
 // name, YouTube title/topic, floor tag) — never an invented bucket, matching the
