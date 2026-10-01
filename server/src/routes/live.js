@@ -1,47 +1,90 @@
 import { Router } from 'express';
 import { LIVE_SOURCES } from '../aggregator/schema.js';
 
-// Public, never-500 browse endpoint for the resilient multi-source live feed. The
-// aggregator (../aggregator/index.js) already guarantees each provider call is
-// timeout/retry/breaker/bulkhead-guarded and degrades to [] rather than throwing,
-// so this handler mostly surfaces per-source status + the ladder flags (usedStale /
-// usedFloor) so the frontend can label a degraded grid instead of showing a blank.
+// GET /api/live — the public HTTP face of the never-empty multi-source grid.
+// This is a thin, NEVER-500 mapping of the aggregator's internal AggResult (§3) to
+// the frozen §3 wire shape; the aggregator already guarantees every provider call is
+// timeout/retry/breaker/bulkhead-guarded and degrades to [] instead of throwing.
+//
+//   AggResult { items, sources:{[name]:count}, degraded:[{source,reason}],
+//               usedStale, usedFloor, generatedAt:number }
+//     → HTTP   { items, count, servedFrom:'live'|'stale'|'floor'|'empty',
+//               generatedAt:<ISO>, sources:{ <name>:{enabled,ok,count,degraded,reason?} } }
+//
+// Embed/chat URLs are NOT emitted here (§1): the frontend builds them from
+// source + channelSlug/watchUrl + /api/config's parent.
+//
+// §3 mandates this endpoint NEVER 500s. In the happy path that guarantee comes from
+// the aggregator never throwing; defensively we ALSO catch an unexpected crash and
+// serve the honest-empty shape (servedFrom:'empty') so the landing grid degrades to
+// "no channels right now" instead of a blank/broken network response.
 function clampInt(v, lo, hi, dflt) {
   const n = Number.parseInt(v, 10);
   if (Number.isNaN(n)) return dflt;
   return Math.min(hi, Math.max(lo, n));
 }
 
-export function liveRouter({ aggregator, enabled = {} }) {
+function servedFrom({ usedStale, usedFloor, count }) {
+  if (usedStale) return 'stale';
+  if (usedFloor) return 'floor';
+  if (count === 0) return 'empty';
+  return 'live';
+}
+
+// Fixed key set in ladder order so the client always sees all four sources, enabled
+// or not, real or degraded. `reason` carries the ProviderError.code (§5) ONLY while
+// degraded (§3), letting the UI show an honest "using last results / demo floor".
+function buildSources(enabled, sourceCounts, degraded) {
+  const sources = {};
+  for (const name of LIVE_SOURCES) {
+    const isEnabled = Boolean(enabled[name]);
+    const deg = (degraded || []).find((d) => d.source === name);
+    const isDegraded = Boolean(deg);
+    const entry = {
+      enabled: isEnabled,
+      // ok = the source was tried and its call did not fail (may still be count 0).
+      ok: isEnabled && !isDegraded,
+      count: Number((sourceCounts || {})[name]) || 0,
+      degraded: isDegraded,
+    };
+    if (isDegraded) entry.reason = deg.reason || 'ERROR';
+    sources[name] = entry;
+  }
+  return sources;
+}
+
+export function liveRouter({ aggregator, enabled = {}, warn = (msg) => console.warn(msg) }) {
   const r = Router();
 
-  r.get('/', async (req, res, next) => {
+  r.get('/', async (req, res) => {
+    const limit = clampInt(req.query.limit, 1, 100, 24);
+    let agg;
     try {
-      const limit = clampInt(req.query.limit, 1, 100, 24);
-      const { items, sources = {}, degraded = [], usedStale, usedFloor, generatedAt } = await aggregator.getChannels(limit);
-      res.json({
-        items,
-        count: items.length,
-        limit,
-        // Which sources are switched on (flag && creds) vs actually returned rows.
-        enabled: LIVE_SOURCES.reduce((acc, s) => {
-          acc[s] = Boolean(enabled[s]);
-          return acc;
-        }, {}),
-        sources,
-        degraded,
-        // The ladder ran: real live data was empty, so we served stale cache or the
-        // config floor fallback. Lets the UI say "showing cached / fallback".
-        usedStale: Boolean(usedStale),
-        usedFloor: Boolean(usedFloor),
-        // Nothing at all (no live data, no cache, floor unconfigured) — render an
-        // empty-but-handled state, never a crash. Distinct from a network error.
-        empty: items.length === 0,
-        generatedAt,
-      });
+      agg = await aggregator.getChannels(limit);
     } catch (e) {
-      next(e);
+      // Never-500 contract (§3): an unexpected aggregator crash becomes an honest
+      // empty grid, with every enabled source flagged degraded so the UI can say so.
+      warn(`live route: aggregator threw, serving honest-empty (${e && e.message})`);
+      const crashed = LIVE_SOURCES.filter((n) => enabled[n]).map((source) => ({ source, reason: 'INTERNAL' }));
+      res.json({
+        items: [],
+        count: 0,
+        servedFrom: 'empty',
+        generatedAt: new Date().toISOString(),
+        sources: buildSources(enabled, {}, crashed),
+      });
+      return;
     }
+
+    const items = agg.items || [];
+    res.json({
+      items,
+      count: items.length,
+      servedFrom: servedFrom({ usedStale: agg.usedStale, usedFloor: agg.usedFloor, count: items.length }),
+      // §3 wants an ISO string; the aggregator emits a numeric epoch (AggResult).
+      generatedAt: new Date(agg.generatedAt ?? Date.now()).toISOString(),
+      sources: buildSources(enabled, agg.sources, agg.degraded),
+    });
   });
 
   return r;
