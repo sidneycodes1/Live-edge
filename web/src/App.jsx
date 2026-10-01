@@ -5,6 +5,7 @@ import BottomTabs from './components/BottomTabs.jsx';
 import Discover from './pages/Discover.jsx';
 import Room from './pages/Room.jsx';
 import TwitchRoom from './pages/TwitchRoom.jsx';
+import WatchRoom from './pages/WatchRoom.jsx';
 import Creator from './pages/Creator.jsx';
 import Portfolio from './pages/Portfolio.jsx';
 import SignIn from './pages/SignIn.jsx';
@@ -68,6 +69,7 @@ function Shell() {
             <Route path="/" element={<Discover />} />
             <Route path="/room/:id" element={<Room />} />
             <Route path="/twitch/:login" element={<TwitchRoom />} />
+            <Route path="/watch/:source/:slug" element={<WatchRoom />} />
             <Route path="/creator/:roomId" element={<Creator />} />
             <Route path="/creator" element={<Creator />} />
             <Route path="/portfolio" element={<Portfolio />} />
