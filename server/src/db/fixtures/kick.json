@@ -1,0 +1,30 @@
+{
+  "_meta": {
+    "provider": "kick",
+    "endpoint": "GET https://api.kick.com/public/v1/livestreams",
+    "maps_to": "LiveChannel (§1): source='kick', channelSlug=channel.slug, category=category.name (source-native)",
+    "honesty": "Kick livestreams expose NO viewer count → client must yield viewerCount=0 (§4); thumbnail may be absent → ''",
+    "deterministic": "fixed start_time"
+  },
+  "data": [
+    {
+      "id": "kick-livestream-0001",
+      "stream_title": "Kick Seed Stream (fixture)",
+      "channel": {
+        "id": "kick-channel-0001",
+        "name": "Kick Seed",
+        "slug": "kick_seed_channel",
+        "avatar": ""
+      },
+      "category": { "id": "kick-cat-0001", "name": "Just Chatting" },
+      "stream_tags": [{ "id": "t1", "name": "irl" }],
+      "start_time": "2024-01-01T00:00:00Z",
+      "end_time": null,
+      "thumbnail_url": "",
+      "stream_url": "https://kick.com/kick_seed_channel",
+      "is_live": true,
+      "age_restricted": false
+    }
+  ],
+  "pagination": { "total": 1, "per_page": 25, "current_page": 1, "total_pages": 1 }
+}
