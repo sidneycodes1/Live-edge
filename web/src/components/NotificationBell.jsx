@@ -69,7 +69,7 @@ export default function NotificationBell() {
         )}
       </button>
       {open && (
-        <div className="absolute right-0 mt-2 w-80 max-h-96 overflow-auto bg-surface border border-white/15 rounded-card shadow-xl z-50" data-testid="notification-panel">
+        <div className="absolute right-0 mt-2 w-80 max-w-[calc(100vw-1rem)] max-h-96 overflow-auto bg-surface border border-white/15 rounded-card shadow-xl z-50" data-testid="notification-panel">
           <div className="flex items-center justify-between px-3 py-2 border-b border-white/10 sticky top-0 bg-surface">
             <span className="text-xs font-bold text-white/70">Notifications</span>
             <button onClick={markAll} className="text-[11px] text-white/50 hover:text-white">Mark all read</button>

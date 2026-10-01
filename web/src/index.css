@@ -70,3 +70,29 @@ h1,h2,h3 { font-family: 'Space Grotesk', system-ui, sans-serif; }
   .eq-bar, .sweep, .kenburns, .flash-up, .flash-down { animation: none !important; }
   .animate-pulse { animation: none !important; }
 }
+
+/* ---------------------------------------------------------------------------
+   Mobile responsiveness (design-system MASTER checklist: no horizontal scroll
+   on mobile, no content hidden behind the fixed bars, every tap target ≥44px).
+   ------------------------------------------------------------------------- */
+
+/* Belt-and-braces: guarantee the PAGE never scrolls sideways on a phone. The
+   individual layouts are fixed at their source too, but one stray wide child
+   must never lift the whole document into a horizontal scroll. */
+html, body { overflow-x: hidden; }
+body { max-width: 100vw; }
+
+/* Keep fixed bars clear of the iOS home indicator / Android gesture area. */
+.pb-safe { padding-bottom: max(0px, env(safe-area-inset-bottom)); }
+
+/* On touch-sized viewports, every interactive control meets the 44×44 minimum.
+   Scoped to <=768px so the pointer-first sizing never distorts the desktop grid,
+   and to real controls only (not layout wrappers like card <a> blocks). */
+@media (max-width: 768px) {
+  .tap, a[href], button:not([data-icon]), input, select, textarea,
+  [role="button"] {
+    min-height: 44px;
+  }
+  /* Icon-only affordances (search submit, modal close) keep a square touch box. */
+  [data-icon] { min-width: 40px; min-height: 40px; }
+}

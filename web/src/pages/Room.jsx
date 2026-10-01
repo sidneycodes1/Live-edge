@@ -46,7 +46,7 @@ export default function Room() {
   const { parent } = useTwitchConfig();
   const [tradeSide, setTradeSide] = useState(null);
   const [activeMarket, setActiveMarket] = useState(null);
-  const [mobileTab, setMobileTab] = useState('chat'); // Twitch rooms only: 'chat' | 'market'
+  const [mobileTab, setMobileTab] = useState('market'); // mobile: show the bet panel under the video first ('chat' | 'market')
   const { user, signIn } = useAuth();
 
   useEffect(() => { if (room && room.markets && room.markets.length) { setActiveMarket(room.markets[0]); } }, [room]);

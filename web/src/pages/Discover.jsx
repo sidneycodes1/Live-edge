@@ -178,7 +178,7 @@ export default function Discover() {
           {gridRooms.length === 0
             ? <EmptyState title="No matches" body={`Nothing here matches ${q ? `“${params.get('q')}”` : 'this filter'}.`} />
             : (
-              <div className="grid md:grid-cols-3 gap-4 mt-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-3 min-w-0">
                 {gridRooms.map((r) => <MarketCard key={r.id} room={r} />)}
               </div>
             )}

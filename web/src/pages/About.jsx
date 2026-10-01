@@ -2,7 +2,8 @@ export default function About() {
   return (
     <div className="max-w-3xl mx-auto px-4 py-6 pb-20 prose prose-invert">
       <h1 className="font-heading font-bold text-2xl">How Panta is used</h1>
-      <table className="w-full text-sm mt-4 border-collapse">
+      <div className="w-full overflow-x-auto -mx-4 px-4">
+        <table className="w-full min-w-[560px] text-sm mt-4 border-collapse">
         <thead><tr className="border-b border-white/10"><th className="text-left py-2">Capability</th><th className="text-left">Route</th><th>Mode</th></tr></thead>
         <tbody className="text-xs">
           <tr className="border-b border-white/5"><td>List markets, get market</td><td>/api/markets/catalog</td><td>Live (hybrid) / Sim</td></tr>
@@ -15,6 +16,7 @@ export default function About() {
           <tr><td>Metrics</td><td>/api/streamer/metrics</td><td>Own DB (+ live when avail.)</td></tr>
         </tbody>
       </table>
+      </div>
       <h2 className="font-heading font-bold mt-6">Assumptions (simulator)</h2>
       <ul className="text-sm text-white/70 list-disc ml-4">
         <li>Graduation at ≥100 volume, creator share 25% of fees — placeholder, not Panta's real rule</li>
