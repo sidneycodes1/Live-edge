@@ -19,3 +19,4 @@ audit-logs
 .turbo
 .vercel
 .netlify
+.worktrees/
