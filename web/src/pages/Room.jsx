@@ -3,6 +3,8 @@ import { useApi } from '../hooks/useApi.js';
 import { api } from '../lib/api.js';
 import { useSSE } from '../hooks/useSSE.js';
 import RoomFeed from '../components/RoomFeed.jsx';
+import WatchPartyPanel from '../components/WatchPartyPanel.jsx';
+import { isFootball } from '../lib/categories.js';
 import TwitchVideo from '../components/TwitchVideo.jsx';
 import TwitchChat from '../components/TwitchChat.jsx';
 import { useTwitchConfig } from '../hooks/useTwitchConfig.js';
@@ -114,6 +116,53 @@ export default function Room() {
             <div className="h-[420px] md:h-[calc(100vh-8rem)] md:sticky md:top-4 rounded-card overflow-hidden border border-white/10">
               <TwitchChat channel={ch} parent={parent} />
             </div>
+          </div>
+        </div>
+        {tradeSide && activeMarket && <TradeSheet market={activeMarket} side={tradeSide} onClose={() => setTradeSide(null)} onSuccess={refetch} />}
+      </div>
+    );
+  }
+
+  // ---- Football watch-party room (§2): NO hosted match video. A bring-your-own-feed
+  // panel + our markets + the live bets ticker + chat. Triggered when the room is
+  // genuinely football (Agent C's `watch_party` marker, or a football category/title)
+  // and has no bound Twitch channel (that path is above). We never embed match footage.
+  const isWatchParty = !room.twitch_channel && (room.watch_party === true || isFootball(room.heroMarket?.category) || isFootball(room.title));
+  if (isWatchParty) {
+    return (
+      <div className="max-w-6xl mx-auto px-4 py-6 pb-20" data-testid="watch-party-room">
+        <LiveHeader viewers={viewers} lastUpdate={lastUpdate} />
+        <div className="flex items-center gap-2 mt-2">
+          <h1 className="font-heading font-bold text-xl">{room.title}</h1>
+          <span className="text-[10px] font-semibold uppercase tracking-wide bg-live/20 text-live px-2 py-0.5 rounded-full">watch party</span>
+        </div>
+        <p className="text-xs text-white/45 mt-1">Bring your own legal feed — we host the market, chat and odds, not the match.</p>
+        <div className="mt-4 grid md:grid-cols-[1fr_360px] gap-4">
+          <div className="space-y-4 min-w-0">
+            <WatchPartyPanel parent={parent} />
+            <RecentBetsTicker events={events} />
+            <div className="md:hidden flex gap-2">
+              {['chat', 'market'].map(t => (
+                <button key={t} onClick={() => setMobileTab(t)}
+                  className={`flex-1 py-2 rounded-card text-sm font-semibold border cursor-pointer transition ${mobileTab === t ? 'bg-white text-black border-white' : 'bg-surface text-white/70 border-white/10'}`}>
+                  {t === 'chat' ? 'Chat' : 'Market'}
+                </button>
+              ))}
+            </div>
+            <div className={`${mobileTab === 'market' ? 'hidden' : 'block'} md:block`}>
+              <ChatFeed messages={room.chat || []} sseEvents={events} />
+            </div>
+          </div>
+          <div className={`${mobileTab === 'chat' ? 'hidden' : 'block'} md:block space-y-4`}>
+            <InRoomCreate roomId={id} />
+            {activeMarket
+              ? <MarketPanel market={activeMarket} onTrade={handleTrade} />
+              : <div className="bg-surface border border-white/10 rounded-card p-4 text-sm text-white/50">No market attached yet.</div>}
+            {room.markets && room.markets.length > 1 && (
+              <div className="space-y-2">
+                {room.markets.map(m => <button key={m.id} onClick={() => setActiveMarket(m)} className={`w-full text-left p-3 rounded-card border text-sm cursor-pointer transition ${activeMarket?.id === m.id ? 'bg-white text-black' : 'bg-surface border-white/10'}`}>{m.question}</button>)}
+              </div>
+            )}
           </div>
         </div>
         {tradeSide && activeMarket && <TradeSheet market={activeMarket} side={tradeSide} onClose={() => setTradeSide(null)} onSuccess={refetch} />}
