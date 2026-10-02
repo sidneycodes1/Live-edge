@@ -1,0 +1,50 @@
+name: CI
+
+# Runs on every push and PR (any branch), plus manual triggers from the Actions tab.
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+# Cancel superseded runs on the same branch/PR so you don't waste minutes.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    name: Lint · Test · Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # pnpm version matches "packageManager" in package.json (pnpm@9.12.3).
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Fails the build if a real secret/API key was ever committed.
+      - name: Secret scan
+        run: pnpm check-secrets
+
+      - name: Lint
+        run: pnpm lint
+
+      # Server suite runs on embedded PGlite with mocked provider fetch — no creds needed.
+      - name: Test
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build
