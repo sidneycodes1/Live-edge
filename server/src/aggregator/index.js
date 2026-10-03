@@ -10,6 +10,11 @@ import {
 } from './resilience.js';
 import { makeLiveChannel, LIVE_SOURCES } from './schema.js';
 
+// Landing-grid fill goal (Phase 2): curated 24/7 channels top the merged result up
+// to at least this many real cards when live providers come up short (e.g. the
+// YouTube SEARCH quota is exhausted). Bounded by the caller's `limit`.
+const CURATED_FILL_MIN = 12;
+
 // ---------------------------------------------------------------------------
 // The multi-source live aggregator. Owns two guarantees:
 //
@@ -61,6 +66,18 @@ function dedupeSorted(items, limit) {
   // Highest-viewership first for the landing grid; ties keep priority order.
   out.sort((a, b) => b.viewerCount - a.viewerCount);
   return Number.isFinite(limit) ? out.slice(0, limit) : out;
+}
+
+// Extract the bare YouTube video id from a namespaced item id so the SAME real
+// stream surfaced by two shapes is deduped regardless of namespace: provider
+// LiveChannels are `youtube:<vid>` (schema.channelId) and curated items are
+// `yt-<vid>` (../curated/client.js). Anything without a video id → null.
+function videoIdOf(item) {
+  const id = item && item.id;
+  if (typeof id !== 'string') return null;
+  if (id.startsWith('yt-')) return id.slice(3);
+  if (id.startsWith('youtube:')) return id.slice(8);
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -120,6 +137,7 @@ export function createLiveAggregator({
   youtube,
   floor,
   football,
+  curated,
   enabled = {},
   limits = {},
   resilience = {},
@@ -170,6 +188,22 @@ export function createLiveAggregator({
     });
   }
 
+  // Curated always-live source (Phase 2). NOT a credentialed provider and NOT part
+  // of LIVE_SOURCES (§3 wire keys stay exactly 4): it is a quota-free POST-MERGE FILL
+  // so the grid still serves ≥12 real live cards when the YouTube SEARCH budget is
+  // exhausted (429). It gets its OWN runner with a larger timeout because a single
+  // getChannels() call fans out 10 parallel keyless RSS fetches (each internally
+  // bounded at 8s) — far beyond the 2.5s provider budget on a cold fetch. Only used
+  // when a curated client is actually wired in.
+  const curatedRunner = createProviderRunner({
+    name: 'curated',
+    timeoutMs: resilience.curatedTimeoutMs ?? 10000,
+    retries,
+    breaker: createCircuitBreaker({ threshold, cooldownMs, now }),
+    bulkhead: createBulkhead({ limit: bulkheadLimit }),
+    warn,
+  });
+
   // Last-good non-empty merged result, used only by the ladder's "stale" rung.
   let staleCache = [];
 
@@ -192,6 +226,31 @@ export function createLiveAggregator({
     for (const r of ordered) {
       sources[r.name] = (r.value || []).length;
       if (r.degraded) degraded.push({ source: r.name, reason: r.reason || 'ERROR' });
+    }
+
+    // Curated post-merge FILL (Phase 2). Real provider results always come FIRST;
+    // curated only APPENDS quota-free 24/7 channels to reach the ≥12 goal (never
+    // exceeding `limit`). Its failure can NEVER break the grid: runSafe falls back to
+    // [] and we merely record the source degraded internally. It runs even when the
+    // merge was empty (search quota dead + no creds) so the fast path below can still
+    // return real cards instead of dropping to the stale/floor ladder.
+    const fillTarget = Math.min(CURATED_FILL_MIN, limit);
+    if (items.length < limit && items.length < fillTarget && typeof curated?.getChannels === 'function') {
+      const cr = await curatedRunner.runSafe(() => curated.getChannels(), []);
+      const curatedItems = cr.value || [];
+      sources.curated = curatedItems.length; // introspection; NOT a LIVE_SOURCES key
+      if (cr.degraded) degraded.push({ source: 'curated', reason: cr.reason || 'ERROR' });
+      const seenIds = new Set(items.map((it) => it.id));
+      const seenVids = new Set(items.map(videoIdOf).filter(Boolean));
+      for (const c of curatedItems) {
+        if (items.length >= fillTarget || items.length >= limit) break;
+        if (!c || seenIds.has(c.id)) continue;
+        const vid = videoIdOf(c);
+        if (vid && seenVids.has(vid)) continue;
+        items.push(c);
+        seenIds.add(c.id);
+        if (vid) seenVids.add(vid);
+      }
     }
 
     // Fast path: real merged data → remember it as stale fuel and return.
@@ -251,6 +310,7 @@ export function createLiveAggregator({
     providers: defs.map((d) => d.name),
     // introspection for tests / health
     _runners: runners,
+    _curatedRunner: curatedRunner,
     _stale: () => staleCache,
   };
 }

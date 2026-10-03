@@ -13,6 +13,7 @@ import { createKickClient } from './kick/client.js';
 import { createYouTubeClient } from './youtube/client.js';
 import { createFloorClient } from './floor/client.js';
 import { createFootballClient } from './football/client.js';
+import { createCuratedClient } from './curated/client.js';
 import { createLiveAggregator } from './aggregator/index.js';
 import { createHub } from './services/sse.js';
 import { createPriceCache } from './services/priceCache.js';
@@ -99,10 +100,19 @@ export async function createApp({ env: rawEnv, db: existingDb } = {}) {
     baseUrl: env.FOOTBALL_API_BASE_URL,
   });
   const footballEnabled = env.footballApiEnabled ?? Boolean(env.FOOTBALL_API_PROVIDER === 'api-football' && env.FOOTBALL_API_KEY);
+  // Curated always-live channels (Phase 2). Keyless + quota-free (channel RSS), so it
+  // is ALWAYS constructed and available — no creds gate. It's a post-merge FILL inside
+  // the aggregator (not a LIVE_SOURCES provider), so the grid still serves real live
+  // cards when the YouTube SEARCH budget is exhausted. It self-degrades: a curated
+  // outage can never break the general feed.
+  const curated = createCuratedClient();
+  // Gemini feature flag (Phase 2 env groundwork ONLY — no Gemini logic runs yet).
+  const geminiEnabled = env.geminiEnabled ?? Boolean(env.GEMINI_API_KEY);
   // A single enabled map feeds BOTH the aggregator and the route: the four grid
-  // sources plus the football data flag (`football` is ignored by the generic grid).
-  const enabled = { ...liveSources, football: footballEnabled };
-  const liveAggregator = createLiveAggregator({ twitch, kick, youtube, floor, football, enabled });
+  // sources plus the football data flag (`football` is ignored by the generic grid)
+  // and the gemini groundwork flag (consumed by a later phase, not the grid).
+  const enabled = { ...liveSources, football: footballEnabled, gemini: geminiEnabled };
+  const liveAggregator = createLiveAggregator({ twitch, kick, youtube, floor, football, curated, enabled });
   const hub = createHub();
   const notify = createNotifier(db, hub);
   const priceCache = createPriceCache({ ttlMs: 10000 });
@@ -216,6 +226,7 @@ export async function createApp({ env: rawEnv, db: existingDb } = {}) {
   app._liveAggregator = liveAggregator;
   app._liveSources = liveSources;
   app._football = football;
+  app._curated = curated;
   app._interval = interval;
 
   return app;
