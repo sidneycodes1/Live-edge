@@ -63,11 +63,63 @@ function dedupeSorted(items, limit) {
   return Number.isFinite(limit) ? out.slice(0, limit) : out;
 }
 
+// ---------------------------------------------------------------------------
+// Football DATA feed ordering (docs/football-api.md). The list is a priority
+// PREFIX set (matched case-insensitively and accent-stripped against the
+// provider's league.name). Higher-priority competitions surface first; everything
+// not listed keeps its place AFTER them in a STABLE kickOff order. We never invent
+// or reorder beyond what the data says (§4 honesty).
+// ---------------------------------------------------------------------------
+const PRIORITY_LEAGUES = [
+  'UEFA Nations League',
+  'UEFA Champions League',
+  'Europa League',
+  'Conference League',
+  'Premier League',
+  'La Liga',
+  'Serie A',
+  'Bundesliga',
+  'Ligue 1',
+  'Eredivisie',
+  'Primeira Liga',
+  'Championship',
+];
+
+function normLeague(s) {
+  return String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+}
+const PRIORITY_LEAGUES_NORM = PRIORITY_LEAGUES.map(normLeague);
+
+function leagueRank(league) {
+  const l = normLeague(league);
+  for (let i = 0; i < PRIORITY_LEAGUES_NORM.length; i += 1) {
+    if (l.startsWith(PRIORITY_LEAGUES_NORM[i])) return i;
+  }
+  return PRIORITY_LEAGUES_NORM.length;
+}
+
+// Rank-priority leagues first (in list order), then the rest, each group stable by
+// kickOff ascending (undated last). Decorated with the original index so Array.sort
+// (which need not be stable across engines for equal keys) stays deterministic.
+function orderFootballFixtures(items, limit) {
+  const decorated = (items || []).map((it, i) => ({ it, i, rank: leagueRank(it?.league) }));
+  decorated.sort((a, b) => {
+    if (a.rank !== b.rank) return a.rank - b.rank;
+    const ka = a.it?.kickOff ? Date.parse(a.it.kickOff) : Infinity;
+    const kb = b.it?.kickOff ? Date.parse(b.it.kickOff) : Infinity;
+    if (ka !== kb) return ka - kb;
+    return a.i - b.i; // stable tie-break
+  });
+  const out = decorated.map((d) => d.it);
+  return Number.isFinite(limit) ? out.slice(0, limit) : out;
+}
+
 export function createLiveAggregator({
   twitch,
   kick,
   youtube,
   floor,
+  football,
   enabled = {},
   limits = {},
   resilience = {},
@@ -166,8 +218,36 @@ export function createLiveAggregator({
     return { items: [], sources, degraded, usedStale: false, usedFloor: false, generatedAt: now() };
   }
 
+  // ---------------------------------------------------------------------------
+  // Football DATA feed (docs/football-api.md). EXPOSED WITHOUT the never-empty
+  // floor ladder: for football, an empty result is an HONEST empty — a config floor
+  // stand (built for the generic live grid) is NOT a substitute for real matches and
+  // would be a fabricated football card. The client owns cache/stale; we only order
+  // + cap + classify status for the route's servedFrom mapping.
+  //   returns { items, status:'live'|'stale'|'empty'|'disabled', generatedAt }
+  // ---------------------------------------------------------------------------
+  async function getFootballMatches(limit = 12) {
+    const on = enabled.football && typeof football?.getLiveFixtures === 'function';
+    if (!on) return { items: [], status: 'disabled', generatedAt: now() };
+    const reqLimit = limits.football ?? limit;
+    try {
+      const r = await football.getLiveFixtures();
+      const items = orderFootballFixtures(r.items, reqLimit);
+      let status;
+      if (r.stale) status = 'stale';
+      else status = items.length > 0 ? 'live' : 'empty';
+      return { items, status, generatedAt: now() };
+    } catch (e) {
+      // The client already served stale if it could; a throw means nothing cached.
+      // Honest empty — never a floor stand, never a fabricated match.
+      warn(`live aggregator: football fixtures unavailable (${e.code || e.name}) → honest empty`);
+      return { items: [], status: e.code === 'DISABLED' ? 'disabled' : 'empty', generatedAt: now() };
+    }
+  }
+
   return {
     getChannels,
+    getFootballMatches,
     providers: defs.map((d) => d.name),
     // introspection for tests / health
     _runners: runners,

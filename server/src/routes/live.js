@@ -56,7 +56,42 @@ function buildSources(enabled, sourceCounts, degraded) {
 export function liveRouter({ aggregator, enabled = {}, warn = (msg) => console.warn(msg) }) {
   const r = Router();
 
+  // GET /api/live?category=football — the API-Football DATA feed (docs/football-api.md).
+  // A DIFFERENT, deliberately-narrower envelope from the generic §3 grid: `sources`
+  // is the single-provider array, and servedFrom is 'live'|'stale'|'disabled'|'empty'
+  // (there is no 'floor' rung — football never substitutes a config stand; empty is an
+  // honest empty). Football items do NOT leak into the generic grid this phase.
+  async function serveFootball(req, res) {
+    const limit = clampInt(req.query.limit, 1, 100, 12);
+    if (typeof aggregator.getFootballMatches !== 'function') {
+      // Aggregator without football support (e.g. an older stub) → honest empty.
+      res.json({ items: [], count: 0, servedFrom: 'disabled', generatedAt: new Date().toISOString(), sources: ['football-api'] });
+      return;
+    }
+    let out;
+    try {
+      out = await aggregator.getFootballMatches(limit);
+    } catch (e) {
+      // Never 500 (§3): an unexpected throw becomes an honest empty football feed.
+      warn(`live route: football feed threw, serving honest-empty (${e && e.message})`);
+      out = { items: [], status: 'empty', generatedAt: Date.now() };
+    }
+    const items = out.items || [];
+    const status = out.status || (items.length > 0 ? 'live' : 'empty');
+    res.json({
+      items,
+      count: items.length,
+      servedFrom: status,
+      generatedAt: new Date(out.generatedAt ?? Date.now()).toISOString(),
+      sources: ['football-api'],
+    });
+  }
+
   r.get('/', async (req, res) => {
+    // Football is a data feed, not part of the mixed grid — branch BEFORE the generic
+    // path so the no-category / other-category behavior stays byte-identical.
+    if (String(req.query.category || '').toLowerCase() === 'football') return serveFootball(req, res);
+
     const limit = clampInt(req.query.limit, 1, 100, 24);
     let agg;
     try {
