@@ -12,6 +12,7 @@ import { createTwitchClient } from './twitch/client.js';
 import { createKickClient } from './kick/client.js';
 import { createYouTubeClient } from './youtube/client.js';
 import { createFloorClient } from './floor/client.js';
+import { createFootballClient } from './football/client.js';
 import { createLiveAggregator } from './aggregator/index.js';
 import { createHub } from './services/sse.js';
 import { createPriceCache } from './services/priceCache.js';
@@ -88,7 +89,20 @@ export async function createApp({ env: rawEnv, db: existingDb } = {}) {
     youtube: Boolean(env.YOUTUBE_API_KEY),
     floor: Boolean(env.FLOOR_FALLBACK_URL || env.LIVEPEER_API_KEY),
   };
-  const liveAggregator = createLiveAggregator({ twitch, kick, youtube, floor, enabled: liveSources });
+  // API-Football DATA feed (docs/football-api.md). Constructed always; it self-
+  // disables (throws DISABLED → honest empty) when the provider/key are absent,
+  // exactly like the video clients. loadEnv sets `footballApiEnabled`; the fallback
+  // keeps hand-built test envs (no loadEnv) booting unchanged.
+  const football = createFootballClient({
+    provider: env.FOOTBALL_API_PROVIDER,
+    apiKey: env.FOOTBALL_API_KEY,
+    baseUrl: env.FOOTBALL_API_BASE_URL,
+  });
+  const footballEnabled = env.footballApiEnabled ?? Boolean(env.FOOTBALL_API_PROVIDER === 'api-football' && env.FOOTBALL_API_KEY);
+  // A single enabled map feeds BOTH the aggregator and the route: the four grid
+  // sources plus the football data flag (`football` is ignored by the generic grid).
+  const enabled = { ...liveSources, football: footballEnabled };
+  const liveAggregator = createLiveAggregator({ twitch, kick, youtube, floor, football, enabled });
   const hub = createHub();
   const notify = createNotifier(db, hub);
   const priceCache = createPriceCache({ ttlMs: 10000 });
@@ -135,7 +149,8 @@ export async function createApp({ env: rawEnv, db: existingDb } = {}) {
 
   // Resilient multi-source live feed (public): merges Twitch/Kick/YouTube/Floor into
   // LiveChannel[] with a never-empty ladder. Never 500s — see routes/live.js.
-  app.use('/api/live', liveRouter({ aggregator: liveAggregator, enabled: liveSources }));
+  // `?category=football` additionally serves the API-Football DATA feed (docs/football-api.md).
+  app.use('/api/live', liveRouter({ aggregator: liveAggregator, enabled }));
 
   // catalog public
   // rooms public (list/detail)
@@ -200,6 +215,7 @@ export async function createApp({ env: rawEnv, db: existingDb } = {}) {
   app._twitch = twitch;
   app._liveAggregator = liveAggregator;
   app._liveSources = liveSources;
+  app._football = football;
   app._interval = interval;
 
   return app;

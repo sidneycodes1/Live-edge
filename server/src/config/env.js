@@ -55,6 +55,20 @@ const schema = z.object({
   // aggregator; the base aggregator currently leans on each client's own cache —
   // this is the contract hook for the verifier's grid-cache decision.
   LIVE_CACHE_TTL_MS: z.coerce.number().min(1000).default(30000),
+  // API-Football DATA integration (docs/football-api.md — Phase 1 of the Football
+  // Live Bets Overhaul). OPTIONAL + STRICT, same degrade policy as every live
+  // provider (§7): a provider that isn't 'api-football' or a missing key DISABLES
+  // the feature with a startup warning — it never crashes boot. The key is a secret:
+  // never logged/echoed, never written to a tracked file or test fixture. Coerce is
+  // left off SIM_BET_WINDOW_MIN so a garbage value falls back to 30 (validated in
+  // loadEnv) instead of throwing at parse time.
+  FOOTBALL_API_PROVIDER: z.string().optional(),
+  FOOTBALL_API_KEY: z.string().optional(),
+  FOOTBALL_API_BASE_URL: z.string().url().default('https://v3.football.api-sports.io'),
+  // Held as unknown ON PURPOSE: coercion + validation happen in loadEnv so a
+  // malformed value degrades to the default with a warning rather than crashing the
+  // whole schema parse (the app must always boot — §7 degrade policy).
+  SIM_BET_WINDOW_MIN: z.unknown().optional(),
 });
 
 export function loadEnv(raw = process.env) {
@@ -87,6 +101,29 @@ export function loadEnv(raw = process.env) {
   // Floor is "enabled" if it can contribute EITHER live discovery (key) OR the
   // guaranteed network-free fallback card (url).
   const floorEnabled = floorHasFallback || floorHasDiscovery;
+  // API-Football data feed (§ docs/football-api.md). Enabled ONLY when the provider
+  // is exactly 'api-football' AND a key is present. A wrong provider or missing key
+  // disables it with a startup warning (never a crash) so the app still boots and
+  // category=football serves an honest empty feed. The key itself is never logged.
+  const footballProviderOk = env.FOOTBALL_API_PROVIDER === 'api-football';
+  const footballHaskey = Boolean(env.FOOTBALL_API_KEY);
+  const footballApiEnabled = footballProviderOk && footballHaskey;
+  if (env.FOOTBALL_API_PROVIDER && !footballProviderOk) {
+    warnings.push(`FOOTBALL_API_PROVIDER="${env.FOOTBALL_API_PROVIDER}" unsupported → football data API disabled (only 'api-football' is implemented)`);
+  } else if (!footballApiEnabled) {
+    warnings.push('FOOTBALL_API_KEY missing or FOOTBALL_API_PROVIDER!=api-football → football data API disabled (category=football serves an honest empty feed)');
+  }
+  // SIM_BET_WINDOW_MIN: positive integer, validated leniently — a bad/NaN value
+  // falls back to 30 with a warning rather than crashing boot.
+  let simBetWindowMin = 30;
+  if (env.SIM_BET_WINDOW_MIN != null && env.SIM_BET_WINDOW_MIN !== '') {
+    const n = Number(env.SIM_BET_WINDOW_MIN);
+    if (Number.isInteger(n) && n >= 1) {
+      simBetWindowMin = n;
+    } else {
+      warnings.push('SIM_BET_WINDOW_MIN must be a positive integer → falling back to 30');
+    }
+  }
   const liveSources = { twitch: twitchEnabled, kick: kickEnabled, youtube: youtubeEnabled, floor: floorEnabled };
   // Loud-but-non-fatal signals so an operator knows which providers will be silent.
   if (!kickEnabled) warnings.push('KICK_CLIENT_ID/KICK_CLIENT_SECRET missing → Kick contributes no live channels');
@@ -101,5 +138,14 @@ export function loadEnv(raw = process.env) {
     category: env.FLOOR_FALLBACK_CATEGORY || '',
     thumbnailUrl: '',
   };
-  return { ...env, effectiveMode: mode, twitchEnabled, liveSources, floorFallback, warnings };
+  return {
+    ...env,
+    effectiveMode: mode,
+    twitchEnabled,
+    liveSources,
+    floorFallback,
+    footballApiEnabled,
+    simBetWindowMin,
+    warnings,
+  };
 }
