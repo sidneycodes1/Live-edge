@@ -15,7 +15,7 @@ export const EMBED_VERIFIED = {
   twitch: true,   // https://dev.twitch.tv/docs/embed/video-and-clips/
   youtube: true,  // https://developers.google.com/youtube/iframe_api_reference
   kick: false,    // player.kick.com/<slug> — NOT VERIFIED in-browser yet
-  floor: false,   // Livepeer HLS playback — NOT VERIFIED (needs hls.js) yet
+  floor: false,   // Livepeer HLS — playback implemented via hls.js (HlsVideo.jsx); browser verification pending
 };
 
 export function isEmbedVerified(source) {
@@ -86,7 +86,7 @@ export function buildVideoEmbed(channel, parent) {
   }
 
   if (source === 'floor' && watchUrl && /\.m3u8($|\?)/i.test(watchUrl)) {
-    // HLS playback requires hls.js (not bundled); gated until VERIFIED.
+    // HLS playback is handled by HlsVideo.jsx (hls.js); surfaced for browser verification.
     return { provider: 'floor', verified: false, kind: 'hls', src: watchUrl, watchUrl };
   }
 
@@ -120,6 +120,10 @@ export function detectEmbedFromUrl(url, parent) {
 
   if (/\.mp4($|\?)/i.test(u.pathname)) {
     return { provider: 'mp4', verified: true, kind: 'mp4', src: raw, watchUrl: raw };
+  }
+  if (/\.m3u8($|\?)/i.test(u.pathname)) {
+    // Self-hosted / Livepeer HLS — played by HlsVideo.jsx (hls.js).
+    return { provider: 'hls', verified: false, kind: 'hls', src: raw, watchUrl: raw };
   }
   if (host.includes('youtube.com') || host.includes('youtu.be')) {
     const videoId = extractYouTubeVideoId({ watchUrl: raw, id: '' });

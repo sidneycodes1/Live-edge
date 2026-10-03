@@ -1,6 +1,7 @@
 import VideoStage from './VideoStage.jsx';
 import { detectEmbedFromUrl } from '../lib/embed.js';
 import { IconExternal } from './Icons.jsx';
+import HlsVideo from './HlsVideo.jsx';
 
 // The Live Room's video area, now provider-agnostic (docs §6). A room carries its
 // feed as either a bound Twitch channel (handled upstream in Room.jsx, untouched so
@@ -16,6 +17,10 @@ export default function RoomFeed({ videoUrl, parent }) {
 
   if (embed.kind === 'mp4' || embed.kind === 'none') {
     return <VideoStage videoUrl={embed.kind === 'mp4' ? videoUrl : null} />;
+  }
+
+  if (embed.kind === 'hls') {
+    return <HlsVideo src={embed.src} className="md:aspect-auto md:h-full min-h-[300px]" />;
   }
 
   if (embed.kind === 'iframe' && embed.verified) {

@@ -1,6 +1,7 @@
 import { buildVideoEmbed } from '../lib/embed.js';
 import { IconExternal } from './Icons.jsx';
 import TwitchVideo from './TwitchVideo.jsx';
+import HlsVideo from './HlsVideo.jsx';
 
 // Provider-agnostic video surface for the live grid's watch rooms. It resolves a
 // LiveChannel through the embed map (§6) and then:
@@ -65,6 +66,10 @@ const PROVIDER_NAME = { kick: 'Kick', youtube: 'YouTube', twitch: 'Twitch', floo
 
 export default function FeedEmbed({ channel, parent, fallback = null }) {
   const embed = buildVideoEmbed(channel, parent);
+
+  if (embed.kind === 'hls') {
+    return <HlsVideo src={embed.src} />;
+  }
 
   if (embed.kind === 'iframe' && embed.verified) {
     if (embed.provider === 'twitch') {
