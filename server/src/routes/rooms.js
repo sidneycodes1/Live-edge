@@ -30,6 +30,10 @@ export function roomsRouter({ db, hub, twitch }) {
           twitch_channel: room.twitch_channel || null,
           status: room.status,
           isSeed: room.is_seed,
+          // Queryable room facts (migration 007). Surfaced so the UI can detect a
+          // football watch-party room (bring-your-own-feed) vs a hosted-video room.
+          category: room.category || null,
+          watch_party: room.watch_party === true,
           owner: { displayName: room.owner_name, wallet: room.owner_wallet },
           viewers,
           heroMarket: hero
@@ -77,6 +81,11 @@ export function roomsRouter({ db, hub, twitch }) {
         twitch_channel: room.twitch_channel || null,
         status: room.status,
         isSeed: room.is_seed,
+        // Queryable room facts (migration 007) — see list route. The watch-party
+        // layout keys off `watch_party`; without it the room falls back to the
+        // generic video layout and never shows the bring-your-own-feed box.
+        category: room.category || null,
+        watch_party: room.watch_party === true,
         owner: { displayName: room.owner_name },
         viewers,
         markets: markets.map((m) => ({
