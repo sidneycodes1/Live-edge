@@ -14,6 +14,8 @@ import { createYouTubeClient } from './youtube/client.js';
 import { createFloorClient } from './floor/client.js';
 import { createFootballClient } from './football/client.js';
 import { createCuratedClient } from './curated/client.js';
+import { createGeminiClient } from './gemini/client.js';
+import { createMarketEngine } from './services/marketEngine.js';
 import { createLiveAggregator } from './aggregator/index.js';
 import { createHub } from './services/sse.js';
 import { createPriceCache } from './services/priceCache.js';
@@ -110,13 +112,19 @@ export async function createApp({ env: rawEnv, db: existingDb } = {}) {
   // concurrency + stagger + one retry; partial refreshes cache only 60s so a
   // throttle blip at boot cannot lock the grid short-filled for 10 minutes.
   const curated = createCuratedClient({ concurrency: 4, staggerMs: 150, retryDelayMs: 1500 });
-  // Gemini feature flag (Phase 2 env groundwork ONLY — no Gemini logic runs yet).
+  // Gemini feature flag: drives whether the broadcast market engine rotates (§ TASK 2).
   const geminiEnabled = env.geminiEnabled ?? Boolean(env.GEMINI_API_KEY);
   // A single enabled map feeds BOTH the aggregator and the route: the four grid
   // sources plus the football data flag (`football` is ignored by the generic grid)
   // and the gemini groundwork flag (consumed by a later phase, not the grid).
   const enabled = { ...liveSources, football: footballEnabled, gemini: geminiEnabled };
   const liveAggregator = createLiveAggregator({ twitch, kick, youtube, floor, football, curated, enabled });
+  // Broadcast-aligned market engine (Phase 2). Gemini client is inert without a key
+  // (generateJson returns null, no call), so the engine is ALWAYS constructed but a
+  // real rotation only runs when the feature is enabled. It never throws at boot and
+  // never wipes existing markets — a Gemini outage just keeps the last batch served.
+  const gemini = createGeminiClient({ apiKey: env.GEMINI_API_KEY, model: env.GEMINI_MODEL });
+  const marketEngine = createMarketEngine({ db, gemini, aggregator: liveAggregator, env });
   const hub = createHub();
   const notify = createNotifier(db, hub);
   const priceCache = createPriceCache({ ttlMs: 10000 });
@@ -179,14 +187,20 @@ export async function createApp({ env: rawEnv, db: existingDb } = {}) {
     next();
   }, roomsRouter({ db, hub, twitch }));
 
-  // markets: some public, some auth
+  // markets: some public, some auth. The GET listing rails (trending/closing/all),
+  // /catalog and the single-market detail are public; create/resolve require auth.
+  // POST /engine/tick reaches the router without auth so the live proof is a plain
+  // curl — the handler itself hard-refuses in production (see routes/markets.js).
   app.use(
     '/api/markets',
     (req, res, next) => {
-      if (req.path === '/catalog' || (req.method === 'GET' && req.path.match(/^\/[^/]+$/))) return next();
+      const p = req.path;
+      const publicGet = req.method === 'GET' && (p === '/' || p === '/catalog' || /^\/[^/]+$/.test(p));
+      const devTick = req.method === 'POST' && p === '/engine/tick';
+      if (publicGet || devTick) return next();
       return auth(req, res, next);
     },
-    marketsRouter({ db, panta, hub, priceCache, notify }),
+    marketsRouter({ db, panta, hub, priceCache, notify, engine: marketEngine, env }),
   );
 
   // orders (auth + limiter)
@@ -227,6 +241,12 @@ export async function createApp({ env: rawEnv, db: existingDb } = {}) {
   }, 10000);
   if (interval.unref) interval.unref();
 
+  // Start the 30-min market rotation ONLY when Gemini is enabled (an engine with no
+  // key would just skip every tick). It kicks once immediately so a fresh boot already
+  // has live-born markets, then rotates. The interval is unref'd so it never keeps the
+  // process alive, and app teardown (testApp + graceful shutdown) stops it explicitly.
+  if (geminiEnabled) marketEngine.start();
+
   app._db = db;
   app._hub = hub;
   app._env = env;
@@ -236,6 +256,8 @@ export async function createApp({ env: rawEnv, db: existingDb } = {}) {
   app._liveSources = liveSources;
   app._football = football;
   app._curated = curated;
+  app._gemini = gemini;
+  app._engine = marketEngine;
   app._interval = interval;
 
   return app;
