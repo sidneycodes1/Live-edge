@@ -32,6 +32,7 @@ import { faucetRouter } from './routes/faucet.js';
 import { notificationsRouter } from './routes/notifications.js';
 import { twitchRouter } from './routes/twitch.js';
 import { liveRouter } from './routes/live.js';
+import { searchRouter } from './routes/search.js';
 import { ledgerRouter } from './routes/ledger.js';
 import { createNotifier } from './services/notify.js';
 import { createAuth } from './middleware/auth.js';
@@ -164,6 +165,11 @@ export async function createApp({ env: rawEnv, db: existingDb } = {}) {
   // LiveChannel[] with a never-empty ladder. Never 500s — see routes/live.js.
   // `?category=football` additionally serves the API-Football DATA feed (docs/football-api.md).
   app.use('/api/live', liveRouter({ aggregator: liveAggregator, enabled }));
+
+  // Keyless, quota-free search over the merged live grid + cached football feed
+  // (server/src/routes/search.js). Never 500s; empty query / no matches → honest
+  // empty so the UI can show "no matches" rather than a broken spinner.
+  app.use('/api/search', searchRouter({ aggregator: liveAggregator }));
 
   // catalog public
   // rooms public (list/detail)
