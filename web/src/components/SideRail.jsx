@@ -35,7 +35,11 @@ export default function SideRail() {
       name: s.userName || s.userLogin, sub: s.gameName || 'Live on Twitch',
       viewers: s.viewerCount || 0, real: true,
     })),
-    ...rooms.map((r) => ({
+    ...rooms
+      // Demo seeds (ViewerSeed/StreamerSeed rooms) must never pollute the rail —
+      // real + engine rooms only. They stay reachable by direct URL for tests.
+      .filter((r) => !r.isSeed)
+      .map((r) => ({
       key: `r-${r.id}`, to: `/room/${r.id}`,
       name: r.title, sub: r.owner?.displayName || 'LiveEdge',
       viewers: r.viewers || 0, real: false,

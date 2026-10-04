@@ -106,15 +106,22 @@ function channelFromParams(source, slug, titleParam, st) {
 function ChatColumn({ ch, chat }) {
   if (chat && chat.src) {
     return (
-      <iframe
-        title={`Live chat: ${ch.title || ch.channelSlug || 'stream'}`}
-        src={chat.src}
-        data-testid="chat-embed"
-        data-provider={chat.provider}
-        className="w-full h-full bg-black/20"
-        allow="autoplay; clipboard-write; encrypted-media; picture-in-picture; full-screen"
-        sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
-      />
+      <div className="w-full h-full flex flex-col min-h-0" data-testid="chat-column-embed">
+        <iframe
+          title={`Live chat: ${ch.title || ch.channelSlug || 'stream'}`}
+          src={chat.src}
+          data-testid="chat-embed"
+          data-provider={chat.provider}
+          className="flex-1 w-full min-h-0 bg-black/20"
+          allow="autoplay; clipboard-write; encrypted-media; picture-in-picture; full-screen"
+        />
+        {/* Honest caption: cross-origin frames can show provider error pages
+            (chat disabled/hold by the creator) we cannot detect or style. */}
+        <p className="shrink-0 px-3 py-1.5 text-[10px] leading-relaxed text-white/40 border-t border-white/10">
+          Real {chat.provider === 'twitch' ? 'Twitch' : 'YouTube'} live chat for this broadcast —
+          signed-in viewers can post. If the creator turned chat off, their notice shows here.
+        </p>
+      </div>
     );
   }
   const note =

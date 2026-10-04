@@ -148,6 +148,9 @@ export function buildChatEmbed(channel, parent) {
       const u = new URL('https://www.youtube.com/live_chat');
       u.searchParams.set('v', videoId);
       u.searchParams.set('is_framed', 'true');
+      // embed_domain is YouTube's documented framing handshake for the chat
+      // iframe (mirrors Twitch's `parent`); only set when we actually have one.
+      if (trim(parent)) u.searchParams.set('embed_domain', trim(parent));
       return { provider: 'youtube', verified: true, kind: 'iframe', src: u.toString(), videoId };
     }
     return null;
@@ -160,6 +163,7 @@ export function buildChatEmbed(channel, parent) {
       const u = new URL('https://www.youtube.com/live_chat');
       u.searchParams.set('v', videoId);
       u.searchParams.set('is_framed', 'true');
+      if (trim(parent)) u.searchParams.set('embed_domain', trim(parent));
       return { provider: 'youtube', verified: true, kind: 'iframe', src: u.toString(), videoId };
     }
     return null;

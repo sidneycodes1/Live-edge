@@ -129,6 +129,26 @@ describe('marketEngine/tick', () => {
     assert.equal(g.calls, 0);
   });
 
+  it('BROADCAST RULE: candidates without a watchable stream never reach the model', async () => {
+    const { db } = await makeApp();
+    // A data-only feed (no watchUrl/thumbnail) + a bare football fixture: neither
+    // is a live BROADCAST, so the pool is empty → skip 'no-live', model untouched.
+    const agg = {
+      getChannels: async () => ({
+        items: [{ id: 'feed-x', title: 'Data-only feed', channelName: 'No Stream', viewers: 5, category: 'Football', status: 'live' }],
+      }),
+      getFootballMatches: async () => ({
+        items: [{ id: 'match-y', title: 'Score Only FC vs Watch Party FC', channelName: 'Live Football', viewers: 9, category: 'Football', status: 'live' }],
+      }),
+    };
+    const g = fakeGemini({ markets: [] });
+    const res = await newEngine(db, g, agg).tick();
+    assert.equal(res.skipped, 'no-live');
+    assert.equal(g.calls, 0);
+    const { rows } = await db.query(`select count(*)::int c from markets where source='sim-engine'`);
+    assert.equal(rows[0].c, 0);
+  });
+
   it('HAPPY: creates sim-engine markets tied to the live stream + stamps budget', async () => {
     const { db } = await makeApp();
     const g = fakeGemini({

@@ -43,6 +43,12 @@ describe('buildChatEmbed', () => {
     );
     expect(c.provider).toBe('youtube');
     expect(c.videoId).toBe('urZuCbudWz8');
+    // embed_domain is YouTube's documented framing handshake (mirrors Twitch parent).
+    expect(c.src).toBe('https://www.youtube.com/live_chat?v=urZuCbudWz8&is_framed=true&embed_domain=example.com');
+  });
+
+  it('YouTube chat without a parent → no embed_domain param', () => {
+    const c = buildChatEmbed({ source: 'youtube', watchUrl: 'https://www.youtube.com/watch?v=urZuCbudWz8' });
     expect(c.src).toBe('https://www.youtube.com/live_chat?v=urZuCbudWz8&is_framed=true');
   });
 

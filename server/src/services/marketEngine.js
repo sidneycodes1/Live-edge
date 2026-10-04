@@ -198,19 +198,26 @@ export function createMarketEngine(options = {}) {
   }
 
   // Live grid (via aggregator's cache/ladder) + football fixtures, deduped by id.
+  // BROADCAST RULE (user): a bet is born from a live BROADCAST — a candidate must
+  // carry a real watchable stream (watchUrl + thumbnail). Football fixtures without
+  // an attached broadcast are EXCLUDED here; their bets live in the match view.
+  function isBroadcastCandidate(c) {
+    return Boolean(c && c.watchUrl && c.thumbnailUrl);
+  }
+
   async function snapshotCandidates() {
     const out = [];
     const seen = new Set();
+    const push = (c) => {
+      if (c && isBroadcastCandidate(c) && !seen.has(c.liveItemId)) {
+        seen.add(c.liveItemId);
+        out.push(c);
+      }
+    };
     if (typeof aggregator?.getChannels === 'function') {
       try {
         const agg = await aggregator.getChannels(cfg.snapshotLimit);
-        for (const it of agg.items || []) {
-          const c = candidateFromItem(it, 'live');
-          if (c && !seen.has(c.liveItemId)) {
-            seen.add(c.liveItemId);
-            out.push(c);
-          }
-        }
+        for (const it of agg.items || []) push(candidateFromItem(it, 'live'));
       } catch (e) {
         warn(`marketEngine: live snapshot failed (${e.code || e.name})`);
       }
@@ -218,13 +225,9 @@ export function createMarketEngine(options = {}) {
     if (typeof aggregator?.getFootballMatches === 'function') {
       try {
         const fb = await aggregator.getFootballMatches(cfg.snapshotLimit);
-        for (const it of fb.items || []) {
-          const c = candidateFromItem(it, 'football');
-          if (c && !seen.has(c.liveItemId)) {
-            seen.add(c.liveItemId);
-            out.push(c);
-          }
-        }
+        // Only fixtures that ALREADY carry a real broadcast (videoUrl) pass the
+        // isBroadcastCandidate gate below — data-only fixtures are dropped.
+        for (const it of fb.items || []) push(candidateFromItem(it, 'football'));
       } catch (e) {
         // Football disabled/empty is normal — never fatal to the engine.
         if (e.code !== 'DISABLED') warn(`marketEngine: football snapshot failed (${e.code || e.name})`);
