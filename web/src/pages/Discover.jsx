@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api.js';
 import { normalizeLive, normalizeChannel, normalizeMatch, normalizeFootballFeed } from '../lib/live.js';
 import { buildLiveNowCards, marketThumb } from '../lib/live-now.js';
+import { fmtTimeLeft } from '../lib/format.js';
 import MarketCard from '../components/MarketCard.jsx';
 import LiveNow from '../components/LiveNow.jsx';
 import Rail from '../components/Rail.jsx';
@@ -131,8 +132,12 @@ export default function Discover() {
         return hay.includes(q);
       });
   const trending = [...searched].filter((r) => r.heroMarket).sort((a, b) => (b.heroMarket.volume || 0) - (a.heroMarket.volume || 0)).slice(0, 10);
+  // "Closing soon" must only contain markets that ACTUALLY close soon: an
+  // end_time beyond the fmtTimeLeft 48h honesty clamp (far-future seeds) is not
+  // a countdown, so that card never claims a slot in this rail.
   const closing = [...searched]
     .filter((r) => r.heroMarket && r.heroMarket.status === 'open' && r.heroMarket.end_time)
+    .filter((r) => fmtTimeLeft(r.heroMarket.end_time) !== '—')
     .sort((a, b) => new Date(a.heroMarket.end_time) - new Date(b.heroMarket.end_time))
     .slice(0, 10);
   const featured = trending.find((r) => r.heroMarket.status === 'open') || null;

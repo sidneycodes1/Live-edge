@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../lib/api.js';
+import { normalizeLive } from '../lib/live.js';
+import { liveCardHref } from './LiveCard.jsx';
 import { useAuth } from '../hooks/useAuth.js';
 
 // Twitch-style persistent left rail. Lists LIVE CHANNELS — mixing the platform's
@@ -19,6 +21,7 @@ function fmtWatchers(n) {
 export default function SideRail() {
   const [rooms, setRooms] = useState([]);
   const [twitch, setTwitch] = useState([]);
+  const [live, setLive] = useState([]);
   const [collapsed, setCollapsed] = useState(false);
   const { user } = useAuth();
 
@@ -26,8 +29,34 @@ export default function SideRail() {
     let active = true;
     api.listRooms().then((r) => active && setRooms(Array.isArray(r) ? r : [])).catch(() => {});
     api.listTwitchLive(8).then((r) => active && setTwitch(r.items || [])).catch(() => {});
+    // The real broadcast grid: when no platform ROOMS exist yet (engine between
+    // rotations), the rail must still show what is actually live right now —
+    // the same honest /api/live source the landing grid renders.
+    api.getLive(10).then((r) => active && setLive(normalizeLive(r).items || [])).catch(() => {});
     return () => { active = false; };
   }, []);
+
+  const roomEntries = rooms
+    // Demo seeds (ViewerSeed/StreamerSeed rooms) must never pollute the rail —
+    // real + engine rooms only. They stay reachable by direct URL for tests.
+    .filter((r) => !r.isSeed)
+    .map((r) => ({
+      key: `r-${r.id}`, to: `/room/${r.id}`,
+      name: r.title, sub: r.owner?.displayName || 'LiveEdge',
+      viewers: r.viewers || 0, real: false,
+    }));
+  // Live-grid channels fill the rail below the rooms; a room already listed for
+  // the same broadcast (engine room born from that stream) is not shown twice.
+  const seenTitles = new Set(roomEntries.map((e) => String(e.name || '').toLowerCase().trim()));
+  const liveEntries = live
+    .map((c) => ({
+      key: `l-${c.id}`,
+      to: liveCardHref(c) || `/watch/${encodeURIComponent(c.source || 'live')}/${encodeURIComponent(c.channelSlug || c.id || '')}`,
+      name: c.title || c.channelName || 'Live stream',
+      sub: c.channelName || 'Live',
+      viewers: c.viewerCount || 0, real: true,
+    }))
+    .filter((e) => !seenTitles.has(String(e.name).toLowerCase().trim()));
 
   const channels = [
     ...twitch.map((s) => ({
@@ -35,15 +64,8 @@ export default function SideRail() {
       name: s.userName || s.userLogin, sub: s.gameName || 'Live on Twitch',
       viewers: s.viewerCount || 0, real: true,
     })),
-    ...rooms
-      // Demo seeds (ViewerSeed/StreamerSeed rooms) must never pollute the rail —
-      // real + engine rooms only. They stay reachable by direct URL for tests.
-      .filter((r) => !r.isSeed)
-      .map((r) => ({
-      key: `r-${r.id}`, to: `/room/${r.id}`,
-      name: r.title, sub: r.owner?.displayName || 'LiveEdge',
-      viewers: r.viewers || 0, real: false,
-    })),
+    ...roomEntries,
+    ...liveEntries,
   ].slice(0, 14);
 
   return (

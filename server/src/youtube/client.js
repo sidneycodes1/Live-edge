@@ -136,13 +136,22 @@ export function createYouTubeClient({
         warn(`YouTube videos enrichment failed → using search data (${e.code || e.name})`);
       }
     }
-    return liveItems.map((it) => {
-      const ch = normalizeYouTubeChannel(it, detailById[it?.id?.videoId]);
+    // Combine search + detail. A video whose liveStreamingDetails.actualEndTime is
+    // SET has ENDED — search indexing lags reality by minutes, so without this
+    // prune a finished game keeps a LIVE badge until it ages out of the cache.
+    // Enrichment failures leave detailById empty → items are kept (best-effort:
+    // we only remove what we can PROVE is over; we never guess one in or out).
+    const out = [];
+    for (const it of liveItems) {
+      const detail = detailById[it?.id?.videoId];
+      if (detail?.liveStreamingDetails?.actualEndTime) continue;
+      const ch = normalizeYouTubeChannel(it, detail);
       // Operator-assigned query label (like the curated list's curation tag) —
       // only fills the source-native-empty category, never overrides it.
       if (spec.category && !ch.category) ch.category = spec.category;
-      return ch;
-    });
+      out.push(ch);
+    }
+    return out;
   }
 
   // Internal fetch across ALL configured queries. Concurrent (single round-trip

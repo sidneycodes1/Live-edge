@@ -283,3 +283,95 @@ describe('marketEngine/tick', () => {
     assert.equal(cleared, true);
   });
 });
+
+// Polls a condition with REAL timers while the engine itself runs on fakes.
+function waitFor(pred, timeoutMs = 2000) {
+  return new Promise((resolve, reject) => {
+    const t0 = Date.now();
+    const step = () => {
+      if (pred()) return resolve();
+      if (Date.now() - t0 > timeoutMs) return reject(new Error('waitFor: condition never met'));
+      setTimeout(step, 5);
+    };
+    step();
+  });
+}
+
+describe('marketEngine/retry ladder (a failed boot tick must NOT wait the 30-min rotation)', () => {
+  before(setupTestEnv);
+  beforeEach(resetDb);
+  after(teardownTestEnv);
+
+  it('gemini-error → retries at retryMs, then 3×retryMs; stop() clears the pending retry', async () => {
+    const { db } = await makeApp();
+    const timers = [];
+    const cleared = [];
+    const g = fakeGemini(null, { throws: new GeminiError('RATE_LIMIT', 'rate limited (429)', { status: 429 }) });
+    const e = createMarketEngine({
+      db,
+      gemini: g,
+      aggregator: fakeAggregator([liveItem()]),
+      env: {},
+      now,
+      warn: () => {},
+      defaults: { retryMs: 1000, rotationMs: 60000 },
+      setIntervalImpl: () => ({ unref() {} }),
+      clearIntervalImpl: () => {},
+      setTimeoutImpl: (cb, ms) => {
+        const t = { cb, ms };
+        timers.push(t);
+        return t;
+      },
+      clearTimeoutImpl: (t) => cleared.push(t),
+    });
+    e.start(); // immediate kick → tick fails on Gemini → scheduleRetry
+    await waitFor(() => timers.length >= 1);
+    assert.equal(timers[0].ms, 1000, 'first retry waits ONE retryMs, not the 30-min rotation');
+    assert.equal(e.status().retryAttempt, 1);
+    timers[0].cb(); // fire retry #1 → fails again → ladder step 3×
+    await waitFor(() => timers.length >= 2);
+    assert.equal(timers[1].ms, 3000, 'backoff grows 3× per attempt');
+    assert.equal(g.calls, 2, 'the retry actually re-ran generation (budget guarded it)');
+    e.stop();
+    assert.deepEqual(cleared, [timers[1]], 'stop() clears the pending retry timer');
+  });
+
+  it('a successful retry resets the ladder (no further timers scheduled)', async () => {
+    const { db } = await makeApp();
+    const timers = [];
+    let items = [];
+    const aggregator = {
+      getChannels: async () => ({ items, generatedAt: T0 }),
+      getFootballMatches: async () => ({ items: [], status: 'disabled' }),
+    };
+    const g = fakeGemini({ markets: [{ liveItemId: 'yt-vid1', question: 'A question that finally lands?' }] });
+    const e = createMarketEngine({
+      db,
+      gemini: g,
+      aggregator,
+      env: {},
+      now,
+      warn: () => {},
+      defaults: { retryMs: 1000, rotationMs: 60000 },
+      setIntervalImpl: () => ({ unref() {} }),
+      clearIntervalImpl: () => {},
+      setTimeoutImpl: (cb, ms) => {
+        const t = { cb, ms };
+        timers.push(t);
+        return t;
+      },
+      clearTimeoutImpl: () => {},
+    });
+    e.start(); // snapshot empty → skipped:'no-live' → retry scheduled
+    await waitFor(() => timers.length >= 1);
+    assert.equal(e.status().retryAttempt, 1);
+    items = [liveItem()]; // the live stream shows up before the retry fires
+    timers[0].cb();
+    await waitFor(() => g.calls >= 1);
+    assert.equal(e.status().retryAttempt, 0, 'success resets the backoff ladder');
+    assert.equal(timers.length, 1, 'no further retry scheduled after success');
+    const { rows } = await db.query(`select question from markets where source='sim-engine'`);
+    assert.equal(rows.length, 1, 'the retry produced a real market');
+    e.stop();
+  });
+});

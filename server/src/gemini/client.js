@@ -63,6 +63,11 @@ export function createGeminiClient({
   apiKey,
   model = process.env.GEMINI_MODEL || DEFAULT_MODEL,
   timeoutMs = DEFAULT_TIMEOUT_MS,
+  // A 429 means the per-MINUTE window is spent — retrying instantly just hits
+  // the same wall and burns the attempt. Wait this long before the single retry.
+  // 5xx stays instant (an upstream blip, not a quota window).
+  rateLimitRetryDelayMs = 15000,
+  setTimeoutImpl = setTimeout,
   baseUrl = DEFAULT_BASE_URL,
   fetchImpl = fetch,
   warn = (msg) => console.warn(msg),
@@ -121,6 +126,12 @@ export function createGeminiClient({
       const retryable = e instanceof GeminiError && isRetryableStatus(e.status);
       if (!retryable) throw e;
       warn(`gemini: retrying once after ${e.code}${e.status ? ` (${e.status})` : ''}`);
+      if (e.status === 429 && rateLimitRetryDelayMs > 0) {
+        await new Promise((r) => {
+          const t = setTimeoutImpl(r, rateLimitRetryDelayMs);
+          if (t && t.unref) t.unref();
+        });
+      }
       return postOnce(payload);
     }
   }

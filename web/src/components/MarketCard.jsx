@@ -1,8 +1,22 @@
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import OddsBar from './OddsBar.jsx';
 import MoneyChip from './MoneyChip.jsx';
 import { fmtTimeLeft } from '../lib/format.js';
 import { marketThumb } from '../lib/live-now.js';
+
+// Re-render once per second while a countdown pill is on screen, so the timer
+// actually TICKS (fmtTimeLeft reads Date.now() at render; without a tick the
+// card would freeze at whatever second it first mounted). Costs nothing when
+// no pill is shown.
+function useCountdownTick(active) {
+  const [, setN] = useState(0);
+  useEffect(() => {
+    if (!active) return undefined;
+    const t = setInterval(() => setN((n) => n + 1), 1000);
+    return () => clearInterval(t);
+  }, [active]);
+}
 
 // A Discover market tile. It leads with the BET (question + odds + social proof).
 // The image is the REAL thumbnail of the underlying stream when one exists (its own
@@ -21,7 +35,8 @@ export default function MarketCard({ room }) {
   const betting = hero ? Math.max(0, Math.round((hero.volume || 0) / 10)) : 0;
   const countdown = hero && hero.status === 'open' && hero.end_time ? fmtTimeLeft(hero.end_time) : null;
   const thumb = marketThumb(room);
-  const showPill = countdown && countdown !== 'closed' && countdown !== '—';
+  const showPill = Boolean(countdown && countdown !== 'closed' && countdown !== '—');
+  useCountdownTick(showPill);
 
   return (
     <Link

@@ -35,6 +35,7 @@ import { sanitizeText } from './sanitize.js';
 
 export const ENGINE_DEFAULTS = {
   rotationMs: 30 * 60 * 1000, // ~every 30 minutes
+  retryMs: 3 * 60 * 1000, // fast-retry base after a transient failure
   marketTtlMs: 30 * 60 * 1000, // end_time = now + 30 min
   budgetPerDay: 40, // max Gemini calls/day
   maxOpenEngineMarkets: 3, // stop creating when >=3 sim-engine markets open
@@ -141,6 +142,8 @@ export function createMarketEngine(options = {}) {
     now = () => Date.now(),
     setIntervalImpl = setInterval,
     clearIntervalImpl = clearInterval,
+    setTimeoutImpl = setTimeout,
+    clearTimeoutImpl = clearTimeout,
     warn = (msg) => console.warn(msg),
   } = options;
 
@@ -157,6 +160,8 @@ export function createMarketEngine(options = {}) {
     budgetCalls: 0, // in-memory mirror of engine_budget.calls for budgetDay
     totalCalls: 0, // lifetime successful generations (health/proof)
     totalCreated: 0,
+    retryTimer: null, // pending fast-retry (setTimeout handle)
+    retryAttempt: 0, // depth of the backoff ladder
   };
   let interval = null;
 
@@ -395,9 +400,9 @@ export function createMarketEngine(options = {}) {
     if (state.running) return;
     state.running = true;
     // Immediate kick so a fresh boot already has markets; then every rotationMs.
-    void tick().catch((e) => warn(`marketEngine: initial tick threw (${e.message})`));
+    void run().catch((e) => warn(`marketEngine: initial tick threw (${e.message})`));
     interval = setIntervalImpl(() => {
-      void tick().catch((e) => warn(`marketEngine: tick threw (${e.message})`));
+      void run().catch((e) => warn(`marketEngine: tick threw (${e.message})`));
     }, cfg.rotationMs);
     if (interval && interval.unref) interval.unref();
   }
@@ -408,6 +413,37 @@ export function createMarketEngine(options = {}) {
       clearIntervalImpl(interval);
       interval = null;
     }
+    clearRetry();
+  }
+
+  // Fast-retry ladder after a TRANSIENT failure (Gemini 429/503, or a cold boot
+  // whose snapshot had no live items yet). Without this a failed boot tick waits
+  // the full 30-minute rotation and the landing rails sit on seed-only data.
+  // Backoff: retryMs, 3×retryMs, 9×… capped at rotationMs; ANY non-failure
+  // outcome resets the ladder. Budget still guards every attempt (40/day).
+  function clearRetry() {
+    if (state.retryTimer) {
+      clearTimeoutImpl(state.retryTimer);
+      state.retryTimer = null;
+    }
+  }
+
+  function scheduleRetry() {
+    if (!state.running || state.retryTimer) return;
+    const delay = Math.min(cfg.rotationMs, cfg.retryMs * 3 ** state.retryAttempt);
+    state.retryAttempt += 1;
+    state.retryTimer = setTimeoutImpl(() => {
+      state.retryTimer = null;
+      void run().catch((e) => warn(`marketEngine: retry tick threw (${e.message})`));
+    }, delay);
+    if (state.retryTimer && state.retryTimer.unref) state.retryTimer.unref();
+  }
+
+  async function run() {
+    const res = await tick();
+    if (res && (res.skipped === 'gemini-error' || res.skipped === 'no-live')) scheduleRetry();
+    else state.retryAttempt = 0;
+    return res;
   }
 
   function status() {
@@ -415,6 +451,7 @@ export function createMarketEngine(options = {}) {
       running: state.running,
       lastBatch: state.lastBatch,
       lastError: state.lastError,
+      retryAttempt: state.retryAttempt,
       budgetDay: state.budgetDay,
       budgetCalls: state.budgetCalls,
       budgetPerDay,

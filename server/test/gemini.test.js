@@ -66,11 +66,30 @@ describe('gemini/createGeminiClient', () => {
 
   it('retries ONCE on 429 then succeeds (two upstream calls)', async () => {
     const { fn, calls } = mockFetch(jsonRes({ error: 'rate' }, 429), candidateRes({ markets: [] }));
-    const c = createGeminiClient({ apiKey: 'k', fetchImpl: fn });
+    const c = createGeminiClient({ apiKey: 'k', fetchImpl: fn, rateLimitRetryDelayMs: 0 });
     const out = await c.generateJson('p', {});
     assert.deepEqual(out, { markets: [] });
     assert.equal(calls.length, 2);
     assert.equal(c.getCalls(), 1, 'only the 2xx counts as a successful call');
+  });
+
+  it('429 waits out the rate-limit window before the retry (an instant re-hit just burns the attempt)', async () => {
+    const { fn, calls } = mockFetch(jsonRes({ error: 'rate' }, 429), candidateRes({ markets: [] }));
+    const waits = [];
+    const setTimeoutImpl = (cb, ms) => { waits.push(ms); cb(); return { unref() {} }; };
+    const c = createGeminiClient({ apiKey: 'k', fetchImpl: fn, setTimeoutImpl });
+    await c.generateJson('p', {});
+    assert.equal(calls.length, 2);
+    assert.deepEqual(waits, [15000], 'the 429 retry sleeps one backoff step first');
+  });
+
+  it('5xx retries immediately (upstream blip, not a quota window)', async () => {
+    const { fn } = mockFetch(jsonRes({}, 503), candidateRes({ markets: [] }));
+    const waits = [];
+    const setTimeoutImpl = (cb, ms) => { waits.push(ms); cb(); return { unref() {} }; };
+    const c = createGeminiClient({ apiKey: 'k', fetchImpl: fn, setTimeoutImpl });
+    await c.generateJson('p', {});
+    assert.deepEqual(waits, [], 'no artificial wait on 5xx');
   });
 
   it('retries ONCE on 5xx then throws GeminiError(HTTP_ERROR) if it fails again', async () => {

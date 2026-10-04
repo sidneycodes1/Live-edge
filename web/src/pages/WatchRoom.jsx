@@ -104,15 +104,27 @@ function channelFromParams(source, slug, titleParam, st) {
 // The right-hand chat column. Mounts a real iframe when one exists, else an honest,
 // provider-specific note. Never renders a simulated comment box (§4).
 function ChatColumn({ ch, chat }) {
-  if (chat && chat.src) {
+  const src = chat && chat.src;
+  // Embedded YouTube live chats are known to stop auto-scrolling after a while —
+  // the frame looks frozen on a stale comment. Remount it every 90s so the chat
+  // re-joins the live session (a plain reload of the same URL, nothing invented).
+  const [gen, setGen] = useState(0);
+  useEffect(() => {
+    if (!src) return undefined;
+    const t = setInterval(() => setGen((g) => g + 1), 90000);
+    return () => clearInterval(t);
+  }, [src]);
+  if (src) {
     return (
       <div className="w-full h-full flex flex-col min-h-0" data-testid="chat-column-embed">
         <iframe
+          key={`${src}#${gen}`}
           title={`Live chat: ${ch.title || ch.channelSlug || 'stream'}`}
-          src={chat.src}
+          src={src}
           data-testid="chat-embed"
           data-provider={chat.provider}
           className="flex-1 w-full min-h-0 bg-black/20"
+          style={{ colorScheme: 'dark' }}
           allow="autoplay; clipboard-write; encrypted-media; picture-in-picture; full-screen"
         />
         {/* Honest caption: cross-origin frames can show provider error pages

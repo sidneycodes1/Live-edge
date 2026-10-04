@@ -221,6 +221,48 @@ describe('youtube client — videos enrichment is best-effort, never a hard depe
   });
 });
 
+describe('youtube client — ended-stream prune (a game that is OVER must leave the live grid)', () => {
+  it('drops a live-indexed video whose detail carries actualEndTime (proven over)', async () => {
+    const search = searchFixture();
+    search.items.unshift({
+      id: { videoId: 'vid-ENDED-2' },
+      snippet: {
+        title: 'Match central — search index still says live',
+        channelId: 'chan-9',
+        channelTitle: 'Sports TV',
+        publishedAt: '2026-10-04T10:00:00Z',
+        liveBroadcastContent: 'live',
+        thumbnails: { medium: { url: 'https://i.ytimg.com/vi/vid-ENDED-2/mq.jpg' } },
+      },
+    });
+    const videos = videosFixture();
+    videos.items.push({
+      id: 'vid-ENDED-2',
+      snippet: { title: 'Match central — FINAL', channelId: 'chan-9', channelTitle: 'Sports TV', thumbnails: {} },
+      liveStreamingDetails: { actualStartTime: '2026-10-04T10:00:00Z', actualEndTime: '2026-10-04T12:30:00Z' },
+    });
+    const { fn } = mockRouter([
+      { match: '/youtube/v3/search', res: makeRes(search) },
+      { match: '/youtube/v3/videos', res: makeRes(videos) },
+    ]);
+    const c = createYouTubeClient({ apiKey: KEY, fetchImpl: fn });
+    const list = await c.getTopLiveChannels(10);
+    assert.deepEqual(list.map((x) => x.id), ['youtube:vid-LIVE-1'], 'only the broadcast still provably live survives');
+  });
+
+  it('enrichment failure keeps the row — we only remove what we can PROVE ended (§4 honesty)', async () => {
+    // Same search, but the videos detail omits vid-LIVE-1 entirely: no evidence
+    // of an end → the item stays (the 5xx test above proves the thrown path).
+    const { fn } = mockRouter([
+      { match: '/youtube/v3/search', res: makeRes(searchFixture()) },
+      { match: '/youtube/v3/videos', res: makeRes({ items: [] }) },
+    ]);
+    const c = createYouTubeClient({ apiKey: KEY, fetchImpl: fn });
+    const list = await c.getTopLiveChannels(10);
+    assert.deepEqual(list.map((x) => x.id), ['youtube:vid-LIVE-1'], 'unprovable end → never guessed');
+  });
+});
+
 describe('youtube client — cache, stale, single-flight (ladder fuel semantics)', () => {
   it('caches within TTL — a single search+videos pipeline call', async () => {
     let t = 1000;
