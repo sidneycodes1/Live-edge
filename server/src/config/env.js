@@ -69,13 +69,14 @@ const schema = z.object({
   // malformed value degrades to the default with a warning rather than crashing the
   // whole schema parse (the app must always boot — §7 degrade policy).
   SIM_BET_WINDOW_MIN: z.unknown().optional(),
-  // Gemini groundwork (Phase 2, env ONLY). OPTIONAL + STRICT like every other
-  // provider: an absent key just DISABLES the feature (no boot crash, no network
-  // call). The key is a secret — never logged/echoed, never written to a tracked
-  // file or fixture. NO Gemini feature logic lives here yet; market generation with
-  // Gemini is the NEXT phase. This block only establishes the config contract.
+  // Gemini (broadcast market engine). OPTIONAL + STRICT like every other provider:
+  // an absent key just DISABLES the feature (no boot crash, no network call). The key
+  // is a secret — never logged/echoed, never written to a tracked file or fixture.
+  // When enabled, services/marketEngine.js rotates live-born markets; the daily call
+  // budget defaults to 40 and can be lowered/raised via GEMINI_BUDGET_PER_DAY.
   GEMINI_API_KEY: z.string().optional(),
   GEMINI_MODEL: z.string().default('gemini-3.8-flash'),
+  GEMINI_BUDGET_PER_DAY: z.unknown().optional(),
 });
 
 export function loadEnv(raw = process.env) {
