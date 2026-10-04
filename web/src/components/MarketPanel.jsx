@@ -6,13 +6,15 @@ import { fmtTimeLeft } from '../lib/format.js';
 export default function MarketPanel({ market, onTrade }) {
   if (!market) return <div className="p-4 text-white/50">No market yet</div>;
   // Only show a countdown while genuinely open AND time remains — never the
-  // literal "closed" on an open market (F-015).
+  // literal "closed" on an open market (F-015), and never the "—" clamp sentinel
+  // for an invalid/far-future end time (§4: refuse to render a garbage countdown).
   const timeLeft = market.status === 'open' ? fmtTimeLeft(market.end_time) : null;
+  const showCountdown = timeLeft && timeLeft !== 'closed' && timeLeft !== '—';
   return (
     <div className="bg-surface rounded-card border border-white/10 p-4">
       <div className="flex items-center gap-2 text-xs">
         <span className={`px-2 py-1 rounded-full text-xs ${market.status==='open'?'bg-live text-black':'bg-white/10'}`}>{market.status}</span>
-        {timeLeft && timeLeft !== 'closed' && (
+        {showCountdown && (
           <span data-testid="market-countdown" className="num inline-flex items-center gap-1 px-2 py-1 rounded-full bg-white/5 border border-white/10 text-white/60"><IconClock className="w-3.5 h-3.5" /> {timeLeft}</span>
         )}
         <span className="ml-auto flex items-center gap-2">

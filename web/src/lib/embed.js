@@ -66,6 +66,24 @@ export function buildVideoEmbed(channel, parent) {
     return { provider: 'twitch', verified: true, kind: 'iframe', src: u.toString(), watchUrl };
   }
 
+  // Curated 24/7 channel: embed by CHANNEL id (live_stream?channel=UC…) so it
+  // always plays whatever that channel is live-streaming right now — no per-video
+  // discovery, no search quota. Falls back to the concrete video id if present.
+  if (source === 'curated-youtube') {
+    const live = trim(channel?.liveEmbedUrl);
+    if (live) {
+      return { provider: 'youtube', verified: true, kind: 'iframe', src: live, watchUrl: channel?.videoUrl || watchUrl };
+    }
+    const videoId = extractYouTubeVideoId({ watchUrl: channel?.videoUrl || watchUrl, id: '' });
+    if (videoId) {
+      const u = new URL(`https://www.youtube.com/embed/${encodeURIComponent(videoId)}`);
+      u.searchParams.set('autoplay', '1');
+      u.searchParams.set('mute', '1');
+      u.searchParams.set('rel', '0');
+      return { provider: 'youtube', verified: true, kind: 'iframe', src: u.toString(), watchUrl: channel?.videoUrl || watchUrl };
+    }
+  }
+
   if (source === 'youtube') {
     const videoId = extractYouTubeVideoId(channel);
     if (videoId) {

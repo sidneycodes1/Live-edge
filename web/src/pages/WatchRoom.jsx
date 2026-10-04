@@ -24,7 +24,9 @@ export default function WatchRoom() {
         if (cancelled) return;
         const { items } = normalizeLive(raw);
         const found = items.find(
-          (c) => c.source === source && (c.channelSlug === slug || c.id === `${source}:${slug}`),
+          (c) =>
+            c.source === source &&
+            (c.channelSlug === slug || c.id === slug || c.id === `${source}:${slug}`),
         );
         setChannel(found || null);
       })
