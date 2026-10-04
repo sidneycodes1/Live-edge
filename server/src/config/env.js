@@ -69,6 +69,13 @@ const schema = z.object({
   // malformed value degrades to the default with a warning rather than crashing the
   // whole schema parse (the app must always boot — §7 degrade policy).
   SIM_BET_WINDOW_MIN: z.unknown().optional(),
+  // Gemini groundwork (Phase 2, env ONLY). OPTIONAL + STRICT like every other
+  // provider: an absent key just DISABLES the feature (no boot crash, no network
+  // call). The key is a secret — never logged/echoed, never written to a tracked
+  // file or fixture. NO Gemini feature logic lives here yet; market generation with
+  // Gemini is the NEXT phase. This block only establishes the config contract.
+  GEMINI_API_KEY: z.string().optional(),
+  GEMINI_MODEL: z.string().default('gemini-3.8-flash'),
 });
 
 export function loadEnv(raw = process.env) {
@@ -125,6 +132,13 @@ export function loadEnv(raw = process.env) {
     }
   }
   const liveSources = { twitch: twitchEnabled, kick: kickEnabled, youtube: youtubeEnabled, floor: floorEnabled };
+  // Gemini feature flag (Phase 2 groundwork). Derived from the key's presence ONLY;
+  // no creds → feature disabled with a startup notice, never a crash. No other Gemini
+  // behavior is wired this phase (market generation is next).
+  const geminiEnabled = Boolean(env.GEMINI_API_KEY);
+  if (!geminiEnabled) {
+    warnings.push('GEMINI_API_KEY missing → Gemini features disabled (no crash; model would use GEMINI_MODEL if enabled)');
+  }
   // Loud-but-non-fatal signals so an operator knows which providers will be silent.
   if (!kickEnabled) warnings.push('KICK_CLIENT_ID/KICK_CLIENT_SECRET missing → Kick contributes no live channels');
   if (!youtubeEnabled) warnings.push('YOUTUBE_API_KEY missing → YouTube contributes no live channels');
@@ -145,6 +159,7 @@ export function loadEnv(raw = process.env) {
     liveSources,
     floorFallback,
     footballApiEnabled,
+    geminiEnabled,
     simBetWindowMin,
     warnings,
   };
