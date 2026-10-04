@@ -260,6 +260,18 @@ export function createMarketEngine(options = {}) {
     return out.slice(0, cfg.marketsMax);
   }
 
+  // B3 (lead patch): an engine market gets its OWN room so it is a first-class
+  // citizen of /api/rooms — the Discover rails, the room page (real stream embed
+  // via video_url + betting) and MarketCard's "in <stream>" context line all
+  // consume rooms today, so this single change surfaces engine bets everywhere
+  // with zero web changes. Title = the REAL stream title clamped to the rooms
+  // CHECK (3..80); never a fabricated label. Closed batches are hidden by the
+  // rooms list filter (routes/rooms.js), not deleted — trade/ledger rows stay.
+  function engineRoomTitle(cand) {
+    const t = sanitizeText(cand.title || cand.channelName || '').slice(0, 80).trim();
+    return t.length >= 3 ? t : 'Live broadcast';
+  }
+
   async function insertEngineMarket({ cand, question, resolutionRule, category }) {
     // Dedup: never two OPEN markets with the same question text (global, any creator).
     const { rows: dup } = await db.query(
@@ -269,20 +281,27 @@ export function createMarketEngine(options = {}) {
     if (dup.length > 0) return { skipped: 'dupe' };
 
     const id = randomUUID();
+    const roomId = randomUUID();
     const start = new Date(now()).toISOString();
     const end = new Date(now() + cfg.marketTtlMs).toISOString();
     const resolution = new Date(now() + cfg.marketTtlMs + 5 * 60 * 1000).toISOString();
     // Sources of truth = the REAL stream the market is about (never a placeholder).
     const sourcesOfTruth = [cand.watchUrl || cand.liveItemId];
     await db.query(
+      `insert into rooms(id, owner_id, title, video_url, status, is_seed, category)
+       values($1,$2,$3,$4,'live',false,$5)`,
+      [roomId, ENGINE_USER.id, engineRoomTitle(cand), cand.watchUrl || null, sanitizeText(category) || 'gaming'],
+    );
+    await db.query(
       `insert into markets(
          id, room_id, creator_id, source, question, resolution_rule, sources_of_truth,
          category, image_url, start_time, end_time, resolution_time,
          yes_price, no_price, volume, status, is_seed,
          engine_live_item_id, engine_video_id, engine_channel_slug, engine_watch_url)
-       values($1,null,$2,'sim-engine',$3,$4,$5,$6,$7,$8,$9,$10,0.5,0.5,0,'open',false,$11,$12,$13,$14)`,
+       values($1,$2,$3,'sim-engine',$4,$5,$6,$7,$8,$9,$10,$11,0.5,0.5,0,'open',false,$12,$13,$14,$15)`,
       [
         id,
+        roomId,
         ENGINE_USER.id,
         question,
         resolutionRule,

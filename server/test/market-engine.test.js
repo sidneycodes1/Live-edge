@@ -164,6 +164,43 @@ describe('marketEngine/tick', () => {
     assert.equal(res.deduped, 1);
   });
 
+  it('B3: an engine market gets its OWN room (real stream title + watch url) so the rails surface it', async () => {
+    const { db } = await makeApp();
+    const g = fakeGemini({ markets: [{ liveItemId: 'yt-vid1', question: 'Will Al Jazeera break a headline in the next half hour?' }] });
+    await newEngine(db, g, fakeAggregator([liveItem()])).tick();
+    const { rows } = await db.query(
+      `select m.room_id, r.title, r.video_url, r.owner_id from markets m join rooms r on r.id = m.room_id where m.source='sim-engine'`,
+    );
+    assert.equal(rows.length, 1);
+    assert.ok(rows[0].room_id, 'market is NOT roomless');
+    assert.equal(rows[0].title, 'Al Jazeera News Feed'); // the REAL stream title, not a label
+    assert.equal(rows[0].video_url, 'https://www.youtube.com/watch?v=vid1');
+    assert.equal(rows[0].owner_id, ENGINE_USER.id);
+  });
+
+  it('B3: rooms listing shows an OPEN engine room and hides it once its bet closes', async () => {
+    const { db, fetchJson } = await makeApp();
+    await ensureUser(db);
+    const FAR = Date.UTC(2099, 0, 1);
+    const roomId = randomUUID();
+    const mId = randomUUID();
+    await db.query(`insert into rooms(id, owner_id, title, video_url, status, is_seed) values($1,$2,'Live Test Broadcast',$3,'live',false)`, [
+      roomId, ENGINE_USER.id, 'https://www.youtube.com/watch?v=vid1',
+    ]);
+    await db.query(
+      `insert into markets(id, room_id, creator_id, source, question, resolution_rule, sources_of_truth, category, start_time, end_time, resolution_time, status, is_seed)
+       values($1,$2,$3,'sim-engine','Open engine question about this stream?','rule',ARRAY['src'],'News',$4,$5,$6,'open',false)`,
+      [mId, roomId, ENGINE_USER.id, new Date(T0 - 60000).toISOString(), new Date(FAR).toISOString(), new Date(FAR + 300000).toISOString()],
+    );
+    let { json } = await fetchJson('/api/rooms');
+    assert.ok(json.some((r) => r.id === roomId), 'open engine room is listed');
+    await db.query(`update markets set status='closed' where id=$1`, [mId]);
+    ({ json } = await fetchJson('/api/rooms'));
+    assert.ok(!json.some((r) => r.id === roomId), 'closed engine batch is hidden from the list (rows kept in DB)');
+    const { rows } = await db.query(`select 1 from rooms where id=$1`, [roomId]);
+    assert.equal(rows.length, 1, 'the room row is NOT deleted (ledger safety)');
+  });
+
   it('drops a returned market whose liveItemId is NOT in the snapshot (never untethered)', async () => {
     const { db } = await makeApp();
     const g = fakeGemini({ markets: [{ liveItemId: 'yt-does-not-exist', question: 'Will a phantom stream do a thing?' }] });

@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { randomUUID } from 'node:crypto';
 import { validate } from '../middleware/validate.js';
 import { sanitizeText } from '../services/sanitize.js';
+import { ENGINE_USER } from '../services/marketEngine.js';
 
 export function roomsRouter({ db, hub, twitch }) {
   const r = Router();
@@ -22,6 +23,10 @@ export function roomsRouter({ db, hub, twitch }) {
           [room.id],
         );
         const hero = markets[0] || null;
+        // Engine rooms exist only while their broadcast-born bet is OPEN. Once the
+        // 30-min market closes, hide the room from the list (read-path filter, NOT
+        // a delete — any trades/ledger rows stay queryable forever).
+        if (room.owner_id === ENGINE_USER.id && (!hero || hero.status !== 'open')) continue;
         const viewers = hub ? hub.count(room.id) : 0;
         result.push({
           id: room.id,
