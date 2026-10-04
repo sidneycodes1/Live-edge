@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { extractYouTubeVideoId, extractYouTubeChannelId } from '../lib/embed.js';
 
 // ---------------------------------------------------------------------------
 // The two — and ONLY two — honest card kinds for the "Live now" grid
@@ -10,8 +11,8 @@ import { Link } from 'react-router-dom';
 //      never a fabricated 0). Clicking opens the in-app watch/embed view.
 //   2. Football score card — a DATA fixture (source 'football-api'). There is no
 //      broadcast art for a match, so the card is a clean data tile (the score IS
-//      the visual). No image area, no viewer count. No link (there is no watchable
-//      route for a bare fixture — we never create a dead link).
+//      the visual). No image area, no viewer count. Clicking opens the deep-linkable
+//      match detail view (/match/:fixtureId) — never a dead link.
 //
 // No "no preview" tiles, no equalizers, no placeholder art anywhere.
 // ---------------------------------------------------------------------------
@@ -22,13 +23,67 @@ function fmtViewers(n) {
   return String(v);
 }
 
-// Where a card links. Football fixtures have no watchable route → null (no dead
-// link). Twitch keeps its dedicated surface; everything else the generic watch.
+// A short, URL-safe title slug appended to YouTube watch URLs so a shared link
+// reads as "…/watch/youtube/<videoId>/some-title" instead of a bare id. It is
+// COSMETIC ONLY — WatchRoom keys off the videoId, never this segment.
+function titleSlug(t) {
+  return String(t || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40);
+}
+
+// Where a card links. YouTube is keyed by the VIDEO id (the aggregator's
+// `channelSlug` is the UC CHANNEL id — using it produced rooms that could not be
+// re-found in the rotating grid). Curated 24/7 rows are keyed by their UC channel
+// id (they embed by channel, live_stream?channel=UC…). Football fixtures open the
+// match detail route. Twitch keeps its dedicated surface.
 export function liveCardHref(ch) {
-  if (!ch || ch.source === 'football-api') return null;
+  if (!ch) return null;
+  if (ch.source === 'football-api') return `/match/${encodeURIComponent(ch.id || '')}`;
   if (ch.source === 'twitch' && ch.channelSlug) return `/twitch/${encodeURIComponent(ch.channelSlug)}`;
-  const slug = ch.channelSlug || ch.id;
-  return `/watch/${encodeURIComponent(ch.source || 'live')}/${encodeURIComponent(slug)}`;
+  if (ch.source === 'youtube') {
+    const vid = extractYouTubeVideoId(ch);
+    if (vid) {
+      const slug = titleSlug(ch.title);
+      return `/watch/youtube/${encodeURIComponent(vid)}${slug ? `/${slug}` : ''}`;
+    }
+    // No video id (rare/degraded) → fall back to the channel id we do have.
+    const cid = extractYouTubeChannelId(ch);
+    return `/watch/youtube/${encodeURIComponent(cid || ch.channelSlug || ch.id || '')}`;
+  }
+  if (ch.source === 'curated-youtube') {
+    const cid = extractYouTubeChannelId(ch);
+    if (cid) return `/watch/curated-youtube/${encodeURIComponent(cid)}`;
+    const vid = extractYouTubeVideoId({ watchUrl: ch.videoUrl || ch.watchUrl, id: '' });
+    return `/watch/curated-youtube/${encodeURIComponent(vid || ch.id || '')}`;
+  }
+  if (ch.source === 'kick') {
+    return `/watch/kick/${encodeURIComponent(ch.channelSlug || ch.id || '')}`;
+  }
+  // Floor (and anything else) → generic watch keyed by the row id.
+  return `/watch/${encodeURIComponent(ch.source || 'live')}/${encodeURIComponent(ch.id || ch.channelSlug || '')}`;
+}
+
+// Minimal channel data carried through router `state` so WatchRoom can render the
+// room DIRECTLY from the URL + this payload — never depending on finding the item
+// again in the rotating /api/live grid. Only real fields; nothing invented.
+export function liveCardState(ch) {
+  if (!ch || ch.source === 'football-api') return undefined;
+  return {
+    source: ch.source,
+    title: ch.title || '',
+    channelName: ch.channelName || '',
+    channelSlug: ch.channelSlug || '',
+    thumbnailUrl: ch.thumbnailUrl || '',
+    videoId: extractYouTubeVideoId(ch) || undefined,
+    channelId: extractYouTubeChannelId(ch) || undefined,
+    watchUrl: ch.watchUrl || undefined,
+    liveEmbedUrl: ch.liveEmbedUrl || undefined,
+    videoUrl: ch.videoUrl || undefined,
+    viewerCount: ch.viewerCount == null ? null : ch.viewerCount,
+  };
 }
 
 // A live-period label for a fixture, or null. minute may be a number, 'FT', or
@@ -47,6 +102,7 @@ function PlayableCard({ channel }) {
   return (
     <Link
       to={href || '/'}
+      state={liveCardState(channel)}
       data-testid="live-card"
       data-source={channel.source}
       className="group block bg-surface rounded-card border border-white/10 overflow-hidden hover:border-white/25 transition cursor-pointer"
@@ -87,10 +143,12 @@ function FootballScoreCard({ match }) {
   const leagueLine = [match.league, match.country].filter(Boolean).join(' \u2022 ');
   const hasScore = match.score && (match.score.home != null || match.score.away != null);
   return (
-    <div
+    <Link
+      to={liveCardHref(match) || '/'}
+      state={{ match }}
       data-testid="card-match"
       data-source="football-api"
-      className="block bg-surface rounded-card border border-white/10 overflow-hidden"
+      className="block bg-surface rounded-card border border-white/10 overflow-hidden hover:border-white/25 transition cursor-pointer"
     >
       <div className="p-3">
         <div className="flex items-start justify-between gap-2 min-h-[18px]">
@@ -109,7 +167,7 @@ function FootballScoreCard({ match }) {
         </div>
         <p className="text-[11px] text-white/45 truncate">{match.title}</p>
       </div>
-    </div>
+    </Link>
   );
 }
 

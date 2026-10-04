@@ -6,6 +6,7 @@ import Discover from './pages/Discover.jsx';
 import Room from './pages/Room.jsx';
 import TwitchRoom from './pages/TwitchRoom.jsx';
 import WatchRoom from './pages/WatchRoom.jsx';
+import MatchView from './pages/MatchView.jsx';
 import Creator from './pages/Creator.jsx';
 import Portfolio from './pages/Portfolio.jsx';
 import SignIn from './pages/SignIn.jsx';
@@ -70,6 +71,8 @@ function Shell() {
             <Route path="/room/:id" element={<Room />} />
             <Route path="/twitch/:login" element={<TwitchRoom />} />
             <Route path="/watch/:source/:slug" element={<WatchRoom />} />
+            <Route path="/watch/:source/:slug/:title" element={<WatchRoom />} />
+            <Route path="/match/:fixtureId" element={<MatchView />} />
             <Route path="/creator/:roomId" element={<Creator />} />
             <Route path="/creator" element={<Creator />} />
             <Route path="/portfolio" element={<Portfolio />} />
