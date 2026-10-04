@@ -283,3 +283,81 @@ describe('youtube client — cache, stale, single-flight (ladder fuel semantics)
     assert.ok(new URL(calls[0].url).searchParams.get('maxResults') === '50', calls[0].url);
   });
 });
+
+// --- Phase 3 (Tier-B): multi-query fan-out -----------------------------------
+
+function searchWith(videoId, title, channelTitle) {
+  return {
+    items: [
+      {
+        id: { videoId },
+        snippet: {
+          title,
+          channelId: `chan-${videoId}`,
+          channelTitle,
+          publishedAt: '2026-10-04T10:00:00Z',
+          liveBroadcastContent: 'live',
+          thumbnails: { medium: { url: `https://i.ytimg.com/vi/${videoId}/mq.jpg` } },
+        },
+      },
+    ],
+  };
+}
+
+describe('youtube client — Tier-B multi-query (queries replaces query)', () => {
+  it('merges results from EVERY query, and tags operator categories', async () => {
+    const { fn, calls } = mockRouter([
+      { match: 'q=football%20live', res: makeRes(searchWith('vid-fb', 'Match live', 'Kickoff TV')) },
+      { match: 'q=cricket%20live', res: makeRes(searchWith('vid-ck', 'Innings live', 'Cricket 24')) },
+      { match: '/youtube/v3/videos', res: makeRes({ items: [] }) },
+    ]);
+    const c = createYouTubeClient({
+      apiKey: KEY,
+      query: 'ignored-when-queries-set',
+      queries: [{ q: 'football live', category: 'Football' }, { q: 'cricket live', category: 'Cricket' }],
+      fetchImpl: fn,
+    });
+    const list = await c.getTopLiveChannels(10);
+    assert.equal(list.length, 2);
+    assert.deepEqual(list.map((x) => x.id), ['youtube:vid-fb', 'youtube:vid-ck']);
+    assert.equal(list[0].category, 'Football', 'operator query label fills the empty category');
+    assert.equal(list[1].category, 'Cricket');
+    const searchUrls = calls.filter((x) => x.url.includes('/youtube/v3/search')).map((x) => x.url);
+    assert.equal(searchUrls.length, 2, 'one search per query (concurrent, quota counted per call)');
+    for (const u of searchUrls) assert.equal(new URL(u).searchParams.get('maxResults'), '5', 'fair-share: limit 10 split across 2 queries');
+    assert.ok(!searchUrls[0].includes('ignored-when-queries-set'));
+  });
+
+  it('dedupes a video returned by two different queries', async () => {
+    const same = searchWith('vid-x', 'Dual-posted stream', 'Both TV');
+    const { fn } = mockRouter([
+      { match: '/youtube/v3/search', res: makeRes(same) },
+      { match: '/youtube/v3/videos', res: makeRes({ items: [] }) },
+    ]);
+    const c = createYouTubeClient({ apiKey: KEY, queries: ['a live', 'b live'], fetchImpl: fn });
+    const list = await c.getTopLiveChannels(10);
+    assert.equal(list.length, 1);
+  });
+
+  it('a failing query NEVER sinks the others (partial results win)', async () => {
+    const { fn } = mockRouter([
+      { match: 'q=bad%20live', res: makeRes({ error: { message: 'boom' } }, { status: 500 }) },
+      { match: 'q=good%20live', res: makeRes(searchWith('vid-ok', 'Good live', 'OK TV')) },
+      { match: '/youtube/v3/videos', res: makeRes({ items: [] }) },
+    ]);
+    const c = createYouTubeClient({ apiKey: KEY, queries: ['bad live', 'good live'], fetchImpl: fn });
+    const list = await c.getTopLiveChannels(10);
+    assert.equal(list.length, 1);
+    assert.equal(list[0].id, 'youtube:vid-ok');
+  });
+
+  it('ALL queries failing → boundary still never throws (stale/empty contract)', async () => {
+    const { fn } = mockRouter([
+      { match: '/youtube/v3/search', res: makeRes({ error: { message: 'quota' } }, { status: 429 }) },
+    ]);
+    const warnings = [];
+    const c = createYouTubeClient({ apiKey: KEY, queries: ['a live', 'b live'], fetchImpl: fn, warn: (m) => warnings.push(m) });
+    assert.deepEqual(await c.getTopLiveChannels(10), []);
+    assert.ok(warnings.some((w) => /quota|429|failed/i.test(w)));
+  });
+});

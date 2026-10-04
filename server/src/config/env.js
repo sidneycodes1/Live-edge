@@ -37,6 +37,11 @@ const schema = z.object({
   // YouTube Data API v3 (single API key). YOUTUBE_QUERY seeds the live search.
   YOUTUBE_API_KEY: z.string().optional(),
   YOUTUBE_QUERY: z.string().default('live'),
+  // Phase 3 (Tier-B): optional pipe-separated queries that REPLACE YOUTUBE_QUERY.
+  // Format "query[:Category]|query[:Category]" — Category is an operator-assigned
+  // curation label (same semantics as the curated list's category tag), never
+  // source-fabricated data. Each query costs 100 search units per refresh.
+  YOUTUBE_QUERIES: z.string().optional(),
   YOUTUBE_CACHE_TTL_MS: z.coerce.number().min(1000).default(45000),
   // Floor = the self-hosted terminal rung (§3). FLOOR_PROVIDER selects the backend
   // (only 'livepeer' this round); LIVEPEER_API_KEY is optional Studio discovery;
@@ -104,6 +109,20 @@ export function loadEnv(raw = process.env) {
   // frozen spec and has been removed so /api/config's features match §7 exactly.
   const kickEnabled = !!(env.KICK_CLIENT_ID && env.KICK_CLIENT_SECRET);
   const youtubeEnabled = !!env.YOUTUBE_API_KEY;
+  // Tier-B multi-query: parsed leniently (garbage segments are dropped, boot
+  // never crashes). Empty → the client keeps its single YOUTUBE_QUERY behavior.
+  const youtubeQueries = (env.YOUTUBE_QUERIES || '')
+    .split('|')
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((s) => {
+      const i = s.lastIndexOf(':');
+      const cat = i > 0 ? s.slice(i + 1).trim() : '';
+      if (i > 0 && /^[A-Za-z][A-Za-z /-]{0,29}$/.test(cat)) {
+        return { q: s.slice(0, i).trim(), category: cat };
+      }
+      return { q: s };
+    });
   const floorHasFallback = !!env.FLOOR_FALLBACK_URL;
   const floorHasDiscovery = !!env.LIVEPEER_API_KEY;
   // Floor is "enabled" if it can contribute EITHER live discovery (key) OR the
@@ -158,6 +177,7 @@ export function loadEnv(raw = process.env) {
     effectiveMode: mode,
     twitchEnabled,
     liveSources,
+    youtubeQueries,
     floorFallback,
     footballApiEnabled,
     geminiEnabled,

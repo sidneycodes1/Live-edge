@@ -44,4 +44,10 @@ export const CURATED_CHANNELS = [
   { channelId: 'UCeY0bbntWzzVIaj2z3QigXg', name: 'NBC News', category: 'News' },
   { channelId: 'UCIZJ9a6P_nxCFJTmL0gh_IQ', name: 'Al Arabiya English', category: 'News' },
   { channelId: 'UCOxqgCwgOqC2lMqC5PYz_Dg', name: 'Chillhop Music', category: 'Music/Ambience' },
+  // Tier-B additions (Phase 3). Each id was resolved THIS SESSION via the Data
+  // API channels.list?forHandle endpoint (not from memory) and is a documented
+  // continuous broadcaster — the same operator-verified 24/7 contract as above.
+  { channelId: 'UC16niRr50-MSBwiO3YDb3RA', name: 'BBC News', category: 'News' },
+  { channelId: 'UCgp4A6I8LCWrhUzn-5SbKvA', name: 'TVC News Nigeria', category: 'News' },
+  { channelId: 'UC_gUM8rL-Lrg6O3adPW9K1g', name: 'WION', category: 'News' },
 ];

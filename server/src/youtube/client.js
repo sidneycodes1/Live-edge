@@ -81,12 +81,23 @@ export function normalizeYouTubeChannel(searchItem, detail) {
 export function createYouTubeClient({
   apiKey,
   query = 'live',
+  // Phase 3 (Tier-B): optional [{q, category?}...] (plain strings allowed).
+  // When present it REPLACES the single `query`: results are merged and deduped
+  // by video id. Quota honest: each search costs 100 units regardless of how
+  // the calls are scheduled — so we fire them CONCURRENTLY (one round-trip
+  // budget, not N) and tolerate partial failure. A sequential fan-out blew the
+  // aggregator's per-provider timeout in the live proof (see aggregator/index.js).
+  queries = null,
   fetchImpl = fetch,
   cacheTtlMs = 45000,
   now = () => Date.now(),
   warn = (msg) => console.warn(msg),
 } = {}) {
   const hasCreds = () => Boolean(apiKey);
+
+  const qlist = (Array.isArray(queries) && queries.length ? queries : [query])
+    .map((s) => (typeof s === 'string' ? { q: s } : s))
+    .filter((s) => s && typeof s.q === 'string' && s.q.trim());
 
   let listCache = null;
   let listInflight = null;
@@ -101,12 +112,11 @@ export function createYouTubeClient({
     return json;
   }
 
-  // Internal two-step fetch. Throws so tests can assert failure paths.
-  async function fetchLive(limit) {
-    const maxResults = clampInt(limit, 1, 50, 10);
+  // One search query → live items (throws ProviderError on failure).
+  async function fetchQuery(spec, maxResults) {
     const search = await apiGet(
       `/search?part=snippet&type=video&eventType=live&maxResults=${maxResults}` +
-        `&q=${encodeURIComponent(query)}&key=${encodeURIComponent(apiKey)}`,
+        `&q=${encodeURIComponent(spec.q)}&key=${encodeURIComponent(apiKey)}`,
     );
     // Keep only genuinely-live items (search can return upcoming/completed).
     const liveItems = (search.items || []).filter((it) => it?.snippet?.liveBroadcastContent === 'live');
@@ -126,7 +136,46 @@ export function createYouTubeClient({
         warn(`YouTube videos enrichment failed → using search data (${e.code || e.name})`);
       }
     }
-    return liveItems.map((it) => normalizeYouTubeChannel(it, detailById[it?.id?.videoId]));
+    return liveItems.map((it) => {
+      const ch = normalizeYouTubeChannel(it, detailById[it?.id?.videoId]);
+      // Operator-assigned query label (like the curated list's curation tag) —
+      // only fills the source-native-empty category, never overrides it.
+      if (spec.category && !ch.category) ch.category = spec.category;
+      return ch;
+    });
+  }
+
+  // Internal fetch across ALL configured queries. Concurrent (single round-trip
+  // budget), deduped by video id. Throws only when EVERY query failed.
+  async function fetchLive(limit) {
+    const maxResults = clampInt(limit, 1, 50, 10);
+    // Fair-share: split the budget across queries so one saturated topic (e.g.
+    // 'football live' during NFL Sunday) can't crowd the rest off the grid.
+    const perQuery = qlist.length > 1 ? Math.max(5, Math.ceil(maxResults / qlist.length)) : maxResults;
+    const settled = await Promise.all(
+      qlist.map(async (spec) => {
+        try {
+          return { items: await fetchQuery(spec, perQuery), err: null };
+        } catch (e) {
+          warn(`YouTube query "${spec.q}" failed (${e.code || e.name})`);
+          return { items: [], err: e };
+        }
+      }),
+    );
+    const seen = new Set();
+    const merged = [];
+    for (const r of settled) {
+      for (const ch of r.items) {
+        const key = ch.nativeId || ch.watchUrl || ch.title;
+        if (!seen.has(key)) {
+          seen.add(key);
+          merged.push(ch);
+        }
+      }
+    }
+    const lastErr = settled.find((r) => r.err)?.err;
+    if (merged.length === 0 && lastErr) throw lastErr;
+    return merged.slice(0, maxResults);
   }
 
   // Public: never throws. LiveChannel[] ([] on any problem). Cache-aside per limit

@@ -168,6 +168,10 @@ export function createLiveAggregator({
       name: 'youtube',
       isOn: enabled.youtube && typeof youtube?.getTopLiveChannels === 'function',
       fetch: (limit) => youtube.getTopLiveChannels(limit),
+      // Tier-B multi-query: one logical fetch = several search round-trips
+      // (concurrent, but still slower than a single call). The shared 2.5s
+      // single-call budget tripped TIMEOUT in the live proof — dedicated runner.
+      timeoutMs: resilience.youtubeTimeoutMs ?? 8000,
     },
     {
       name: 'floor',
@@ -180,7 +184,7 @@ export function createLiveAggregator({
   for (const d of defs) {
     runners[d.name] = createProviderRunner({
       name: d.name,
-      timeoutMs,
+      timeoutMs: d.timeoutMs ?? timeoutMs,
       retries,
       breaker: createCircuitBreaker({ threshold, cooldownMs, now }),
       bulkhead: createBulkhead({ limit: bulkheadLimit }),

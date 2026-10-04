@@ -69,6 +69,9 @@ export async function createApp({ env: rawEnv, db: existingDb } = {}) {
   const youtube = createYouTubeClient({
     apiKey: env.YOUTUBE_API_KEY,
     query: env.YOUTUBE_QUERY,
+    // Tier-B (Phase 3): when YOUTUBE_QUERIES is set, the client fans out across
+    // them (sequential, deduped) instead of the single generic query.
+    queries: env.youtubeQueries?.length ? env.youtubeQueries : null,
     cacheTtlMs: env.YOUTUBE_CACHE_TTL_MS,
   });
   // The floor client's `fallback` arg is the network-free guaranteed card (§3).
