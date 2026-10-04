@@ -47,6 +47,7 @@ export async function teardownTestEnv() {
   if (sharedApp) {
     if (sharedApp._interval) clearInterval(sharedApp._interval);
     if (sharedApp._engine && sharedApp._engine.stop) sharedApp._engine.stop();
+    if (sharedApp._spectator && sharedApp._spectator.stop) sharedApp._spectator.stop();
     if (sharedApp._hub) sharedApp._hub.stop();
   }
   // PGlite close API is db.close() via wrapper (see server/src/db/index.js)

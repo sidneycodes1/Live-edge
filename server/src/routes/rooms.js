@@ -77,7 +77,9 @@ export function roomsRouter({ db, hub, twitch }) {
          order by case status when 'open' then 0 when 'closed' then 1 else 2 end, created_at desc`,
         [room.id],
       );
-      const { rows: chats } = await db.query(`select c.*, u.wallet, u.display_name from chat_messages c left join users u on u.id=c.user_id where c.room_id=$1 order by c.id desc limit 50`, [room.id]);
+      // coalesce: AI spectator rows (kind='ai') carry their persona label in
+      // chat_messages.display_name; real users resolve via the users join.
+      const { rows: chats } = await db.query(`select c.id, c.room_id, c.user_id, c.kind, c.body, c.is_seed, c.created_at, u.wallet, coalesce(u.display_name, c.display_name) as display_name from chat_messages c left join users u on u.id=c.user_id where c.room_id=$1 order by c.id desc limit 50`, [room.id]);
       const viewers = hub ? hub.count(room.id) : 0;
       res.json({
         id: room.id,

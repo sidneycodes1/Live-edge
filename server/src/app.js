@@ -16,6 +16,7 @@ import { createFootballClient } from './football/client.js';
 import { createCuratedClient } from './curated/client.js';
 import { createGeminiClient } from './gemini/client.js';
 import { createMarketEngine } from './services/marketEngine.js';
+import { createAiSpectator } from './services/aiChat.js';
 import { createLiveAggregator } from './aggregator/index.js';
 import { createHub } from './services/sse.js';
 import { createPriceCache } from './services/priceCache.js';
@@ -250,6 +251,14 @@ export async function createApp({ env: rawEnv, db: existingDb } = {}) {
   // process alive, and app teardown (testApp + graceful shutdown) stops it explicitly.
   if (geminiEnabled) marketEngine.start();
 
+  // AI spectator chat: labeled kind='ai' lines in rooms WITHOUT a real provider
+  // chat and only while a viewer is connected (see services/aiChat.js honesty
+  // contract). Disable with AI_SPECTATOR=off. Unref'd interval; teardown stops it.
+  const aiSpectator = createAiSpectator({ db, hub, env });
+  // Not auto-started under test: suites assert on chat_messages, and a background
+  // spectator would be a flake source. Tests drive tick() directly with fakes.
+  if (env.NODE_ENV !== 'test') aiSpectator.start();
+
   app._db = db;
   app._hub = hub;
   app._env = env;
@@ -261,6 +270,7 @@ export async function createApp({ env: rawEnv, db: existingDb } = {}) {
   app._curated = curated;
   app._gemini = gemini;
   app._engine = marketEngine;
+  app._spectator = aiSpectator;
   app._interval = interval;
 
   return app;
