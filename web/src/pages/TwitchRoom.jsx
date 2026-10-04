@@ -5,7 +5,8 @@ import { useTwitchConfig } from '../hooks/useTwitchConfig.js';
 import TwitchVideo from '../components/TwitchVideo.jsx';
 import TwitchChat from '../components/TwitchChat.jsx';
 
-// Opened from a Discover "Live on Twitch" card. Shows the REAL video + chat for
+// Opened when a Twitch row in the "Live now" rail (or the persistent channel
+// sidebar) is clicked. Shows the REAL video + chat for
 // the channel. If a LiveEdge room already binds this channel (seeded fallback or
 // a creator-attached market), we hand off to that room so the market panel shows;
 // otherwise we offer a CTA to create one (Phase D). Video/chat embeds work with NO

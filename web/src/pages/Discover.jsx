@@ -1,53 +1,81 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api.js';
-import { normalizeLive } from '../lib/live.js';
-import { mapToDisplay, isFootball, bucketsWithData } from '../lib/categories.js';
+import { normalizeLive, normalizeChannel, normalizeMatch, normalizeFootballFeed } from '../lib/live.js';
+import { buildLiveNowCards, marketThumb } from '../lib/live-now.js';
 import MarketCard from '../components/MarketCard.jsx';
-import LiveRail from '../components/LiveRail.jsx';
-import LiveStatus from '../components/LiveStatus.jsx';
-import TwitchLiveCard from '../components/TwitchLiveCard.jsx';
+import LiveNow from '../components/LiveNow.jsx';
 import Rail from '../components/Rail.jsx';
-import CategoryChips from '../components/CategoryChips.jsx';
 import OddsBar from '../components/OddsBar.jsx';
-import LiveThumb from '../components/LiveThumb.jsx';
 import MoneyChip from '../components/MoneyChip.jsx';
 import Skeleton from '../components/Skeleton.jsx';
-import EmptyState from '../components/EmptyState.jsx';
 import WakeServer from '../components/WakeServer.jsx';
-import { IconBall, IconFlame, IconClock, IconTrending, IconTrending as IconMovers } from '../components/Icons.jsx';
+import { IconFlame, IconClock, IconTrending } from '../components/Icons.jsx';
+
+// Per-visit rotation seed. A sessionStorage COUNTER (never a permanent
+// localStorage value) so consecutive visits cycle which category leads the
+// "Live now" mix, while the value is captured ONCE into state below — keeping it
+// stable across every re-render within the same visit (no mid-session reshuffle).
+function nextVisitSeed() {
+  let n = 0;
+  try {
+    const raw = Number(window.sessionStorage.getItem('liveedge_visit_seed'));
+    n = Number.isFinite(raw) ? Math.trunc(raw) : 0;
+    window.sessionStorage.setItem('liveedge_visit_seed', String(n + 1));
+  } catch {
+    /* storage unavailable (private mode) → fall back to a time-derived seed */
+    n = Math.floor(Date.now() / 3_600_000);
+  }
+  return n;
+}
+
+// A playable live row is one that carries a REAL thumbnail (curated 24/7, Twitch,
+// Kick, YouTube all do). Anything without art is dropped from the grid — we never
+// render a placeholder tile. Football score cards come from a SEPARATE data feed.
+const isPlayable = (c) => Boolean(c && c.source !== 'football-api' && c.thumbnailUrl);
 
 export default function Discover() {
   const [rooms, setRooms] = useState(null);
-  const [catalog, setCatalog] = useState(null);
   const [live, setLive] = useState(null);
-  const [twitch, setTwitch] = useState({ status: 'loading', items: [], enabled: false });
+  const [football, setFootball] = useState(null);
+  const [liveLoading, setLiveLoading] = useState(true);
   const [loading, setLoading] = useState(true);
   const [waking, setWaking] = useState(false);
+  const [reload, setReload] = useState(0);
   const [params] = useSearchParams();
-  const [cat, setCat] = useState(null);
+  // Captured once per visit; drives the rotating category priority.
+  const [seed] = useState(nextVisitSeed);
+
+  // Search is server-side and keyless (/api/search). The landing grid re-uses the
+  // SAME "Live now" rail to show matches, so a query never looks like a dead bar.
+  const q = (params.get('q') || '').trim().toLowerCase();
+  const [searchView, setSearchView] = useState(null);
+  const [searchLoading, setSearchLoading] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    const t = setTimeout(() => { if (loading) setWaking(true); }, 2500);
-    api.listRooms().then(r => { if (!cancelled) { setRooms(r); setLoading(false); } }).catch(() => { if (!cancelled) setLoading(false); });
-    api.getCatalog().then(setCatalog).catch(() => {});
-    // Multi-provider live grid. Independent + never-blocking: a slow/failing /api/live
-    // degrades to null (the rooms rails still render) rather than hanging the page.
-    api.getLive(24)
-      .then(r => { if (!cancelled) setLive(normalizeLive(r)); })
-      .catch(() => { if (!cancelled) setLive(null); });
-    // Independent of the simulated rooms: a slow/failing Twitch fetch must never
-    // block or break the rest of Discover.
-    api.listTwitchLive(12)
-      .then(r => { if (!cancelled) setTwitch({ status: 'ready', items: r.items || [], enabled: Boolean(r.enabled) }); })
-      .catch(() => { if (!cancelled) setTwitch({ status: 'error', items: [], enabled: false }); });
+    setWaking(false);
+    // If the first paint is still pending after 2.5s, surface the cold-start hint.
+    // The timer is cleared the moment data settles, so it never needs to read
+    // `loading` (which would churn this effect's dependency array).
+    const t = setTimeout(() => { if (!cancelled) setWaking(true); }, 2500);
+    // Settle BOTH live sources before clearing the skeleton so the rail flips to
+    // content (or the honest empty state) once, never in two jumpy passes.
+    Promise.allSettled([
+      api.listRooms().then((r) => { if (!cancelled) setRooms(r); }),
+      api.getLive(24).then((r) => { if (!cancelled) setLive(normalizeLive(r)); }),
+      api.getLiveFootball(6).then((r) => { if (!cancelled) setFootball(normalizeFootballFeed(r)); }),
+    ]).then(() => {
+      if (cancelled) return;
+      clearTimeout(t);
+      setLoading(false);
+      setLiveLoading(false);
+    });
     return () => { cancelled = true; clearTimeout(t); };
-  }, [loading]);
+  }, [reload]);
 
-  // Live motion at the grid level (plan §1.1): re-poll the cheap rooms list every 5s
-  // so card odds drift on their own. OddsBar detects the price change and animates.
-  // Pauses when the tab is hidden to avoid needless background churn.
+  // Live motion at the grid level: re-poll the cheap rooms list every 5s so card
+  // odds drift on their own (OddsBar animates the change). Pauses when hidden.
   useEffect(() => {
     if (loading) return;
     let active = true;
@@ -59,35 +87,38 @@ export default function Discover() {
     return () => { active = false; clearInterval(id); };
   }, [loading]);
 
-  // "Biggest movers" needs price history across polls. Track the last-seen YES price
-  // per market in a ref and surface only rooms whose odds actually moved — honest
-  // motion, never a fabricated number. Empty on first paint (nothing has moved yet).
-  const prevPrices = useRef(new Map());
-  const [movers, setMovers] = useState([]);
+  // Query-driven search. Empty query clears the view (back to the default grid).
   useEffect(() => {
-    if (!rooms) return;
-    const scored = rooms.map((r) => {
-      const hm = r.heroMarket;
-      if (!hm || hm.yesPrice == null) return { r, delta: 0 };
-      const prev = prevPrices.current.get(hm.id);
-      const delta = prev == null ? 0 : hm.yesPrice - prev;
-      prevPrices.current.set(hm.id, hm.yesPrice);
-      return { r, delta };
-    });
-    setMovers(scored.filter((x) => Math.abs(x.delta) > 0).sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta)).map((x) => x.r));
-  }, [rooms]);
+    if (!q) { setSearchView(null); setSearchLoading(false); return; }
+    let cancelled = false;
+    setSearchLoading(true);
+    api.search(q)
+      .then((r) => {
+        if (cancelled) return;
+        setSearchView({
+          items: (r.items || []).map(normalizeChannel).filter(Boolean),
+          football: (r.football || []).map(normalizeMatch).filter(Boolean),
+          count: r.count || 0,
+        });
+      })
+      .catch(() => { if (!cancelled) setSearchView({ items: [], football: [], count: 0 }); })
+      .finally(() => { if (!cancelled) setSearchLoading(false); });
+    return () => { cancelled = true; };
+  }, [q]);
 
   const all = rooms || [];
-  const liveChannels = live ? live.items : [];
 
-  // "Live on Twitch" — a clearly-labeled REAL layer, distinct from the simulated
-  // rooms below. Hidden entirely when disabled or empty/degraded so it never looks
-  // broken (see feature spec §Phase B).
-  const showTwitch = twitch.status === 'ready' && twitch.enabled && twitch.items.length > 0;
+  // The "Live now" cards: from search matches when a query is active, else the
+  // default playable grid + football feed. Composed & rotated by seed.
+  const playableSource = q ? (searchView?.items || []) : (live?.items || []);
+  const footballSource = q ? (searchView?.football || []) : (football?.items || []);
+  const cards = buildLiveNowCards(
+    { playable: playableSource.filter(isPlayable), football: footballSource },
+    seed,
+  );
 
-  // Client-side search from the top bar (?q=...). Matches the bet question, the
-  // room/stream title, the owner, and the category.
-  const q = (params.get('q') || '').trim().toLowerCase();
+  // Market rails re-present the SAME rooms through honest lenses (re-sorting,
+  // never fabricating). When searching, narrow them to the matching query too.
   const searched = !q
     ? all
     : all.filter((r) => {
@@ -95,54 +126,45 @@ export default function Discover() {
           .filter(Boolean).join(' ').toLowerCase();
         return hay.includes(q);
       });
-  // Chips filter the grid by DISPLAY bucket (fixed §2 taxonomy), not raw labels.
-  const gridRooms = cat ? searched.filter((r) => mapToDisplay(r.heroMarket?.category) === cat) : searched;
-
-  // Category chips come from the FIXED display superset, but only those buckets that
-  // OBSERVED data actually maps into (rooms + live). No invented categories, no
-  // empty chips (docs §2).
-  const categories = bucketsWithData([
-    ...all.map((r) => r.heroMarket?.category),
-    ...liveChannels.map((c) => c.category),
-  ]);
-
-  // Rails re-present the same rooms through different lenses (abundance by
-  // re-sorting, never fabrication).
-  const trending = [...all].filter((r) => r.heroMarket).sort((a, b) => (b.heroMarket.volume || 0) - (a.heroMarket.volume || 0)).slice(0, 10);
-  const closing = [...all]
+  const trending = [...searched].filter((r) => r.heroMarket).sort((a, b) => (b.heroMarket.volume || 0) - (a.heroMarket.volume || 0)).slice(0, 10);
+  const closing = [...searched]
     .filter((r) => r.heroMarket && r.heroMarket.status === 'open' && r.heroMarket.end_time)
     .sort((a, b) => new Date(a.heroMarket.end_time) - new Date(b.heroMarket.end_time))
     .slice(0, 10);
   const featured = trending.find((r) => r.heroMarket.status === 'open') || null;
+  const featuredThumb = featured ? marketThumb(featured) : null;
 
-  // Live Football = the watch-party vertical (§2). Rows are rooms genuinely tagged
-  // football, or genuinely-embeddable football talk/analysis live channels. Hidden
-  // when there is no real football data — never a fabricated or blank section.
-  const footballRooms = all.filter((r) => isFootball(r.heroMarket?.category));
+  if (loading) {
+    return (
+      <div className="max-w-6xl mx-auto px-4 py-6">
+        {waking && <WakeServer />}
+        <div className="grid md:grid-cols-3 gap-4 mt-4">
+          <Skeleton className="h-48" /><Skeleton className="h-48" /><Skeleton className="h-48" />
+        </div>
+      </div>
+    );
+  }
 
-  if (loading) return <div className="max-w-6xl mx-auto px-4 py-6">{waking && <WakeServer />}<div className="grid md:grid-cols-3 gap-4 mt-4"><Skeleton className="h-48" /><Skeleton className="h-48" /><Skeleton className="h-48" /></div></div>;
+  const livenowLoading = q ? searchLoading : liveLoading;
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-6 pb-20">
-      {live && <LiveStatus servedFrom={live.servedFrom} degraded={live.degraded} />}
-      <LiveRail title="Live now" icon={<IconFlame className="w-5 h-5" />} channels={liveChannels} testid="rail-live" />
+      {/* ① LIVE NOW — the mixed, rotating grid of real broadcasts + football scores */}
+      <LiveNow
+        cards={cards}
+        loading={livenowLoading}
+        onRetry={() => setReload((n) => n + 1)}
+        icon={<IconFlame className="w-5 h-5" />}
+      />
 
-      {showTwitch && (
-        <section className="mb-8 mt-7" data-testid="twitch-live-section">
-          <div className="flex items-center gap-2">
-            <h2 className="font-heading font-bold text-xl">Live on Twitch</h2>
-            <span className="text-[10px] font-semibold uppercase tracking-wide bg-live/20 text-live px-2 py-0.5 rounded-full">real</span>
-          </div>
-          <p className="text-xs text-white/40 mt-1">Currently-live channels from Twitch. Opens real video + chat alongside a simulated market.</p>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 mt-4">
-            {twitch.items.map(s => <TwitchLiveCard key={s.id} stream={s} />)}
-          </div>
-        </section>
-      )}
-
+      {/* ② FEATURED LIVE — one hero market (real thumbnail only, else text-first) */}
       {featured && (
-        <Link to={`/room/${featured.id}`} data-testid="featured-hero" className="group block mt-2 rounded-card overflow-hidden border border-white/10 bg-surface hover:border-white/25 transition cursor-pointer">
-          <div className="grid md:grid-cols-2">
+        <Link
+          to={`/room/${featured.id}`}
+          data-testid="featured-hero"
+          className="group block mt-8 rounded-card overflow-hidden border border-white/10 bg-surface hover:border-white/25 transition cursor-pointer"
+        >
+          <div className={`grid ${featuredThumb ? 'md:grid-cols-2' : ''}`}>
             <div className="order-2 md:order-1 p-5 flex flex-col justify-center">
               <span className="text-[11px] uppercase tracking-wide text-live font-bold">Featured · live now</span>
               <h3 className="font-heading font-bold text-2xl mt-1.5 leading-tight line-clamp-3">{featured.heroMarket.question}</h3>
@@ -153,44 +175,44 @@ export default function Discover() {
                 <span className="truncate">{featured.owner?.displayName}</span>
               </div>
             </div>
-            <div className="order-1 md:order-2"><LiveThumb imageUrl={featured.heroMarket.image_url} title={featured.heroMarket.question} viewers={featured.viewers} /></div>
+            {featuredThumb && (
+              <div className="order-1 md:order-2 relative aspect-video md:aspect-auto bg-black">
+                <img
+                  src={featuredThumb}
+                  alt={featured.heroMarket.question}
+                  loading="lazy"
+                  className="absolute inset-0 w-full h-full object-cover"
+                  onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                />
+              </div>
+            )}
           </div>
         </Link>
       )}
 
-      <Rail title="Live Football" icon={<IconBall className="w-5 h-5" />} rooms={footballRooms} testid="rail-football" />
+      {/* ③ TRENDING BETS */}
       <Rail title="Trending bets" icon={<IconTrending className="w-5 h-5" />} rooms={trending} testid="rail-trending" />
+
+      {/* ④ CLOSING SOON */}
       <Rail title="Closing soon" icon={<IconClock className="w-5 h-5" />} rooms={closing} testid="rail-closing" />
 
-      {categories.length > 0 && (
-        <div className="mt-6">
-          <CategoryChips categories={categories} active={cat} onSelect={setCat} />
-        </div>
-      )}
-
-      <Rail title="Biggest movers" icon={<IconMovers className="w-5 h-5" />} rooms={movers} testid="rail-movers" />
-
-      {all.length === 0 ? (
-        <EmptyState title="No live rooms yet" body="Be the first to create a room and drop a market." />
-      ) : (
-        <>
-          <h2 className="font-heading font-bold text-lg mt-8 text-white/80">Live Rooms <span className="text-xs font-normal text-white/40">{q ? `(matching “${params.get('q')}”)` : '(your simulated markets)'}</span></h2>
-          {gridRooms.length === 0
-            ? <EmptyState title="No matches" body={`Nothing here matches ${q ? `“${params.get('q')}”` : 'this filter'}.`} />
-            : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-3 min-w-0">
-                {gridRooms.map((r) => <MarketCard key={r.id} room={r} />)}
-              </div>
-            )}
-        </>
-      )}
-
-      {catalog && catalog.items && catalog.items.length > 0 && (
+      {/* Market browse grid (the simulated markets), narrowed by an active query. */}
+      {q ? (
         <div className="mt-8">
-          <h2 className="font-heading font-bold">Real markets on Panta</h2>
-          <p className="text-xs text-white/40">Read-only live catalog</p>
-          <div className="flex gap-2 overflow-x-auto mt-2 pb-2">
-            {catalog.items.slice(0, 6).map((m, i) => <div key={m.id || m.marketId || m.question || `cat-${i}`} className="min-w-[220px] bg-surface border border-white/10 rounded-card p-3 text-xs">{m.question || m.title || 'Market'}</div>)}
+          <h2 className="font-heading font-bold text-lg text-white/80">Markets matching “{params.get('q')}”</h2>
+          {searched.length === 0 ? (
+            <p className="text-sm text-white/50 mt-2">No markets match your search.</p>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-3 min-w-0">
+              {searched.map((r) => <MarketCard key={r.id} room={r} />)}
+            </div>
+          )}
+        </div>
+      ) : all.length > 0 && (
+        <div className="mt-8">
+          <h2 className="font-heading font-bold text-lg text-white/80">All markets</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-3 min-w-0">
+            {all.map((r) => <MarketCard key={r.id} room={r} />)}
           </div>
         </div>
       )}
