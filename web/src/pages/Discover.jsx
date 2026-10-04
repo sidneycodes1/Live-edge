@@ -116,6 +116,10 @@ export default function Discover() {
     { playable: playableSource.filter(isPlayable), football: footballSource },
     seed,
   );
+  // How many REAL playable streams made it into the rail. When this is 0 while
+  // football scores remain, the grid has silently collapsed — LiveNow shows an
+  // honest "streams are loading / retry" panel instead of a football-only wall (D).
+  const playableCount = cards.reduce((n, c) => n + (c.source !== 'football-api' ? 1 : 0), 0);
 
   // Market rails re-present the SAME rooms through honest lenses (re-sorting,
   // never fabricating). When searching, narrow them to the matching query too.
@@ -153,6 +157,7 @@ export default function Discover() {
       <LiveNow
         cards={cards}
         loading={livenowLoading}
+        playableCount={playableCount}
         onRetry={() => setReload((n) => n + 1)}
         icon={<IconFlame className="w-5 h-5" />}
       />

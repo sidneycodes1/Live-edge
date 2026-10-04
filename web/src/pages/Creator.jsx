@@ -1,4 +1,4 @@
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth.js';
 import CreatorPanel from '../components/CreatorPanel.jsx';
 import { useApi } from '../hooks/useApi.js';
@@ -11,12 +11,18 @@ export default function Creator() {
   const { roomId } = useParams();
   const navigate = useNavigate();
   const [params] = useSearchParams();
+  const location = useLocation();
   const { user } = useAuth();
   const { data: room } = useApi(()=> roomId ? api.getRoom(roomId) : Promise.resolve(null), [roomId]);
   const { data: metrics } = useApi(()=> user ? api.metrics() : Promise.resolve(null), [user]);
   const [resolveOutcome, setResolveOutcome] = useState('yes');
   const [msg, setMsg] = useState('');
-  const [roomTitle, setRoomTitle] = useState('');
+  // Prefill the room title from ?title= (or router state) — set by the football
+  // match view's "Bet: Home / Draw / Away" CTAs so a fixture opens the Create flow
+  // with a genuine, already-written question. The user still signs the create.
+  const [roomTitle, setRoomTitle] = useState(
+    params.get('title') || (location.state && location.state.prefillTitle) || '',
+  );
   // Prefill from ?twitchChannel= (set by the "Create a market on <ch>" CTA).
   const [roomChannel, setRoomChannel] = useState(params.get('twitchChannel') || '');
   const [creating, setCreating] = useState(false);
