@@ -1,7 +1,11 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { createLiveClient } from '../src/panta/liveClient.js';
 import { loadEnv } from '../src/config/env.js';
+import { loadDotEnv } from '../src/config/dotenv.js';
 
 function mockFetch(body, status = 200) {
   return async () => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
@@ -203,23 +207,43 @@ describe('liveClient', () => {
     });
   });
 
-  describe('env loading', () => {
-    it('loads .env and PANTA_MODE=hybrid', async () => {
-      const { readFileSync } = await import('node:fs');
-      const serverJsPath = 'C:/Users/USER/Documents/MY CODES/Live edge/server/src/server.js';
-      const envPath = serverJsPath.replace('src/server.js', '../.env');
-      const envText = readFileSync(envPath, 'utf8');
-      const env = {};
-      for (const line of envText.trim().split('\n')) {
-        const eq = line.indexOf('=');
-        if (eq > 0 && !line.startsWith('#')) {
-          const key = line.slice(0, eq).trim();
-          const val = line.slice(eq + 1).trim();
-          env[key] = val;
-        }
+  describe('env loading (hermetic)', () => {
+    // Self-contained: writes a TEMP .env fixture into os.tmpdir() and points the
+    // real dotenv loader at it via the injectable `candidates` path. No dependency
+    // on the gitignored repo-root .env (which does not exist on CI runners) and no
+    // hardcoded absolute machine path. This is the exact mechanism server.js uses
+    // at boot, so it still exercises real loader behavior.
+    it('loads a .env fixture and reads PANTA_MODE=hybrid + a pk_live_ key via loadDotEnv', () => {
+      const dir = mkdtempSync(join(tmpdir(), 'liveedge-env-test-'));
+      const file = join(dir, '.env');
+      try {
+        // Fixture mirrors the repo's real shape: a comment, strict KEY=value lines,
+        // a quoted secret, and a JavaScript-source decoy the strict parser ignores.
+        writeFileSync(
+          file,
+          [
+            '# LiveEdge hermetic test fixture (NOT the real .env; no live secrets)',
+            'NODE_ENV=test',
+            'PANTA_MODE=hybrid',
+            'PANTA_BASE_URL="https://live-api.panta.market/api/v1"',
+            "PANTA_API_KEY='pk_live_test_key_do_not_log'",
+            'port = next;', // decoy source line — must never parse as an env var
+          ].join('\n'),
+          'utf8',
+        );
+        const env = {};
+        const res = loadDotEnv({ env, candidates: [file] });
+        assert.equal(res.loaded, true, 'loader must find and read the fixture');
+        assert.equal(env.PANTA_MODE, 'hybrid');
+        assert.ok(env.PANTA_API_KEY.startsWith('pk_live_'), 'surrounding quotes stripped; live key prefix surfaces');
+        assert.equal(env.port, undefined, 'JS-source decoy must NOT leak into env (regression B1)');
+        // And the parsed values flow through the strict schema the way boot does.
+        const parsed = loadEnv(env);
+        assert.equal(parsed.PANTA_MODE, 'hybrid');
+        assert.equal(parsed.effectiveMode, 'hybrid', 'hybrid survives once PANTA_API_KEY is present');
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
       }
-      assert.equal(env.PANTA_MODE, 'hybrid');
-      assert.ok(env.PANTA_API_KEY.startsWith('pk_live_'));
     });
   });
 });
