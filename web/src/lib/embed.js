@@ -48,6 +48,21 @@ export function extractYouTubeVideoId(channel) {
   return '';
 }
 
+// The YouTube CHANNEL id (UC…). Curated 24/7 rows carry it in `liveEmbedUrl`
+// (…/live_stream?channel=UC…); provider rows surface it as `channelSlug`. We read
+// it so a channel-level watch URL can rebuild the always-live embed without a
+// grid lookup. Returns '' when there is no genuine channel id (never a guess).
+export function extractYouTubeChannelId(channel) {
+  const live = trim(channel?.liveEmbedUrl);
+  if (live) {
+    const m = /[?&]channel=([\w-]+)/.exec(live);
+    if (m) return m[1];
+  }
+  const slug = trim(channel?.channelSlug);
+  if (/^UC[\w-]{20,}$/.test(slug)) return slug;
+  return '';
+}
+
 // Result: { provider, verified, kind, src, watchUrl }
 //  - kind 'iframe'  → safe to mount an <iframe src>
 //  - kind 'hls'     → .m3u8 stream (needs hls.js; NOT VERIFIED → gated)
@@ -112,8 +127,11 @@ export function buildVideoEmbed(channel, parent) {
   return { provider: source || '', verified: false, kind: watchUrl ? 'external' : 'none', src: '', watchUrl };
 }
 
-// Chat is only VERIFIED for Twitch. YouTube/Kick live chat embeds exist but are not
-// proven here, so we return null and the room falls back to the simulated ChatFeed.
+// Live chat. Twitch is verified (real Helix embed). YouTube exposes an official
+// live_chat iframe keyed by the VIDEO id — we return it ONLY when a real video id
+// is known. A channel-level curated 24/7 embed has no single video, so it returns
+// null and the room shows an honest "chat unavailable" note — never a fake box.
+// Kick chat is not available here → null (§4: say so plainly).
 export function buildChatEmbed(channel, parent) {
   const source = trim(channel?.source);
   const slug = trim(channel?.channelSlug);
@@ -123,6 +141,28 @@ export function buildChatEmbed(channel, parent) {
       verified: true,
       src: `https://www.twitch.tv/embed/${encodeURIComponent(slug.toLowerCase())}/chat?parent=${encodeURIComponent(parent)}`,
     };
+  }
+  if (source === 'youtube') {
+    const videoId = extractYouTubeVideoId(channel);
+    if (videoId) {
+      const u = new URL('https://www.youtube.com/live_chat');
+      u.searchParams.set('v', videoId);
+      u.searchParams.set('is_framed', 'true');
+      return { provider: 'youtube', verified: true, kind: 'iframe', src: u.toString(), videoId };
+    }
+    return null;
+  }
+  if (source === 'curated-youtube') {
+    // Chat only if a concrete current video id rides along; a pure channel (UC…)
+    // embed has no stable video → honest null so the room can say chat is n/a.
+    const videoId = extractYouTubeVideoId({ watchUrl: channel?.videoUrl, id: '' });
+    if (videoId) {
+      const u = new URL('https://www.youtube.com/live_chat');
+      u.searchParams.set('v', videoId);
+      u.searchParams.set('is_framed', 'true');
+      return { provider: 'youtube', verified: true, kind: 'iframe', src: u.toString(), videoId };
+    }
+    return null;
   }
   return null;
 }

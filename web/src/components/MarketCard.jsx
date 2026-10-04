@@ -14,6 +14,10 @@ import { marketThumb } from '../lib/live-now.js';
 export default function MarketCard({ room }) {
   const hero = room.heroMarket;
   const headline = hero?.question || room.title;
+  // The room/stream this market belongs to. Shown as its own context line when the
+  // headline is the bet question (so the reader still sees WHICH stream it's on).
+  const streamName = room.title;
+  const showStream = Boolean(hero?.question && streamName && streamName !== headline);
   const betting = hero ? Math.max(0, Math.round((hero.volume || 0) / 10)) : 0;
   const countdown = hero && hero.status === 'open' && hero.end_time ? fmtTimeLeft(hero.end_time) : null;
   const thumb = marketThumb(room);
@@ -41,6 +45,13 @@ export default function MarketCard({ room }) {
           <span className="text-[10px] uppercase tracking-wide text-white/45">{hero.category}</span>
         )}
         <h3 className="font-heading font-bold text-[15px] leading-snug line-clamp-2 mt-0.5">{headline}</h3>
+
+        {showStream && (
+          <p className="flex items-center gap-1 mt-1 text-[11px] text-white/50 min-w-0" data-testid="market-stream">
+            <span className="shrink-0 uppercase tracking-wide text-white/35">in</span>
+            <span className="truncate">{streamName}</span>
+          </p>
+        )}
 
         {hero && (
           <div className="mt-2">
