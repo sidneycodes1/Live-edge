@@ -378,3 +378,83 @@ describe('env.loadEnv — Gemini groundwork (Phase 2, config only)', () => {
     assert.ok(!env.warnings.some((w) => /GEMINI_API_KEY missing/i.test(w)));
   });
 });
+
+// ---- throttle resilience (added by verifier, 2026-10-04) -------------------
+// Observed in the field: a burst of simultaneous keyless RSS fetches draws
+// transient fake-404s per IP. The client must (a) retry each feed once, and
+// (b) cache a PARTIAL refresh only briefly so a blip at boot cannot lock the
+// grid short-filled for the full 10-minute TTL. Complete refreshes keep it.
+
+describe('curated client — throttle resilience (retry + partial-cache TTL)', () => {
+  const okFeed = { 'UCnews1': makeRes(rss('v1', 'N1', 'n1')), 'UCsport2': makeRes(rss('v2', 'S2', 'n2')), 'UCmusic3': makeRes(rss('v3', 'M3', 'n3')) };
+
+  it('recovers a feed from a transient 404 via the single retry', async () => {
+    let attempts = 0;
+    const flaky = (url) => {
+      attempts += 1;
+      return attempts === 1 ? makeRes('nope', { status: 404 }) : makeRes(rss('v1', 'N1', 'n1'));
+    };
+    const { fn } = mockRss({ ...okFeed, UCnews1: flaky });
+    const client = createCuratedClient({ channels: CHANNELS, fetchImpl: fn, retryDelayMs: 0, ...quiet });
+    const items = await client.getChannels();
+    assert.equal(items.length, 3, 'flaky feed recovered on retry');
+    assert.equal(attempts, 2);
+  });
+
+  it('partial refresh is cached only partialTtlMs; complete refresh keeps ttlMs', async () => {
+    let t = 1000;
+    const clock = { now: () => t };
+    // UCsport2 permanently down → every refresh is partial (2/3).
+    const down = { ...okFeed };
+    delete down.UCsport2; // unlisted → 404 in mockRss
+    const { fn, calls } = mockRss(down);
+    const client = createCuratedClient({
+      channels: CHANNELS, fetchImpl: fn, retryDelayMs: 0,
+      ttlMs: 600_000, partialTtlMs: 60_000, now: clock.now, ...quiet,
+    });
+
+    const first = await client.getChannels();
+    assert.equal(first.length, 2);
+    const callsAfterFirst = calls.length;
+
+    // Within the SHORT partial window → served from cache, no new fetches.
+    t += 30_000;
+    await client.getChannels();
+    assert.equal(calls.length, callsAfterFirst, 'partial cache hit inside partialTtlMs');
+
+    // Past it → a refresh actually re-runs (does NOT wait 10 minutes).
+    t += 31_000;
+    const third = await client.getChannels();
+    assert.ok(calls.length > callsAfterFirst, 'partial cache expired → refreshed');
+    assert.equal(third.length, 2);
+
+    // A COMPLETE refresh keeps the long TTL.
+    const okAll = mockRss(okFeed);
+    const client2 = createCuratedClient({
+      channels: CHANNELS, fetchImpl: okAll.fn, retryDelayMs: 0,
+      ttlMs: 600_000, partialTtlMs: 60_000, now: clock.now, ...quiet,
+    });
+    assert.equal((await client2.getChannels()).length, 3);
+    const fullCalls = okAll.calls.length;
+    t += 120_000; // > partialTtlMs, < ttlMs
+    await client2.getChannels();
+    assert.equal(okAll.calls.length, fullCalls, 'complete cache survives past partialTtlMs');
+  });
+
+  it('honors the concurrency cap (never more than N fetches in flight)', async () => {
+    let active = 0;
+    let peak = 0;
+    const slowRss = async () => {
+      active += 1;
+      peak = Math.max(peak, active);
+      await new Promise((r) => setTimeout(r, 5));
+      active -= 1;
+      return makeRes(rss(`v${Math.random().toString(36).slice(2, 8)}`, 't', 'a'));
+    };
+    const many = Array.from({ length: 8 }, (_, i) => ({ channelId: `UCx${i}`, name: `C${i}`, category: 'News' }));
+    const client = createCuratedClient({ channels: many, fetchImpl: slowRss, concurrency: 2, staggerMs: 0, retryDelayMs: 0, ...quiet });
+    const items = await client.getChannels();
+    assert.equal(items.length, 8);
+    assert.ok(peak <= 2, `peak in-flight ${peak} must be ≤ 2`);
+  });
+});

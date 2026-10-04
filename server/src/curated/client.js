@@ -87,10 +87,22 @@ export function createCuratedClient({
   fetchImpl = fetch,
   timeoutMs = 8000,
   ttlMs = 10 * 60 * 1000,
+  // Partial refresh (some feeds throttled/failed → fewer items than channels) is
+  // cached only briefly: a transient YouTube soft-block at boot must NOT lock the
+  // grid to 3 cards for the full 10 minutes. Complete refreshes keep the long TTL.
+  partialTtlMs = 60 * 1000,
+  // Bounded concurrency + small stagger: firing 14 simultaneous RSS requests is
+  // exactly the burst pattern YouTube soft-throttles (observed: fake 404s per-IP).
+  // Defaults are timing-neutral (full parallelism, no waits) so unit tests stay
+  // fast and deterministic; PRODUCTION passes the tuned values in app.js.
+  concurrency = Infinity,
+  staggerMs = 0,
+  retryDelayMs = 0,
   now = () => Date.now(),
+  sleep = (ms) => new Promise((r) => setTimeout(r, ms)),
   warn = (msg) => console.warn(msg),
 } = {}) {
-  let cache = null; // { at, data: item[] }
+  let cache = null; // { at, data, complete }
   let inflight = null;
 
   // One keyless RSS fetch, bounded by an AbortController timeout.
@@ -120,23 +132,63 @@ export function createCuratedClient({
     }
   }
 
-  // Public: CuratedItem[]. Parallel across channels, cache-aside + single-flight.
+  // One feed with a single retry (throttle blips are transient; a fake-404 usually
+  // clears seconds later). Retry only on retryable codes, never on a good empty parse.
+  async function fetchFeedWithRetry(channel) {
+    try {
+      return await fetchFeed(channel);
+    } catch (e) {
+      const retryable = e instanceof ProviderError
+        && ['HTTP_ERROR', 'RATE_LIMIT', 'TIMEOUT', 'NETWORK'].includes(e.code);
+      if (!retryable) throw e;
+      await sleep(retryDelayMs);
+      return fetchFeed(channel); // second failure propagates to the skip path
+    }
+  }
+
+  // Promise.allSettled-style fan-out with a concurrency cap and staggered launches
+  // (bounded lanes) — avoids the 14-at-once burst that draws fake-404 throttling.
+  async function settleBounded(list, worker) {
+    const results = new Array(list.length).fill(null);
+    let next = 0;
+    const lanes = Array.from({ length: Math.max(1, Math.min(concurrency, list.length)) }, async (_r, k) => {
+      while (next < list.length) {
+        const i = next++;
+        if (k > 0 && staggerMs > 0) await sleep(staggerMs);
+        results[i] = await worker(list[i], i);
+      }
+    });
+    await Promise.all(lanes);
+    return results;
+  }
+
+  // Public: CuratedItem[]. Bounded-concurrency RSS fan-out, cache-aside + single-flight.
   // Skips per-channel failures; throws ProviderError('NETWORK') only when NOTHING
   // loaded and there is no cache to fall back on.
   async function getChannels() {
     const at = now();
-    if (cache && at - cache.at < ttlMs) return cache.data;
+    if (cache) {
+      const age = at - cache.at;
+      if (age < (cache.complete ? ttlMs : partialTtlMs)) return cache.data;
+    }
     if (inflight) return inflight;
 
     inflight = (async () => {
       try {
-        const settled = await Promise.allSettled(channels.map((c) => fetchFeed(c)));
-        let anyFulfilled = false;
+        let okCount = 0;
+        const settled = await settleBounded(channels, async (c) => {
+          try {
+            const v = await fetchFeedWithRetry(c);
+            okCount += 1;
+            return { status: 'fulfilled', value: v };
+          } catch (reason) {
+            return { status: 'rejected', reason };
+          }
+        });
         const seen = new Set();
         const items = [];
         settled.forEach((r, idx) => {
           if (r.status === 'fulfilled') {
-            anyFulfilled = true;
             const it = r.value;
             if (it && !seen.has(it.id)) {
               seen.add(it.id);
@@ -148,14 +200,16 @@ export function createCuratedClient({
           }
         });
 
-        if (!anyFulfilled) {
+        if (items.length === 0) {
           if (cache) {
             warn('curated: every feed failed → serving last-good stale cache');
             return cache.data;
           }
           throw new ProviderError('NETWORK', 'all curated channel feeds failed');
         }
-        cache = { at: now(), data: items };
+        const complete = okCount === channels.length;
+        cache = { at: now(), data: items, complete };
+        if (!complete) warn(`curated: partial refresh ${items.length}/${channels.length} → short ${partialTtlMs}ms cache`);
         return items;
       } finally {
         inflight = null;

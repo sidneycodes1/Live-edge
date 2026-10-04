@@ -104,8 +104,11 @@ export async function createApp({ env: rawEnv, db: existingDb } = {}) {
   // is ALWAYS constructed and available — no creds gate. It's a post-merge FILL inside
   // the aggregator (not a LIVE_SOURCES provider), so the grid still serves real live
   // cards when the YouTube SEARCH budget is exhausted. It self-degrades: a curated
-  // outage can never break the general feed.
-  const curated = createCuratedClient();
+  // outage can never break the general feed. Production pacing (verified 2026-10-04:
+  // 14-at-once RSS bursts draw YouTube fake-404 per-IP throttling): bounded
+  // concurrency + stagger + one retry; partial refreshes cache only 60s so a
+  // throttle blip at boot cannot lock the grid short-filled for 10 minutes.
+  const curated = createCuratedClient({ concurrency: 4, staggerMs: 150, retryDelayMs: 1500 });
   // Gemini feature flag (Phase 2 env groundwork ONLY — no Gemini logic runs yet).
   const geminiEnabled = env.geminiEnabled ?? Boolean(env.GEMINI_API_KEY);
   // A single enabled map feeds BOTH the aggregator and the route: the four grid
