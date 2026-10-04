@@ -50,6 +50,7 @@ async function start() {
   // graceful
   process.on('SIGTERM', async () => {
     clearInterval(app._interval);
+    if (app._engine && app._engine.stop) app._engine.stop();
     hubStop(app);
     await db.close();
     server.close(() => process.exit(0));

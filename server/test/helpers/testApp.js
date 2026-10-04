@@ -46,6 +46,7 @@ export async function teardownTestEnv() {
   if (sharedServer) await new Promise((r) => sharedServer.close(r));
   if (sharedApp) {
     if (sharedApp._interval) clearInterval(sharedApp._interval);
+    if (sharedApp._engine && sharedApp._engine.stop) sharedApp._engine.stop();
     if (sharedApp._hub) sharedApp._hub.stop();
   }
   // PGlite close API is db.close() via wrapper (see server/src/db/index.js)
@@ -62,7 +63,7 @@ export async function resetDb() {
   if (!sharedDb) throw new Error('DB not initialized - call setupTestEnv first');
   // Single TRUNCATE across all tables with RESTART IDENTITY CASCADE for cheap reset
   await sharedDb.query(
-    'TRUNCATE TABLE users, auth_nonces, rooms, markets, orders, trades, balances, positions, chat_messages, notifications, mint_events, fee_events RESTART IDENTITY CASCADE',
+    'TRUNCATE TABLE users, auth_nonces, rooms, markets, orders, trades, balances, positions, chat_messages, notifications, mint_events, fee_events, engine_budget RESTART IDENTITY CASCADE',
   );
 }
 
