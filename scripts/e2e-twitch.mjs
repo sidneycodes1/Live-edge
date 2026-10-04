@@ -17,7 +17,7 @@ import { chromium } from 'playwright';
 import { mkdirSync } from 'node:fs';
 
 const WEB = 'http://localhost:5173';
-const API = 'http://localhost:4000';
+const _API = 'http://localhost:4000'; // documented base; assertions go through WEB pages
 const SHOTS = 'audit/screenshots-twitch';
 mkdirSync(SHOTS, { recursive: true });
 

@@ -390,7 +390,7 @@ describe('curated client — throttle resilience (retry + partial-cache TTL)', (
 
   it('recovers a feed from a transient 404 via the single retry', async () => {
     let attempts = 0;
-    const flaky = (url) => {
+    const flaky = (_url) => {
       attempts += 1;
       return attempts === 1 ? makeRes('nope', { status: 404 }) : makeRes(rss('v1', 'N1', 'n1'));
     };

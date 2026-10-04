@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { dirname, isAbsolute } from 'node:path';
 import { parseDotEnv, dotenvCandidates, loadDotEnv } from '../src/config/dotenv.js';
 
 // Regression for B1: the first loader resolved the .env path with a string
@@ -36,7 +37,11 @@ describe('config/dotenv', () => {
     assert.ok(c[0].endsWith(`${c[0].includes('\\') ? '\\' : '/'}.env`));
     // repo-root candidate is the parent of the server dir candidate
     assert.ok(c[0] !== c[1]);
-    assert.ok(c[0].includes('Live edge') || c[0].includes('Live%20edge') || true);
+    // Machine-agnostic structure check (was a vacuous `|| true` assertion that
+    // hardcoded this developer's folder name): both paths absolute, and the
+    // repo-root .env sits one directory above the server dir's .env.
+    assert.ok(isAbsolute(c[0]) && isAbsolute(c[1]));
+    assert.equal(dirname(dirname(c[1])), dirname(c[0]));
     assert.ok(c[1].endsWith('.env') && c[0].endsWith('.env'));
     assert.ok(c[0].length < c[1].length);
   });
