@@ -4,8 +4,108 @@ import { validate } from '../middleware/validate.js';
 import { PantaError } from '../panta/errors.js';
 import { sanitizeText } from '../services/sanitize.js';
 
-export function marketsRouter({ db, panta, hub, priceCache, notify }) {
+export function marketsRouter({ db, panta, hub, priceCache, notify, engine, env = {} }) {
   const r = Router();
+
+  // Clamp a query int into [lo,hi] with a fallback (mirrors routes/live.js).
+  function clampInt(v, lo, hi, dflt) {
+    const n = Number.parseInt(v, 10);
+    if (Number.isNaN(n)) return dflt;
+    return Math.min(hi, Math.max(lo, n));
+  }
+
+  // Wire projection for a markets row. Exposes the engine's broadcast-tie fields
+  // under `engine` ONLY for sim-engine rows (the web renders "which stream this
+  // bet belongs to" from these; see the field contract in the task report).
+  function toPublicMarket(m) {
+    return {
+      id: m.id,
+      room_id: m.room_id,
+      question: m.question,
+      resolution_rule: m.resolution_rule,
+      category: m.category,
+      image_url: m.image_url,
+      yes_price: Number(m.yes_price),
+      no_price: Number(m.no_price),
+      q_yes: Number(m.q_yes),
+      q_no: Number(m.q_no),
+      volume: Number(m.volume),
+      status: m.status,
+      outcome: m.outcome,
+      graduated: m.graduated,
+      source: m.source,
+      is_seed: m.is_seed,
+      bets: Number(m.bets ?? 0),
+      start_time: m.start_time,
+      end_time: m.end_time,
+      resolution_time: m.resolution_time,
+      engine:
+        m.source === 'sim-engine'
+          ? {
+              live_item_id: m.engine_live_item_id,
+              video_id: m.engine_video_id,
+              channel_slug: m.engine_channel_slug,
+              watch_url: m.engine_watch_url,
+            }
+          : null,
+    };
+  }
+
+  // GET /api/markets — the public listing / rails the web consumes.
+  //   ?rail=trending (default) | closing | all
+  // Ordering (TASK 3): markets with REAL user activity (buy trades > 0) first, then
+  //   everything else, and sim-engine filler LAST within the no-activity tier — so an
+  //   engine batch never outranks a market people are actually betting on. Legacy seed
+  //   markets (is_seed) are EXCLUDED from every rail by default (override ?includeSeed=1)
+  //   but stay in the DB and keep answering GET /:id / the room rails unchanged.
+  r.get('/', async (req, res, next) => {
+    try {
+      // Read-path auto-close so 'closing'/'trending' reflect reality (same guard the
+      // background loop + GET /:id already run).
+      await db.query(`update markets set status='closed' where status='open' and end_time <= now()`);
+      const rail = String(req.query.rail || 'trending').toLowerCase();
+      const includeSeed = req.query.includeSeed === '1' || req.query.includeSeed === 'true';
+      const limit = clampInt(req.query.limit, 1, 100, 24);
+      const betsExpr = `(select count(*) from trades t where t.market_id = m.id and t.kind='buy')`;
+      const statusClause = rail === 'closing' || rail === 'trending' ? `and m.status = 'open'` : '';
+      const seedClause = includeSeed ? '' : `and m.is_seed = false`;
+      let orderTail;
+      if (rail === 'closing') orderTail = 'm.end_time asc';
+      else if (rail === 'trending') orderTail = 'm.volume desc, m.created_at desc';
+      else orderTail = 'm.created_at desc';
+      const { rows } = await db.query(
+        `select m.*, ${betsExpr} as bets from markets m
+         where 1=1 ${statusClause} ${seedClause}
+         order by
+           (case when ${betsExpr} > 0 then 0 else 1 end),
+           (case when m.source = 'sim-engine' then 1 else 0 end),
+           ${orderTail}
+         limit $1`,
+        [limit],
+      );
+      const items = rows.map(toPublicMarket);
+      res.json({ rail, items, count: items.length, generatedAt: new Date().toISOString() });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // POST /api/markets/engine/tick — DEV/TEST ONLY forced rotation. Runs one engine
+  // tick with force:true (bypasses the ≥3-open gate only — never the disabled guard,
+  // daily budget, or question dedup). Hard-refused in production. Enables a plain-curl
+  // live proof of "a new batch appears on demand" without waiting 30 minutes.
+  r.post('/engine/tick', async (_req, res, next) => {
+    try {
+      if (env.NODE_ENV === 'production') {
+        return res.status(403).json({ error: { code: 'FORBIDDEN', message: 'engine tick disabled in production' } });
+      }
+      if (!engine) return res.status(503).json({ error: { code: 'ENGINE_UNAVAILABLE', message: 'market engine not wired' } });
+      const result = await engine.tick({ force: true });
+      res.json({ ok: true, result, status: engine.status() });
+    } catch (e) {
+      next(e);
+    }
+  });
 
   r.get('/catalog', async (_req, res, next) => {
     try {
