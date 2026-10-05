@@ -1,10 +1,13 @@
-import { useEffect, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
+import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api.js';
 import { normalizeLive, normalizeChannel, normalizeMatch, normalizeFootballFeed } from '../lib/live.js';
 import { buildLiveNowCards, marketThumb } from '../lib/live-now.js';
 import { mergePinnedFirst, MAX_PINS } from '../lib/pins.js';
+import { tailorByInterests } from '../lib/tailoring.js';
+import { consumeTunedNote } from '../lib/welcome.js';
 import { usePins } from '../hooks/usePins.js';
+import { useAuth } from '../hooks/useAuth.js';
 import { countdownPill } from '../lib/countdown.js';
 import MarketCard from '../components/MarketCard.jsx';
 import LiveNow from '../components/LiveNow.jsx';
@@ -46,17 +49,27 @@ export default function Discover() {
   const [waking, setWaking] = useState(false);
   const [reload, setReload] = useState(0);
   const [params] = useSearchParams();
+  const location = useLocation();
+  const railRef = useRef(null);
   // Captured once per visit; drives the rotating category priority.
   const [seed] = useState(nextVisitSeed);
   // The user's pinned streams (server shelf, max 4) — they LEAD the default grid.
   const { pins, pinnedIds, toggle } = usePins();
   const [pinNote, setPinNote] = useState(null);
+  // Interest tailoring reads the SIGNED-IN user's stored interests only
+  // (docs/PRIVY_AUTH_SPEC.md "Tailoring rule"): logged-out browsing keeps the
+  // current order — nothing is guessed from cookies/history (honesty §4).
+  const { user } = useAuth();
+  // "Tuned for {name}" one-shot, written by the /welcome cover after a real
+  // setup save; consumeTunedNote clears it, so it shows exactly once.
+  const [tunedName] = useState(() => consumeTunedNote(window.sessionStorage));
 
   // Honest refusal when the 4 slots are full: say so, then fade the note.
   function handlePin(card) {
     return toggle(card).then((res) => {
       if (res.ok) setPinNote(null);
       else if (res.reason === 'limit') setPinNote(`You can pin up to ${MAX_PINS} streams — unpin one to make room.`);
+      else if (res.reason === 'login') setPinNote('Sign in to pin — your shelf follows your account, not this browser.');
       return res;
     });
   }
@@ -126,6 +139,15 @@ export default function Discover() {
     return () => { cancelled = true; };
   }, [q]);
 
+  // Deep CTA from the congrats screen: focus the FIRST real card so keyboard and
+  // screen-reader users land inside the feed ("Make your first prediction").
+  // (Declared before the early returns below — hooks must keep a stable order.)
+  useEffect(() => {
+    if (!location.state?.focusFirstCard || loading) return;
+    const el = railRef.current?.querySelector('a');
+    if (el) el.focus({ preventScroll: false });
+  }, [loading, location.state]);
+
   const all = rooms || [];
 
   // The "Live now" cards: from search matches when a query is active, else the
@@ -137,7 +159,14 @@ export default function Discover() {
     { playable: playableSource.filter(isPlayable), football: footballSource },
     seed,
   );
-  const cards = q ? baseCards : mergePinnedFirst(baseCards, pins);
+  // Order law: PINS FIRST (mergePinnedFirst) → then interest-tailored REAL
+  // cards (tailorByInterests keeps the pinned prefix via leadCount and only
+  // re-orders existing cards — never filters, never fabricates).
+  const cards = q
+    ? baseCards
+    : tailorByInterests(mergePinnedFirst(baseCards, pins), user?.interests || [], {
+        leadCount: Math.min(pins.length, MAX_PINS),
+      });
   // How many REAL playable streams made it into the rail. When this is 0 while
   // football scores remain, the grid has silently collapsed — LiveNow shows an
   // honest "streams are loading / retry" panel instead of a football-only wall (D).
@@ -179,16 +208,18 @@ export default function Discover() {
   return (
     <div className="max-w-6xl mx-auto px-4 py-6 pb-20">
       {/* ① LIVE NOW — the mixed, rotating grid of real broadcasts + football scores */}
-      <LiveNow
-        cards={cards}
-        loading={livenowLoading}
-        playableCount={playableCount}
-        onRetry={() => setReload((n) => n + 1)}
-        icon={<IconFlame className="w-5 h-5" />}
-        pinnedIds={pinnedIds}
-        onTogglePin={handlePin}
-        note={pinNote}
-      />
+      <div ref={railRef}>
+        <LiveNow
+          cards={cards}
+          loading={livenowLoading}
+          playableCount={playableCount}
+          onRetry={() => setReload((n) => n + 1)}
+          icon={<IconFlame className="w-5 h-5" />}
+          pinnedIds={pinnedIds}
+          onTogglePin={handlePin}
+          note={pinNote || (tunedName ? `Tuned for ${tunedName}` : null)}
+        />
+      </div>
 
       {/* ② FEATURED LIVE — one hero market (real thumbnail only, else text-first) */}
       {featured && (
