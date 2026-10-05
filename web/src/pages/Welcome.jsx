@@ -77,7 +77,17 @@ function Congrats() {
       else setFrame(formatUsd(WELCOME_TARGET_USD)); // land EXACTLY on $100.00
     };
     raf = window.requestAnimationFrame(tick);
-    return () => window.cancelAnimationFrame(raf);
+    // rAF is suspended in a backgrounded tab, which would strand the promise on
+    // "$0.00" forever — exactly the amount we told the user they have. A timer is
+    // throttled but still fires there, so the final value is always reached.
+    const land = window.setTimeout(
+      () => setFrame(formatUsd(WELCOME_TARGET_USD)),
+      COUNTUP_DURATION_MS + 120,
+    );
+    return () => {
+      window.cancelAnimationFrame(raf);
+      window.clearTimeout(land);
+    };
   }, []);
 
   return (

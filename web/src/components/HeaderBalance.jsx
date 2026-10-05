@@ -41,7 +41,17 @@ export default function HeaderBalance() {
       raf = window.requestAnimationFrame(tick);
     };
     raf = window.requestAnimationFrame(tick);
-    return () => window.cancelAnimationFrame(raf);
+    // Same guarantee as the congrats screen: rAF is suspended in a backgrounded
+    // tab, and without this the chip would keep showing the animation's "$0.00"
+    // instead of handing back to the user's REAL server balance.
+    const land = window.setTimeout(() => {
+      setFrame(formatUsd(WELCOME_TARGET_USD));
+      setMirroring(false);
+    }, COUNTUP_DURATION_MS + 120);
+    return () => {
+      window.cancelAnimationFrame(raf);
+      window.clearTimeout(land);
+    };
   }, [mirroring]);
 
   if (!user) return null;
