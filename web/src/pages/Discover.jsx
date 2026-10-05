@@ -3,6 +3,8 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api.js';
 import { normalizeLive, normalizeChannel, normalizeMatch, normalizeFootballFeed } from '../lib/live.js';
 import { buildLiveNowCards, marketThumb } from '../lib/live-now.js';
+import { mergePinnedFirst, MAX_PINS } from '../lib/pins.js';
+import { usePins } from '../hooks/usePins.js';
 import { countdownPill } from '../lib/countdown.js';
 import MarketCard from '../components/MarketCard.jsx';
 import LiveNow from '../components/LiveNow.jsx';
@@ -46,6 +48,23 @@ export default function Discover() {
   const [params] = useSearchParams();
   // Captured once per visit; drives the rotating category priority.
   const [seed] = useState(nextVisitSeed);
+  // The user's pinned streams (server shelf, max 4) — they LEAD the default grid.
+  const { pins, pinnedIds, toggle } = usePins();
+  const [pinNote, setPinNote] = useState(null);
+
+  // Honest refusal when the 4 slots are full: say so, then fade the note.
+  function handlePin(card) {
+    return toggle(card).then((res) => {
+      if (res.ok) setPinNote(null);
+      else if (res.reason === 'limit') setPinNote(`You can pin up to ${MAX_PINS} streams — unpin one to make room.`);
+      return res;
+    });
+  }
+  useEffect(() => {
+    if (!pinNote) return;
+    const t = setTimeout(() => setPinNote(null), 4000);
+    return () => clearTimeout(t);
+  }, [pinNote]);
 
   // Search is server-side and keyless (/api/search). The landing grid re-uses the
   // SAME "Live now" rail to show matches, so a query never looks like a dead bar.
@@ -110,13 +129,15 @@ export default function Discover() {
   const all = rooms || [];
 
   // The "Live now" cards: from search matches when a query is active, else the
-  // default playable grid + football feed. Composed & rotated by seed.
+  // default playable grid + football feed. Composed & rotated by seed. Pins only
+  // lead the DEFAULT feed — a search shows exactly what was searched for.
   const playableSource = q ? (searchView?.items || []) : (live?.items || []);
   const footballSource = q ? (searchView?.football || []) : (football?.items || []);
-  const cards = buildLiveNowCards(
+  const baseCards = buildLiveNowCards(
     { playable: playableSource.filter(isPlayable), football: footballSource },
     seed,
   );
+  const cards = q ? baseCards : mergePinnedFirst(baseCards, pins);
   // How many REAL playable streams made it into the rail. When this is 0 while
   // football scores remain, the grid has silently collapsed — LiveNow shows an
   // honest "streams are loading / retry" panel instead of a football-only wall (D).
@@ -164,6 +185,9 @@ export default function Discover() {
         playableCount={playableCount}
         onRetry={() => setReload((n) => n + 1)}
         icon={<IconFlame className="w-5 h-5" />}
+        pinnedIds={pinnedIds}
+        onTogglePin={handlePin}
+        note={pinNote}
       />
 
       {/* ② FEATURED LIVE — one hero market (real thumbnail only, else text-first) */}

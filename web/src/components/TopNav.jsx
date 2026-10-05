@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import ModeBadge from './ModeBadge.jsx';
 import WalletButton from './WalletButton.jsx';
 import NotificationBell from './NotificationBell.jsx';
 import HeaderBalance from './HeaderBalance.jsx';
@@ -53,15 +52,12 @@ export default function TopNav() {
     <nav className="sticky top-0 z-40 bg-bg/80 backdrop-blur border-b border-white/10">
       <div className="px-3 sm:px-4 py-2.5 flex items-center gap-2 sm:gap-3 lg:gap-4">
         <Link to="/" className="font-heading font-bold text-lg shrink-0">LiveEdge</Link>
-        <div className="hidden xl:block shrink-0"><ModeBadge /></div>
 
         <SearchField term={term} setTerm={setTerm} onSubmit={onSubmit} id="desktop-search" className="hidden sm:flex flex-1 max-w-xl" />
 
         <div className="hidden md:flex gap-4 text-sm ml-auto shrink-0">
-          <Link to="/" className="text-white/70 hover:text-white">Browse</Link>
           <Link to="/portfolio" className="text-white/70 hover:text-white">Portfolio</Link>
           <Link to="/creator" className="text-white/70 hover:text-white">Create</Link>
-          <Link to="/about" className="text-white/70 hover:text-white">About</Link>
         </div>
         <div className="flex items-center gap-1.5 sm:gap-2 ml-auto md:ml-0 shrink-0 min-w-0">
           <HeaderBalance />

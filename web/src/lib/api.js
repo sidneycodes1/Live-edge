@@ -85,4 +85,8 @@ export const api = {
   metrics: () => request('/api/streamer/metrics', { auth:true }),
   listNotifications: (unread=false) => request(`/api/notifications${unread ? '?unread=1' : ''}`, { auth:true }),
   markNotificationsRead: (payload={ all:true }) => request('/api/notifications/read', { method:'POST', body:payload, auth:true }),
+  // Live pins — the user's shelf that leads "Live now" (max 4, server-enforced).
+  getPins: () => request('/api/pins', { auth:true }),
+  pin: (body) => request('/api/pins', { method:'POST', body, auth:true }),
+  unpin: (streamId) => request(`/api/pins/${encodeURIComponent(streamId)}`, { method:'DELETE', auth:true }),
 };

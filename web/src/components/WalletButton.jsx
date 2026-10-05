@@ -6,7 +6,11 @@ export default function WalletButton() {
   const navigate = useNavigate();
   if (user) {
     const label = user.wallet ? `${user.wallet.slice(0, 4)}…${user.wallet.slice(-4)}` : 'Account';
-    const display = user.kind === 'email' ? user.email : `${label} · guest`;
+    // Show the user's NAME, never the long email: display_name is the server's
+    // chosen-handle field; an email account without one falls back to its local
+    // part (up to the '@'), and guests keep the wallet label.
+    const name = user.display_name || (user.email ? String(user.email).split('@')[0] : null);
+    const display = name ? `${name}${user.kind === 'email' ? '' : ' · guest'}` : `${label} · guest`;
     return (
       <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
         <Link

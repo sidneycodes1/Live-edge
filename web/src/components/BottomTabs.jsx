@@ -2,7 +2,7 @@ import { Link, useLocation } from 'react-router-dom';
 export default function BottomTabs() {
   const loc = useLocation();
   const is = (p) => loc.pathname === p || loc.pathname.startsWith(p);
-  const tabs = [{ to: '/', label: 'Live' }, { to: '/portfolio', label: 'Portfolio' }, { to: '/about', label: 'About' }];
+  const tabs = [{ to: '/', label: 'Live' }, { to: '/portfolio', label: 'Portfolio' }];
   return (
     <div className="fixed bottom-0 inset-x-0 bg-surface border-t border-white/10 flex md:hidden pb-safe">
       {tabs.map((t) => (

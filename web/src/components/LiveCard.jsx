@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import { extractYouTubeVideoId, extractYouTubeChannelId } from '../lib/embed.js';
+import { IconPin } from './Icons.jsx';
 
 // ---------------------------------------------------------------------------
 // The two — and ONLY two — honest card kinds for the "Live now" grid
@@ -96,11 +97,39 @@ function matchClock(m) {
   return null;
 }
 
-function PlayableCard({ channel }) {
+// Pin toggle — "I'm watching / playing with this stream": it leads the Live now
+// grid (max 4, server-authoritative). Rendered OUTSIDE the <Link> so pressing it
+// never navigates. Only appears once the caller wires onTogglePin up.
+function PinButton({ pinned, onTogglePin, channel, className = '' }) {
+  if (!onTogglePin) return null;
+  return (
+    <button
+      type="button"
+      data-testid="pin-toggle"
+      aria-pressed={Boolean(pinned)}
+      aria-label={pinned ? 'Unpin stream' : 'Pin stream to the front of Live now'}
+      title={pinned ? 'Unpin' : 'Pin to Live now (max 4)'}
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onTogglePin(channel);
+      }}
+      className={`z-10 w-7 h-7 grid place-items-center rounded-full border border-white/20 transition cursor-pointer ${
+        pinned ? 'bg-live text-white' : 'bg-black/60 text-white/80 hover:bg-black/80 hover:text-white'
+      } ${className}`}
+    >
+      <IconPin className="w-3.5 h-3.5" />
+    </button>
+  );
+}
+
+function PlayableCard({ channel, pinned, onTogglePin }) {
   const href = liveCardHref(channel);
   const hasViewers = channel.viewerCount != null && Number(channel.viewerCount) > 0;
   return (
-    <Link
+    <div className="relative">
+      <PinButton pinned={pinned} onTogglePin={onTogglePin} channel={channel} className="absolute top-2 right-2" />
+      <Link
       to={href || '/'}
       state={liveCardState(channel)}
       data-testid="live-card"
@@ -134,16 +163,19 @@ function PlayableCard({ channel }) {
           )}
         </div>
       </div>
-    </Link>
+      </Link>
+    </div>
   );
 }
 
-function FootballScoreCard({ match }) {
+function FootballScoreCard({ channel, match, pinned, onTogglePin }) {
   const clock = matchClock(match);
   const leagueLine = [match.league, match.country].filter(Boolean).join(' \u2022 ');
   const hasScore = match.score && (match.score.home != null || match.score.away != null);
   return (
-    <Link
+    <div className="relative">
+      <PinButton pinned={pinned} onTogglePin={onTogglePin} channel={channel} className="absolute bottom-2 right-2" />
+      <Link
       to={liveCardHref(match) || '/'}
       state={{ match }}
       data-testid="card-match"
@@ -165,13 +197,14 @@ function FootballScoreCard({ match }) {
           <span className="num text-2xl font-bold px-1 whitespace-nowrap">{hasScore ? `${match.score.home} \u2013 ${match.score.away}` : 'vs'}</span>
           <span className="text-left font-heading font-bold text-sm leading-tight line-clamp-2">{match.away}</span>
         </div>
-        <p className="text-[11px] text-white/45 truncate">{match.title}</p>
+        <p className={`text-[11px] text-white/45 truncate ${onTogglePin ? 'pr-8' : ''}`}>{match.title}</p>
       </div>
-    </Link>
+      </Link>
+    </div>
   );
 }
 
-export default function LiveCard({ channel }) {
-  if (channel.source === 'football-api') return <FootballScoreCard match={channel} />;
-  return <PlayableCard channel={channel} />;
+export default function LiveCard({ channel, pinned, onTogglePin }) {
+  if (channel.source === 'football-api') return <FootballScoreCard channel={channel} match={channel} pinned={pinned} onTogglePin={onTogglePin} />;
+  return <PlayableCard channel={channel} pinned={pinned} onTogglePin={onTogglePin} />;
 }

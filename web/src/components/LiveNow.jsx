@@ -20,7 +20,7 @@ import Skeleton from './Skeleton.jsx';
 
 const SKELETON_COUNT = 12;
 
-export default function LiveNow({ cards = [], loading = false, onRetry, playableCount, title = 'Live now', icon, testid = 'rail-live' }) {
+export default function LiveNow({ cards = [], loading = false, onRetry, playableCount, title = 'Live now', icon, testid = 'rail-live', pinnedIds, onTogglePin, note }) {
   // How many non-football (playable) cards are present. Prefer the caller's number;
   // otherwise derive from the cards so the collapse check is always honest.
   const playable =
@@ -35,6 +35,10 @@ export default function LiveNow({ cards = [], loading = false, onRetry, playable
         {icon && <span className="text-live inline-flex">{icon}</span>}
         <span>{title}</span>
       </h2>
+
+      {note && (
+        <p className="text-xs text-live/90 -mt-1 mb-2" data-testid="livenow-note">{note}</p>
+      )}
 
       {loading ? (
         <div className="flex gap-4 overflow-x-auto no-scrollbar pb-2 snap-x" data-testid="livenow-loading">
@@ -92,7 +96,7 @@ export default function LiveNow({ cards = [], loading = false, onRetry, playable
           <div className="flex gap-4 overflow-x-auto no-scrollbar pb-2 snap-x" data-testid="livenow-grid">
             {cards.map((ch) => (
               <div key={ch.id} className="snap-start shrink-0 w-[260px]">
-                <LiveCard channel={ch} />
+                <LiveCard channel={ch} pinned={pinnedIds?.has(String(ch.id))} onTogglePin={onTogglePin} />
               </div>
             ))}
           </div>

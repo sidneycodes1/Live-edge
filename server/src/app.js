@@ -33,6 +33,7 @@ import { streamRouter } from './routes/stream.js';
 import { streamerRouter } from './routes/streamer.js';
 import { faucetRouter } from './routes/faucet.js';
 import { notificationsRouter } from './routes/notifications.js';
+import { pinsRouter } from './routes/pins.js';
 import { twitchRouter } from './routes/twitch.js';
 import { liveRouter } from './routes/live.js';
 import { searchRouter } from './routes/search.js';
@@ -227,6 +228,9 @@ export async function createApp({ env: rawEnv, db: existingDb } = {}) {
 
   // notifications (auth)
   app.use('/api/notifications', auth, notificationsRouter({ db }));
+
+  // live pins (auth) — the user's pinned-stream shelf (max 4, leads "Live now").
+  app.use('/api/pins', auth, pinsRouter({ db }));
 
   // transaction history / ledger (auth)
   app.use('/api/ledger', auth, ledgerRouter({ db }));

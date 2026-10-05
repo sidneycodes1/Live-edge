@@ -61,6 +61,15 @@ export function IconTrending({ className } = {}) {
   );
 }
 
+export function IconPin({ className } = {}) {
+  return (
+    <svg {...base(className)}>
+      <path d="M12 17v5" />
+      <path d="M9 10.8V4h6v6.8l2.5 2.7a1 1 0 0 1-.8 1.5H7.3a1 1 0 0 1-.8-1.5z" />
+    </svg>
+  );
+}
+
 export function IconPlay({ className } = {}) {
   return (
     <svg {...base(className)} fill="currentColor" stroke="none">
