@@ -37,9 +37,11 @@ wrong, STOP and report it — never silently deviate. Base for all work:
   already minted server-side (mint_events 'welcome'); C's sheet triggers on
   our-JWT creation for a brand-new user (guest OR privy session just_created),
   NOT on Privy login specifically.
-- Env note: VITE_PRIVY_APP_ID reaches the client via the ROOT .env loaded by
-  scripts/dev.mjs (process-env inheritance in Vite). web/.env.local is NOT the
-  mechanism; agents must not create or edit any .env* file.
+- Env mechanism (CORRECTED after Agent B proved the original note wrong): client
+  `VITE_*` vars reach the browser via **vite.config.js `envDir: '..'`** reading the
+  ROOT .env; `scripts/dev.mjs` does NOT load any .env (the server loads its own
+  in-process). `web/.env.local` is NOT the mechanism; agents must not create or
+  edit any .env* file.
 
 ## Diagram flows (the plan, visualized)
 
