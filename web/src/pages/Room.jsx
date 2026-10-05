@@ -1,4 +1,4 @@
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useApi } from '../hooks/useApi.js';
 import { api } from '../lib/api.js';
 import { useSSE } from '../hooks/useSSE.js';
@@ -39,6 +39,39 @@ function InRoomCreate({ roomId }) {
   );
 }
 
+// Sticky bottom BET PILL (mobile nav pass): the thumb-zone entry to the trade
+// sheet, sitting above the 4-tab bar. It goes through the SAME handleTrade
+// gate as the panel buttons (login-or-nothing, Amendment 2); the sheet itself
+// shows the honest 'signing not yet available' state until embedded signing
+// is verified — the pill never pretends more than that.
+function BetPill({ market, onBet }) {
+  if (!market) return null;
+  return (
+    <div
+      data-testid="bet-pill"
+      className="md:hidden fixed left-3 right-3 bottom-[76px] z-30 flex items-center gap-2 rounded-full border border-white/15 bg-surface/95 backdrop-blur shadow-lg pl-4 pr-2 py-2"
+    >
+      <span className="flex-1 min-w-0 truncate text-sm font-semibold">{market.question}</span>
+      <button
+        type="button"
+        data-testid="bet-pill-yes"
+        onClick={() => onBet('yes')}
+        className="shrink-0 min-h-[44px] min-w-[64px] px-4 rounded-full bg-yes text-black font-bold text-sm cursor-pointer"
+      >
+        YES
+      </button>
+      <button
+        type="button"
+        data-testid="bet-pill-no"
+        onClick={() => onBet('no')}
+        className="shrink-0 min-h-[44px] min-w-[64px] px-4 rounded-full bg-no text-white font-bold text-sm cursor-pointer"
+      >
+        NO
+      </button>
+    </div>
+  );
+}
+
 export default function Room() {
   const { id } = useParams();
   const { data: room, loading, setData } = useApi(() => api.getRoom(id), [id]);
@@ -47,7 +80,8 @@ export default function Room() {
   const [tradeSide, setTradeSide] = useState(null);
   const [activeMarket, setActiveMarket] = useState(null);
   const [mobileTab, setMobileTab] = useState('market'); // mobile: show the bet panel under the video first ('chat' | 'market')
-  const { user, signIn } = useAuth();
+  const { user, loginWithPrivy, privyAvailable } = useAuth();
+  const navigate = useNavigate();
 
   useEffect(() => { if (room && room.markets && room.markets.length) { setActiveMarket(room.markets[0]); } }, [room]);
   // handle odds SSE to update price. Depends only on `events`; uses a functional
@@ -67,7 +101,13 @@ export default function Room() {
   if (!room) return <div className="p-6">Room not found</div>;
 
   const handleTrade = (side) => {
-    if (!user) { signIn(); return; }
+    if (!user) {
+      // Login-or-nothing (Amendment 2): betting opens the Privy modal, never a
+      // silent guest sign-in. No Privy mounted → honest /signin landing.
+      if (privyAvailable) loginWithPrivy();
+      else navigate('/signin');
+      return;
+    }
     setTradeSide(side);
   };
 
@@ -119,6 +159,7 @@ export default function Room() {
           </div>
         </div>
         {tradeSide && activeMarket && <TradeSheet market={activeMarket} side={tradeSide} onClose={() => setTradeSide(null)} onSuccess={refetch} />}
+        {!tradeSide && <BetPill market={activeMarket} onBet={handleTrade} />}
       </div>
     );
   }
@@ -166,6 +207,7 @@ export default function Room() {
           </div>
         </div>
         {tradeSide && activeMarket && <TradeSheet market={activeMarket} side={tradeSide} onClose={() => setTradeSide(null)} onSuccess={refetch} />}
+        {!tradeSide && <BetPill market={activeMarket} onBet={handleTrade} />}
       </div>
     );
   }
@@ -205,6 +247,7 @@ export default function Room() {
         </div>
       </div>
       {tradeSide && activeMarket && <TradeSheet market={activeMarket} side={tradeSide} onClose={() => setTradeSide(null)} onSuccess={refetch} />}
+      {!tradeSide && <BetPill market={activeMarket} onBet={handleTrade} />}
     </div>
   );
 }
