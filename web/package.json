@@ -7,10 +7,12 @@
     "dev": "vite --port 5173 --host",
     "build": "vite build",
     "preview": "vite preview",
+    "test": "vitest run",
     "lint": "eslint src"
   },
   "dependencies": {
     "framer-motion": "11.11.0",
+    "hls.js": "^1.7.3",
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "react-router-dom": "6.30.1"

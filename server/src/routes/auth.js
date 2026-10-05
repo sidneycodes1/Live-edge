@@ -103,7 +103,9 @@ export function authRouter({ db, env, auth, notify }) {
       const { rows: finalU } = await db.query('select * from users where id=$1', [userId]);
       const user = finalU[0];
       const token = jwt.sign({ id: user.id, wallet: user.wallet }, env.JWT_SECRET, { expiresIn: '1h' });
-      res.json({ token, user: { id: user.id, wallet: user.wallet, display_name: user.display_name } });
+      // publicUser keeps the shape identical to /me — the web optimistic state must
+      // not disagree with the hydrate call for guest-vs-email kind.
+      res.json({ token, user: publicUser(user) });
     } catch (e) {
       next(e);
     }

@@ -1,0 +1,37 @@
+{
+  "_meta": {
+    "provider": "floor",
+    "endpoint": "optional GET https://api.livepeer.com/studio/streams; otherwise the network-free guaranteed channel from env (FLOOR_FALLBACK_*)",
+    "maps_to": "LiveChannel (§1): source='floor', watchUrl=HLS played directly (no provider embed)",
+    "honesty": "floor is the self-hosted guaranteed rung; only present when FLOOR_FALLBACK_URL is configured, else ladder yields empty (§3)",
+    "deterministic": "fixed startedAt"
+  },
+  "streams": [
+    {
+      "id": "floor-stream-0001",
+      "streamKey": null,
+      "name": "Livepeer Floor Seed (fixture)",
+      "record": true,
+      "playbackUrl": "https://livepeercdn.studio/hls/floor-stream-0001/index.m3u8",
+      "viewerCount": 0,
+      "category": "Tech/Conference",
+      "isActive": true,
+      "startedAt": "2024-01-01T00:00:00Z"
+    }
+  ],
+  "guaranteedChannel": {
+    "id": "floor:guaranteed",
+    "source": "floor",
+    "title": "Always-Live Floor (configured via FLOOR_FALLBACK_TITLE)",
+    "channelName": "LiveEdge Floor",
+    "channelSlug": "floor",
+    "category": "Tech/Conference",
+    "viewerCount": 0,
+    "startedAt": null,
+    "thumbnailUrl": "",
+    "isLive": true,
+    "isMature": false,
+    "watchUrl": "https://FLOOR_FALLBACK_URL/configured.example/index.m3u8",
+    "language": null
+  }
+}

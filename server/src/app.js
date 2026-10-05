@@ -8,6 +8,16 @@ import { createDb } from './db/index.js';
 import { migrate } from './db/migrate.js';
 import { seed } from './db/seed.js';
 import { createPanta } from './panta/index.js';
+import { createTwitchClient } from './twitch/client.js';
+import { createKickClient } from './kick/client.js';
+import { createYouTubeClient } from './youtube/client.js';
+import { createFloorClient } from './floor/client.js';
+import { createFootballClient } from './football/client.js';
+import { createCuratedClient } from './curated/client.js';
+import { createGeminiClient } from './gemini/client.js';
+import { createMarketEngine } from './services/marketEngine.js';
+import { createAiSpectator } from './services/aiChat.js';
+import { createLiveAggregator } from './aggregator/index.js';
 import { createHub } from './services/sse.js';
 import { createPriceCache } from './services/priceCache.js';
 import { healthRouter } from './routes/health.js';
@@ -23,6 +33,9 @@ import { streamRouter } from './routes/stream.js';
 import { streamerRouter } from './routes/streamer.js';
 import { faucetRouter } from './routes/faucet.js';
 import { notificationsRouter } from './routes/notifications.js';
+import { twitchRouter } from './routes/twitch.js';
+import { liveRouter } from './routes/live.js';
+import { searchRouter } from './routes/search.js';
 import { ledgerRouter } from './routes/ledger.js';
 import { createNotifier } from './services/notify.js';
 import { createAuth } from './middleware/auth.js';
@@ -35,9 +48,87 @@ export async function createApp({ env: rawEnv, db: existingDb } = {}) {
   const db = existingDb || (await createDb(env));
   if (!existingDb) {
     await migrate(db);
-    await seed(db);
+    await seed(db, { fallbackChannel: env.TWITCH_FALLBACK_CHANNEL });
   }
   const panta = createPanta({ db, env });
+  // Twitch live client (feature/twitch-live-integration). Always constructed; it
+  // self-degrades to [] / null when creds are missing, so no branching needed here.
+  const twitch = createTwitchClient({
+    clientId: env.TWITCH_CLIENT_ID,
+    clientSecret: env.TWITCH_CLIENT_SECRET,
+    cacheTtlMs: env.TWITCH_CACHE_TTL_MS,
+  });
+  // Multi-source live feed (feature/streaming-ui-overhaul → live-aggregation). All
+  // clients are always constructed and self-degrade ([] / no network) when creds
+  // are absent, exactly like twitch above. `liveSources` comes from loadEnv in prod;
+  // the fallback here keeps hand-built test envs (no loadEnv) booting unchanged.
+  const kick = createKickClient({
+    clientId: env.KICK_CLIENT_ID,
+    clientSecret: env.KICK_CLIENT_SECRET,
+    cacheTtlMs: env.KICK_CACHE_TTL_MS,
+  });
+  const youtube = createYouTubeClient({
+    apiKey: env.YOUTUBE_API_KEY,
+    query: env.YOUTUBE_QUERY,
+    // Tier-B (Phase 3): when YOUTUBE_QUERIES is set, the client fans out across
+    // them (sequential, deduped) instead of the single generic query.
+    queries: env.youtubeQueries?.length ? env.youtubeQueries : null,
+    cacheTtlMs: env.YOUTUBE_CACHE_TTL_MS,
+  });
+  // The floor client's `fallback` arg is the network-free guaranteed card (§3).
+  // loadEnv already builds `floorFallback`; the literal here keeps hand-built test
+  // envs booting unchanged. thumbnailUrl stays empty (§1/§4: never fabricate a preview).
+  const floorFallback = env.floorFallback || {
+    url: env.FLOOR_FALLBACK_URL || '',
+    title: env.FLOOR_FALLBACK_TITLE || '',
+    channelName: env.FLOOR_FALLBACK_CHANNEL || '',
+    category: env.FLOOR_FALLBACK_CATEGORY || '',
+    thumbnailUrl: '',
+  };
+  const floor = createFloorClient({
+    apiKey: env.LIVEPEER_API_KEY,
+    hlsBase: env.FLOOR_HLS_BASE,
+    fallback: floorFallback,
+    cacheTtlMs: env.FLOOR_CACHE_TTL_MS,
+  });
+  const liveSources = env.liveSources || {
+    twitch: Boolean(env.TWITCH_CLIENT_ID && env.TWITCH_CLIENT_SECRET),
+    kick: Boolean(env.KICK_CLIENT_ID && env.KICK_CLIENT_SECRET),
+    youtube: Boolean(env.YOUTUBE_API_KEY),
+    floor: Boolean(env.FLOOR_FALLBACK_URL || env.LIVEPEER_API_KEY),
+  };
+  // API-Football DATA feed (docs/football-api.md). Constructed always; it self-
+  // disables (throws DISABLED → honest empty) when the provider/key are absent,
+  // exactly like the video clients. loadEnv sets `footballApiEnabled`; the fallback
+  // keeps hand-built test envs (no loadEnv) booting unchanged.
+  const football = createFootballClient({
+    provider: env.FOOTBALL_API_PROVIDER,
+    apiKey: env.FOOTBALL_API_KEY,
+    baseUrl: env.FOOTBALL_API_BASE_URL,
+  });
+  const footballEnabled = env.footballApiEnabled ?? Boolean(env.FOOTBALL_API_PROVIDER === 'api-football' && env.FOOTBALL_API_KEY);
+  // Curated always-live channels (Phase 2). Keyless + quota-free (channel RSS), so it
+  // is ALWAYS constructed and available — no creds gate. It's a post-merge FILL inside
+  // the aggregator (not a LIVE_SOURCES provider), so the grid still serves real live
+  // cards when the YouTube SEARCH budget is exhausted. It self-degrades: a curated
+  // outage can never break the general feed. Production pacing (verified 2026-10-04:
+  // 14-at-once RSS bursts draw YouTube fake-404 per-IP throttling): bounded
+  // concurrency + stagger + one retry; partial refreshes cache only 60s so a
+  // throttle blip at boot cannot lock the grid short-filled for 10 minutes.
+  const curated = createCuratedClient({ concurrency: 4, staggerMs: 150, retryDelayMs: 1500 });
+  // Gemini feature flag: drives whether the broadcast market engine rotates (§ TASK 2).
+  const geminiEnabled = env.geminiEnabled ?? Boolean(env.GEMINI_API_KEY);
+  // A single enabled map feeds BOTH the aggregator and the route: the four grid
+  // sources plus the football data flag (`football` is ignored by the generic grid)
+  // and the gemini groundwork flag (consumed by a later phase, not the grid).
+  const enabled = { ...liveSources, football: footballEnabled, gemini: geminiEnabled };
+  const liveAggregator = createLiveAggregator({ twitch, kick, youtube, floor, football, curated, enabled });
+  // Broadcast-aligned market engine (Phase 2). Gemini client is inert without a key
+  // (generateJson returns null, no call), so the engine is ALWAYS constructed but a
+  // real rotation only runs when the feature is enabled. It never throws at boot and
+  // never wipes existing markets — a Gemini outage just keeps the last batch served.
+  const gemini = createGeminiClient({ apiKey: env.GEMINI_API_KEY, model: env.GEMINI_MODEL });
+  const marketEngine = createMarketEngine({ db, gemini, aggregator: liveAggregator, env });
   const hub = createHub();
   const notify = createNotifier(db, hub);
   const priceCache = createPriceCache({ ttlMs: 10000 });
@@ -78,22 +169,42 @@ export async function createApp({ env: rawEnv, db: existingDb } = {}) {
   // streaming (public)
   app.use('/api/stream', streamRouter({ hub }));
 
+  // Twitch "currently live" browse (public). Reads real Helix when creds exist,
+  // otherwise returns an empty/demo list — see routes/twitch.js.
+  app.use('/api/twitch', twitchRouter({ twitch, enabled: env.twitchEnabled }));
+
+  // Resilient multi-source live feed (public): merges Twitch/Kick/YouTube/Floor into
+  // LiveChannel[] with a never-empty ladder. Never 500s — see routes/live.js.
+  // `?category=football` additionally serves the API-Football DATA feed (docs/football-api.md).
+  app.use('/api/live', liveRouter({ aggregator: liveAggregator, enabled }));
+
+  // Keyless, quota-free search over the merged live grid + cached football feed
+  // (server/src/routes/search.js). Never 500s; empty query / no matches → honest
+  // empty so the UI can show "no matches" rather than a broken spinner.
+  app.use('/api/search', searchRouter({ aggregator: liveAggregator }));
+
   // catalog public
   // rooms public (list/detail)
   // need to allow public GET but auth for POST
   app.use('/api/rooms', (req, res, next) => {
     if (req.method === 'POST') return auth(req, res, next);
     next();
-  }, roomsRouter({ db, hub }));
+  }, roomsRouter({ db, hub, twitch }));
 
-  // markets: some public, some auth
+  // markets: some public, some auth. The GET listing rails (trending/closing/all),
+  // /catalog and the single-market detail are public; create/resolve require auth.
+  // POST /engine/tick reaches the router without auth so the live proof is a plain
+  // curl — the handler itself hard-refuses in production (see routes/markets.js).
   app.use(
     '/api/markets',
     (req, res, next) => {
-      if (req.path === '/catalog' || (req.method === 'GET' && req.path.match(/^\/[^/]+$/))) return next();
+      const p = req.path;
+      const publicGet = req.method === 'GET' && (p === '/' || p === '/catalog' || /^\/[^/]+$/.test(p));
+      const devTick = req.method === 'POST' && p === '/engine/tick';
+      if (publicGet || devTick) return next();
       return auth(req, res, next);
     },
-    marketsRouter({ db, panta, hub, priceCache, notify }),
+    marketsRouter({ db, panta, hub, priceCache, notify, engine: marketEngine, env }),
   );
 
   // orders (auth + limiter)
@@ -134,10 +245,32 @@ export async function createApp({ env: rawEnv, db: existingDb } = {}) {
   }, 10000);
   if (interval.unref) interval.unref();
 
+  // Start the 30-min market rotation ONLY when Gemini is enabled (an engine with no
+  // key would just skip every tick). It kicks once immediately so a fresh boot already
+  // has live-born markets, then rotates. The interval is unref'd so it never keeps the
+  // process alive, and app teardown (testApp + graceful shutdown) stops it explicitly.
+  if (geminiEnabled) marketEngine.start();
+
+  // AI spectator chat: labeled kind='ai' lines in rooms WITHOUT a real provider
+  // chat and only while a viewer is connected (see services/aiChat.js honesty
+  // contract). Disable with AI_SPECTATOR=off. Unref'd interval; teardown stops it.
+  const aiSpectator = createAiSpectator({ db, hub, env });
+  // Not auto-started under test: suites assert on chat_messages, and a background
+  // spectator would be a flake source. Tests drive tick() directly with fakes.
+  if (env.NODE_ENV !== 'test') aiSpectator.start();
+
   app._db = db;
   app._hub = hub;
   app._env = env;
   app._panta = panta;
+  app._twitch = twitch;
+  app._liveAggregator = liveAggregator;
+  app._liveSources = liveSources;
+  app._football = football;
+  app._curated = curated;
+  app._gemini = gemini;
+  app._engine = marketEngine;
+  app._spectator = aiSpectator;
   app._interval = interval;
 
   return app;

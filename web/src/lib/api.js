@@ -51,7 +51,20 @@ export const api = {
   upgrade: (email, password) => request('/api/auth/upgrade', { method:'POST', body:{ email, password }, auth:true }),
   listRooms: () => request('/api/rooms'),
   getRoom: (id) => request(`/api/rooms/${id}`),
-  createRoom: (title, videoUrl) => request('/api/rooms', { method:'POST', body:{ title, videoUrl }, auth:true }),
+  listTwitchLive: (limit=12) => request(`/api/twitch/live?limit=${limit}`),
+  // Multi-provider live grid (docs/live-aggregation-spec.md §3). Never 500s; the
+  // response carries the never-empty ladder flags. Normalized in lib/live.js.
+  getLive: (limit=24) => request(`/api/live?limit=${limit}`),
+  // Football is a DATA feed on the SAME /api/live surface, scoped by category
+  // (server/src/routes/live.js serveFootball). Narrower envelope; items carry NO
+  // viewerCount and NO art by design — never invent one (§4). Normalized by
+  // normalizeFootballFeed in lib/live.js.
+  getLiveFootball: (limit=6) => request(`/api/live?category=football&limit=${limit}`),
+  // Keyless, quota-free search over the merged live grid + cached football feed
+  // (server/src/routes/search.js). Returns { query, items, football, count }.
+  search: (q, limit=24) => request(`/api/search?q=${encodeURIComponent(q)}&limit=${limit}`),
+  createRoom: (title, videoUrl, twitchChannel) => request('/api/rooms', { method:'POST', body:{ title, videoUrl, twitchChannel: twitchChannel || undefined }, auth:true }),
+  validateTwitchChannel: (login) => request(`/api/twitch/validate?login=${encodeURIComponent(login)}`),
   getMarket: (id) => request(`/api/markets/${id}`),
   getCatalog: () => request('/api/markets/catalog'),
   quoteMarket: (data) => request('/api/markets/quote', { method:'POST', body:data, auth:true }),

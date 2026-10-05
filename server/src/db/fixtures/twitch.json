@@ -1,0 +1,28 @@
+{
+  "_meta": {
+    "provider": "twitch",
+    "endpoint": "GET https://helix.twitch.tv/streams (first-party app token)",
+    "maps_to": "LiveChannel (§1): source='twitch', channelSlug=user_login, category=game_name (source-native), viewerCount=viewer_count",
+    "deterministic": "fixed started_at; no time-based nondeterminism"
+  },
+  "data": [
+    {
+      "id": "424242424242",
+      "user_id": "500001",
+      "user_login": "twitch_seed_channel",
+      "user_name": "Twitch Seed Channel",
+      "game_id": "513180",
+      "game_name": "Elden Ring",
+      "type": "live",
+      "title": "First Try Malenia (seed fixture)",
+      "tags": ["speedrun", "any%"],
+      "viewer_count": 12345,
+      "started_at": "2024-01-01T00:00:00Z",
+      "language": "en",
+      "thumbnail_url": "https://static-cdn.jtvnw.net/previews-ttv/live_user_twitch_seed_channel-{width}x{height}.jpg",
+      "tag_ids": ["1", "2"],
+      "is_mature": false
+    }
+  ],
+  "pagination": { "cursor": "fixture-cursor-1" }
+}

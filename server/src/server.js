@@ -21,7 +21,7 @@ let port = env.PORT;
 async function start() {
   const db = await createDb(env);
   await migrate(db);
-  await seed(db);
+  await seed(db, { fallbackChannel: env.TWITCH_FALLBACK_CHANNEL });
   const app = await createApp({ env, db });
   for (const w of env.warnings || []) console.warn(w);
   console.warn(`LiveEdge effectiveMode=${env.effectiveMode} requested=${env.PANTA_MODE}`);
@@ -50,6 +50,8 @@ async function start() {
   // graceful
   process.on('SIGTERM', async () => {
     clearInterval(app._interval);
+    if (app._engine && app._engine.stop) app._engine.stop();
+    if (app._spectator && app._spectator.stop) app._spectator.stop();
     hubStop(app);
     await db.close();
     server.close(() => process.exit(0));

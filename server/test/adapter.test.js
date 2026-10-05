@@ -130,13 +130,11 @@ describe('liveClient', () => {
 
   describe('request bodies use exact docs field names', () => {
     it('quoteBuy uses amountUsdc not amount', () => {
-      const c = createLiveClient({ baseUrl: 'https://x.example/api/v1', apiKey: 'k', fetchImpl: async () => new Response(JSON.stringify({}), { status: 200 }) });
       const body = { marketId: 'm', side: 'yes', amountUsdc: 100, wallet: 'w', userId: 'u' };
       assert.equal(body.amountUsdc, 100);
       assert.equal(body.amount, undefined);
     });
     it('buildCreate uses createId not quoteId', () => {
-      const c = createLiveClient({ baseUrl: 'https://x.example/api/v1', apiKey: 'k', fetchImpl: async () => new Response(JSON.stringify({}), { status: 200 }) });
       const body = { createId: 'id', wallet: 'w' };
       assert.equal(body.createId, 'id');
       assert.equal(body.quoteId, undefined);
@@ -204,22 +202,42 @@ describe('liveClient', () => {
   });
 
   describe('env loading', () => {
-    it('loads .env and PANTA_MODE=hybrid', async () => {
-      const { readFileSync } = await import('node:fs');
-      const serverJsPath = 'C:/Users/USER/Documents/MY CODES/Live edge/server/src/server.js';
-      const envPath = serverJsPath.replace('src/server.js', '../.env');
-      const envText = readFileSync(envPath, 'utf8');
-      const env = {};
-      for (const line of envText.trim().split('\n')) {
-        const eq = line.indexOf('=');
-        if (eq > 0 && !line.startsWith('#')) {
-          const key = line.slice(0, eq).trim();
-          const val = line.slice(eq + 1).trim();
-          env[key] = val;
+    it('parses a .env fixture and loadEnv applies its PANTA_MODE with env override precedence', async () => {
+      // Hermetic fixture — the previous version readFileSync'd the repo-root .env
+      // via a hardcoded absolute path, which is gitignored (ENOENT in CI) and
+      // machine-specific. Env parsing is verified against a temp file instead.
+      const { readFileSync, mkdtempSync, rmSync, writeFileSync } = await import('node:fs');
+      const { tmpdir } = await import('node:os');
+      const { join } = await import('node:path');
+      const { loadEnv } = await import('../src/config/env.js');
+      const dir = mkdtempSync(join(tmpdir(), 'liveedge-env-'));
+      try {
+        const envPath = join(dir, '.env');
+        writeFileSync(envPath, 'PANTA_MODE=hybrid\nPANTA_API_KEY=pk_live_ci\n# comment\nIGNORED=\n');
+        const env = {};
+        for (const line of readFileSync(envPath, 'utf8').trim().split('\n')) {
+          const eq = line.indexOf('=');
+          if (eq > 0 && !line.startsWith('#')) {
+            const key = line.slice(0, eq).trim();
+            const val = line.slice(eq + 1).trim();
+            env[key] = val;
+          }
         }
+        assert.equal(env.PANTA_MODE, 'hybrid');
+        assert.ok(env.PANTA_API_KEY.startsWith('pk_live_'));
+        // Same parse contract through the real loader: hybrid + key → effectiveMode hybrid.
+        const parsed = loadEnv({ ...env, JWT_SECRET: 'x'.repeat(40) });
+        assert.equal(parsed.effectiveMode, 'hybrid');
+        // Degrade rule: mode without key falls back to sim with a warning.
+        const degraded = loadEnv({ PANTA_MODE: 'live', JWT_SECRET: 'x'.repeat(40) });
+        assert.equal(degraded.effectiveMode, 'sim');
+        assert.ok(degraded.warnings.some((w) => w.includes('PANTA_MODE=live')));
+        // process.env overrides the parsed file values (precedence check).
+        const overridden = loadEnv({ ...env, PANTA_MODE: 'sim', JWT_SECRET: 'x'.repeat(40) });
+        assert.equal(overridden.effectiveMode, 'sim');
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
       }
-      assert.equal(env.PANTA_MODE, 'hybrid');
-      assert.ok(env.PANTA_API_KEY.startsWith('pk_live_'));
     });
   });
 });

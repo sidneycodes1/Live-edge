@@ -7,16 +7,71 @@ body { background:#0B0B10; color:#fff; font-family: Inter, system-ui, sans-serif
 h1,h2,h3 { font-family: 'Space Grotesk', system-ui, sans-serif; }
 .num { font-variant-numeric: tabular-nums; font-family: 'Space Grotesk', monospace; }
 
-/* Animated stream preview (F-014): an intentional "simulated feed" visual,
-   not a dead placeholder. Equalizer bars breathe and a highlight sweeps. */
-@keyframes eq-bounce {
-  0%, 100% { transform: scaleY(0.25); }
-  50% { transform: scaleY(1); }
+/* Streaming UI (Phase A): motion that makes odds feel alive. */
+/* Odds delta flashes — a one-shot halo when a side moves up or down. */
+@keyframes flash-up {
+  0% { box-shadow: 0 0 0 0 rgba(61, 255, 181, 0.7); }
+  100% { box-shadow: 0 0 0 6px rgba(61, 255, 181, 0); }
 }
-@keyframes sweep {
-  0% { transform: translateX(-120%); opacity: 0; }
-  40% { opacity: 0.6; }
-  100% { transform: translateX(120%); opacity: 0; }
+@keyframes flash-down {
+  0% { box-shadow: 0 0 0 0 rgba(255, 94, 108, 0.7); }
+  100% { box-shadow: 0 0 0 6px rgba(255, 94, 108, 0); }
 }
-.eq-bar { transform-origin: bottom; animation: eq-bounce 1.1s ease-in-out infinite; }
-.sweep { animation: sweep 3.2s ease-in-out infinite; }
+.flash-up { animation: flash-up 0.9s ease-out; }
+.flash-down { animation: flash-down 0.9s ease-out; }
+.mover-up { color: #3DFFB5; }
+.mover-down { color: #FF5E6C; }
+
+/* Horizontal rails / tickers scroll by swipe but shouldn't show a chunky bar. */
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+
+/* Design-system MASTER (design-system/liveedge/MASTER.md): visible keyboard focus
+   is required for a11y. A high-contrast ring that reads on the cinema-dark surface
+   for every interactive element, shown only for keyboard/AT focus (:focus-visible),
+   so mouse clicks aren't noisy. */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid #FFFFFF;
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* Honour prefers-reduced-motion: freeze the ambient "live" animations and kill
+   transition/animation churn. The motion is decorative, so the UI stays fully
+   usable when it's disabled (design MASTER + WCAG 2.3.3). */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+  .flash-up, .flash-down { animation: none !important; }
+  .animate-pulse { animation: none !important; }
+}
+
+/* ---------------------------------------------------------------------------
+   Mobile responsiveness (design-system MASTER checklist: no horizontal scroll
+   on mobile, no content hidden behind the fixed bars, every tap target ≥44px).
+   ------------------------------------------------------------------------- */
+
+/* Belt-and-braces: guarantee the PAGE never scrolls sideways on a phone. The
+   individual layouts are fixed at their source too, but one stray wide child
+   must never lift the whole document into a horizontal scroll. */
+html, body { overflow-x: hidden; }
+body { max-width: 100vw; }
+
+/* Keep fixed bars clear of the iOS home indicator / Android gesture area. */
+.pb-safe { padding-bottom: max(0px, env(safe-area-inset-bottom)); }
+
+/* On touch-sized viewports, every interactive control meets the 44×44 minimum.
+   Scoped to <=768px so the pointer-first sizing never distorts the desktop grid,
+   and to real controls only (not layout wrappers like card <a> blocks). */
+@media (max-width: 768px) {
+  .tap, a[href], button:not([data-icon]), input, select, textarea,
+  [role="button"] {
+    min-height: 44px;
+  }
+  /* Icon-only affordances (search submit, modal close) keep a square touch box. */
+  [data-icon] { min-width: 40px; min-height: 40px; }
+}

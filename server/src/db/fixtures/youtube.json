@@ -1,0 +1,47 @@
+{
+  "_meta": {
+    "provider": "youtube",
+    "endpoint": "Data v3 search?eventType=live → videos?part=liveStreamingDetails",
+    "maps_to": "LiveChannel (§1): source='youtube', channelSlug=videoId, watchUrl=https://www.youtube.com/watch?v=<videoId>",
+    "honesty": "YouTube search-only yields NO viewer count and NO category → viewerCount=0, category='' (§4)",
+    "deterministic": "fixed actualStartTime"
+  },
+  "search": {
+    "kind": "youtube#searchListResponse",
+    "pageInfo": { "totalResults": 1, "resultsPerPage": 1 },
+    "items": [
+      {
+        "id": { "kind": "youtube#video", "videoId": "ytSeedVideo01" },
+        "snippet": {
+          "title": "YouTube Live Seed (fixture)",
+          "channelTitle": "YT Seed Channel",
+          "channelId": "UCytSeedChannel000000",
+          "liveBroadcastContent": "live",
+          "thumbnails": {
+            "high": { "url": "https://i.ytimg.com/vi/ytSeedVideo01/hqdefault.jpg" }
+          }
+        }
+      }
+    ]
+  },
+  "videos": {
+    "kind": "youtube#videoListResponse",
+    "items": [
+      {
+        "id": "ytSeedVideo01",
+        "snippet": {
+          "title": "YouTube Live Seed (fixture)",
+          "channelTitle": "YT Seed Channel",
+          "liveBroadcastContent": "live",
+          "thumbnails": {
+            "high": { "url": "https://i.ytimg.com/vi/ytSeedVideo01/hqdefault.jpg" }
+          }
+        },
+        "liveStreamingDetails": {
+          "actualStartTime": "2024-01-01T00:00:00Z",
+          "actualEndTime": null
+        }
+      }
+    ]
+  }
+}

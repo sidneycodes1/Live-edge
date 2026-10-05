@@ -12,7 +12,7 @@
     "dev": "node scripts/dev.mjs",
     "build": "pnpm -r build",
     "lint": "eslint .",
-    "test": "pnpm --filter liveedge-server test",
+    "test": "pnpm -r test",
     "smoke": "node scripts/smoke.mjs",
     "audit:api": "node scripts/audit-api.mjs",
     "e2e:browser": "node scripts/e2e-browser.mjs",
