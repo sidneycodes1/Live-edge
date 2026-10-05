@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth.js';
 import InterestChips, { ALL_INTERESTS } from '../components/InterestChips.jsx';
 import { IconPlay } from '../components/Icons.jsx';
@@ -13,6 +13,8 @@ import {
 import {
   validateDisplayName,
   resumeStep,
+  resumeFields,
+  welcomePhase,
   shouldShowCongrats,
   isWelcomeLatched,
   markWelcomeShown,
@@ -116,21 +118,26 @@ function Congrats() {
 export default function Welcome() {
   const { user, loading, completeSetup, loginWithPrivy, privyAvailable } = useAuth();
   const [phase, setPhase] = useState(() =>
-    shouldShowCongrats({
-      just_created: user?.just_created,
-      setup_completed: user?.setup_completed,
-      latched: isWelcomeLatched(window.sessionStorage),
-    }) ? 'congrats' : 'steps',
+    welcomePhase({ user, latched: isWelcomeLatched(window.sessionStorage) }),
   );
   // Server fields drive the starting step (abandonment/resume, plan §2).
   const [step, setStep] = useState(() => resumeStep(user));
-  const [displayName, setDisplayName] = useState(user?.display_name || '');
+  // Never pre-fill the required username with the server's wallet-derived
+  // placeholder ("EkPU…4XQF"): it is not a valid display name, so it would be
+  // submittable-looking but rejected, and it undermines "choose your username".
+  const [displayName, setDisplayName] = useState(() => resumeFields(user).displayName);
   const [nameTouched, setNameTouched] = useState(false);
-  const [interests, setInterests] = useState(Array.isArray(user?.interests) ? user.interests : []);
+  const [interests, setInterests] = useState(() => resumeFields(user).interests);
   const [accepted, setAccepted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const nameRef = useRef(null);
+  // useAuth decodes the JWT on mount and reconciles the identity fields
+  // (display_name / interests / setup_completed) from /api/auth/me a tick later,
+  // so the initializers above run WITHOUT them. These refs make the one-time
+  // reconcile sync possible without clobbering typing or stealing the congrats.
+  const serverSynced = useRef(false);
+  const justSubmitted = useRef(false);
 
   const nameCheck = validateDisplayName(displayName);
 
@@ -153,10 +160,30 @@ export default function Welcome() {
     }
   }, [user, phase]);
 
+  // ---- adopt the server truth the moment it lands -------------------------
+  // Without this, a reload of an UNFINISHED account restarted at Step 1 with
+  // empty fields (the resume path never actually resumed), and a FINISHED
+  // account arriving at /welcome by URL was re-onboarded inside the takeover.
+  const serverKnown = Boolean(user) && user.setup_completed !== undefined;
+  useEffect(() => {
+    if (phase !== 'steps' || !serverKnown || serverSynced.current) return;
+    serverSynced.current = true;
+    if (justSubmitted.current) return; // the submit path owns the next screen
+    if (user.setup_completed === true) {
+      setPhase('home');
+      return;
+    }
+    const synced = resumeFields(user, { step, displayName, interests });
+    setStep(synced.step);
+    setDisplayName(synced.displayName);
+    setInterests(synced.interests);
+  }, [serverKnown, phase, user, step, displayName, interests]);
+
   async function createAccount() {
     if (!nameCheck.valid || !accepted || submitting) return;
     setSubmitting(true);
     setSubmitError('');
+    justSubmitted.current = true; // this mount earned the congrats screen
     try {
       await completeSetup({
         displayName: displayName.trim(),
@@ -184,6 +211,9 @@ export default function Welcome() {
   }
 
   // ---- states that are not the steps themselves ---------------------------
+  // Setup is server-complete and no congrats is owed: hand the account back to
+  // the app instead of showing it a cover it already finished.
+  if (phase === 'home') return <Navigate to="/" replace />;
   if (phase === 'congrats') {
     return (
       <CoverShell step={null}>

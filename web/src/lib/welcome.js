@@ -102,6 +102,26 @@ export function shouldShowCongrats({ just_created, setup_completed, latched } = 
   return setup_completed === true;
 }
 
+// Which screen the /welcome cover shows on arrival. The funded moment wins
+// first (it is owed exactly once). After that, a server-CONFIRMED-complete
+// account has nothing left to set up: it goes 'home' instead of being
+// re-onboarded — /welcome stays reachable by reload, bookmark or the back
+// button, and re-showing the required-username step there would strand a
+// finished account inside the takeover. Anything else (incl. "server truth not
+// known yet") shows the steps.
+export function welcomePhase({ user, latched } = {}) {
+  if (
+    shouldShowCongrats({
+      just_created: user?.just_created,
+      setup_completed: user?.setup_completed,
+      latched,
+    })
+  ) {
+    return 'congrats';
+  }
+  return user && user.setup_completed === true ? 'home' : 'steps';
+}
+
 // --- abandonment / resume (plan §2 "Abandonment path") ----------------------
 // needsSetup gates the /welcome takeover: ONLY the server's explicit
 // `setup_completed === false` drives it (never inferred client-side). The
@@ -122,14 +142,37 @@ export function shouldEnterWelcome(user) {
   return user.setup_completed === false || user.just_created === true;
 }
 
-// First INCOMPLETE step, from server fields: no display name → 1; a name but
-// no stored interests → 2 (skip writes all three, so empty ⇒ never visited);
+// First INCOMPLETE step, from server fields: no VALID display name → 1; a name
+// but no stored interests → 2 (skip writes all three, so empty ⇒ never visited);
 // otherwise the terms/submit step 3. Steps are 1-based integers.
+//
+// Step 1 is REQUIRED (owner decision: "username is required, no Skip"), so the
+// test is VALIDITY, not presence: a brand-new account already carries the
+// server's wallet-derived placeholder ("EkPU…4XQF", auth.js / privy.js), and
+// that placeholder contains U+2026, which the server's own display-name regex
+// rejects. Treating it as "username chosen" would silently skip the required
+// step for every fresh account.
 export function resumeStep(user) {
-  if (!user || !user.display_name) return 1;
+  if (!user || !validateDisplayName(user.display_name).valid) return 1;
   const interests = Array.isArray(user.interests) ? user.interests.filter(Boolean) : [];
   if (interests.length === 0) return 2;
   return 3;
+}
+
+// What the cover adopts from the server once /api/auth/me has landed (useAuth
+// decodes the JWT optimistically first, so the initializers above cannot see
+// these fields on the very first paint). `keep` is the local state the user may
+// already have edited: their typing always wins, and the step only ever moves
+// FORWARD — a late reconcile must not yank someone back to Step 1 mid-flow.
+export function resumeFields(user, keep = {}) {
+  const storedName = validateDisplayName(user?.display_name).valid ? user.display_name : '';
+  const storedInterests = Array.isArray(user?.interests) ? user.interests.filter(Boolean) : [];
+  const keepInterests = Array.isArray(keep.interests) ? keep.interests.filter(Boolean) : [];
+  return {
+    step: Math.max(Number(keep.step) || 1, resumeStep(user)),
+    displayName: keep.displayName || storedName,
+    interests: keepInterests.length ? keepInterests : storedInterests,
+  };
 }
 
 // --- display-name validation ------------------------------------------------

@@ -10,6 +10,8 @@ import {
   needsSetup,
   shouldEnterWelcome,
   resumeStep,
+  resumeFields,
+  welcomePhase,
   validateDisplayName,
   setTunedNote,
   consumeTunedNote,
@@ -127,6 +129,62 @@ describe('needsSetup / resumeStep (abandonment + resume, server field drives)', 
     expect(resumeStep({ display_name: 'Nova', interests: [] })).toBe(2);
     expect(resumeStep({ display_name: 'Nova', interests: ['sports'] })).toBe(3);
     expect(resumeStep({ display_name: 'Nova' })).toBe(2); // no interests field yet
+  });
+  it('does not count the server wallet placeholder as a chosen username', () => {
+    // The server inserts display_name = wallet.slice(0,4) + '…' + wallet.slice(-4)
+    // at account creation (auth.js / privy.js), so a BRAND-NEW account arrives with
+    // a name already set. Step 1 is required (owner decision), and that placeholder
+    // is rejected by the server's own display-name regex, so it must not skip it.
+    expect(resumeStep({ display_name: 'EkPU…4XQF', interests: [] })).toBe(1);
+    expect(resumeStep({ display_name: 'EkPU…4XQF', interests: ['sports'] })).toBe(1);
+    expect(resumeStep({ display_name: '2rYi…Tzfa' })).toBe(1);
+    expect(resumeStep({ display_name: 'a' })).toBe(1); // too short to be a real choice
+  });
+});
+
+describe('welcomePhase (which screen the cover shows on arrival)', () => {
+  it('the funded congrats moment wins first, exactly once', () => {
+    expect(
+      welcomePhase({ user: { just_created: true, setup_completed: true }, latched: false })
+    ).toBe('congrats');
+    // latched => already shown: a complete account must NOT be stranded in the cover
+    expect(
+      welcomePhase({ user: { just_created: true, setup_completed: true }, latched: true })
+    ).toBe('home');
+  });
+  it('a server-complete account goes home, an incomplete one shows the steps', () => {
+    expect(welcomePhase({ user: { setup_completed: true } })).toBe('home');
+    expect(welcomePhase({ user: { setup_completed: false } })).toBe('steps');
+    expect(welcomePhase({ user: {} })).toBe('steps'); // server truth not landed yet
+    expect(welcomePhase({ user: null })).toBe('steps');
+    expect(welcomePhase()).toBe('steps');
+  });
+});
+
+describe('resumeFields (reconcile the cover once /api/auth/me lands)', () => {
+  it('adopts stored fields when nothing was typed yet', () => {
+    expect(resumeFields({ display_name: 'EkPU…4XQF', interests: [] })).toEqual({
+      step: 1,
+      displayName: '', // the wallet placeholder is not a chosen username
+      interests: [],
+    });
+    expect(resumeFields({ display_name: 'Nova', interests: ['sports'] })).toEqual({
+      step: 3,
+      displayName: 'Nova',
+      interests: ['sports'],
+    });
+    expect(resumeFields(null)).toEqual({ step: 1, displayName: '', interests: [] });
+  });
+  it('never overwrites typing and never moves the step backwards', () => {
+    const r = resumeFields(
+      { display_name: 'Nova', interests: ['sports'] },
+      { step: 3, displayName: 'typed', interests: [] }
+    );
+    expect(r.displayName).toBe('typed'); // their input wins
+    expect(r.interests).toEqual(['sports']); // nothing picked locally -> adopt server
+    expect(r.step).toBe(3);
+    // a late reconcile must not yank an in-progress user back to Step 1
+    expect(resumeFields({ display_name: null }, { step: 2, displayName: 'abc', interests: [] }).step).toBe(2);
   });
 });
 
