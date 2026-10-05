@@ -1,6 +1,6 @@
 import { describe, it, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { makeApp, setupTestEnv, teardownTestEnv, resetDb } from './helpers/testApp.js';
+import { makeApp, setupTestEnv, teardownTestEnv, resetDb, acceptTerms } from './helpers/testApp.js';
 import { genWallet, sign, signObj } from './helpers/wallet.js';
 
 // F-009 / Phase 4.1 money-conservation invariant.
@@ -23,6 +23,8 @@ async function auth(fetchJson, W) {
   const { json } = await fetchJson('/api/auth/nonce', { method: 'POST', body: JSON.stringify({ wallet: W.pub }) });
   const sig = sign(W.kp, json.message);
   const v = await fetchJson('/api/auth/verify', { method: 'POST', body: JSON.stringify({ wallet: W.pub, signature: sig }) });
+  const terms = await acceptTerms(fetchJson, v.json.token);
+  if (terms.res.status !== 200) throw new Error('acceptTerms fixture failed: ' + JSON.stringify(terms.json));
   return { token: v.json.token, pub: W.pub, kp: W.kp, id: v.json.user.id };
 }
 async function createRoom(fetchJson, U, title) {
