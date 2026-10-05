@@ -7,7 +7,12 @@ export default function PositionRow({ pos, onClaim }) {
         <p className="text-xs text-white/50">YES {pos.yesShares} · NO {pos.noShares} · Value ~${pos.currentValue.toFixed(2)}</p>
         <p className="text-xs mt-1"><span className="px-2 py-0.5 bg-white/10 rounded-full text-[11px]">{status}</span></p>
       </div>
-      {pos.claimable && <button onClick={()=>onClaim(pos)} className="shrink-0 bg-yes text-black font-bold px-4 py-2 rounded-full text-sm">Claim ${pos.claimAmount}</button>}
+      {/* onClaim=null → signing launch gate closed (Amendment 2): honest disabled
+          button, never a fake claim; onClaim=undefined → nothing to claim here. */}
+      {pos.claimable && onClaim === null && (
+        <button disabled data-testid="claim-disabled" className="shrink-0 bg-white/10 text-white/50 font-bold px-4 py-2 rounded-full text-sm cursor-not-allowed">Claim ${pos.claimAmount}</button>
+      )}
+      {pos.claimable && onClaim && <button onClick={()=>onClaim(pos)} className="shrink-0 bg-yes text-black font-bold px-4 py-2 rounded-full text-sm">Claim ${pos.claimAmount}</button>}
     </div>
   );
 }

@@ -103,3 +103,33 @@ export function IconChevronRight({ className } = {}) {
     </svg>
   );
 }
+
+// Bottom-tab icons (nav restructure): magnifier, portfolio wallet, person.
+// Stroke-only and currentColor like the whole set — no emoji anywhere.
+export function IconSearch({ className } = {}) {
+  return (
+    <svg {...base(className)}>
+      <circle cx="11" cy="11" r="7" />
+      <path d="M21 21l-4.35-4.35" />
+    </svg>
+  );
+}
+
+export function IconPortfolio({ className } = {}) {
+  return (
+    <svg {...base(className)}>
+      <rect x="3" y="7" width="18" height="13" rx="2" />
+      <path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+      <path d="M3 13h18" />
+    </svg>
+  );
+}
+
+export function IconUser({ className } = {}) {
+  return (
+    <svg {...base(className)}>
+      <circle cx="12" cy="8" r="4" />
+      <path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1" />
+    </svg>
+  );
+}

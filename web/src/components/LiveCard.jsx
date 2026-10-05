@@ -100,6 +100,9 @@ function matchClock(m) {
 // Pin toggle — "I'm watching / playing with this stream": it leads the Live now
 // grid (max 4, server-authoritative). Rendered OUTSIDE the <Link> so pressing it
 // never navigates. Only appears once the caller wires onTogglePin up.
+// Tap rule: the BUTTON box is 44×44 (effective hit-area) while the visible
+// circle stays 28px, centred inside it — corner anchors below account for the
+// 8px transparent padding so the visual lands exactly where it did before.
 function PinButton({ pinned, onTogglePin, channel, className = '' }) {
   if (!onTogglePin) return null;
   return (
@@ -114,11 +117,18 @@ function PinButton({ pinned, onTogglePin, channel, className = '' }) {
         e.stopPropagation();
         onTogglePin(channel);
       }}
-      className={`z-10 w-7 h-7 grid place-items-center rounded-full border border-white/20 transition cursor-pointer ${
-        pinned ? 'bg-live text-white' : 'bg-black/60 text-white/80 hover:bg-black/80 hover:text-white'
-      } ${className}`}
+      className={`z-10 w-11 h-11 grid place-items-center cursor-pointer group ${className}`}
     >
-      <IconPin className="w-3.5 h-3.5" />
+      <span
+        aria-hidden="true"
+        className={`w-7 h-7 grid place-items-center rounded-full border transition ${
+          pinned
+            ? 'bg-live text-white border-white/20'
+            : 'bg-black/60 text-white/80 border-white/20 group-hover:bg-black/80 group-hover:text-white'
+        }`}
+      >
+        <IconPin className="w-3.5 h-3.5" />
+      </span>
     </button>
   );
 }
@@ -128,7 +138,7 @@ function PlayableCard({ channel, pinned, onTogglePin }) {
   const hasViewers = channel.viewerCount != null && Number(channel.viewerCount) > 0;
   return (
     <div className="relative">
-      <PinButton pinned={pinned} onTogglePin={onTogglePin} channel={channel} className="absolute top-2 right-2" />
+      <PinButton pinned={pinned} onTogglePin={onTogglePin} channel={channel} className="absolute top-0 right-0" />
       <Link
       to={href || '/'}
       state={liveCardState(channel)}
@@ -174,7 +184,7 @@ function FootballScoreCard({ channel, match, pinned, onTogglePin }) {
   const hasScore = match.score && (match.score.home != null || match.score.away != null);
   return (
     <div className="relative">
-      <PinButton pinned={pinned} onTogglePin={onTogglePin} channel={channel} className="absolute bottom-2 right-2" />
+      <PinButton pinned={pinned} onTogglePin={onTogglePin} channel={channel} className="absolute bottom-0 right-0" />
       <Link
       to={liveCardHref(match) || '/'}
       state={{ match }}

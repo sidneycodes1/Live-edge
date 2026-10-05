@@ -1,16 +1,15 @@
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth.js';
 
 export default function WalletButton() {
-  const { user, signIn, signOut, loading, loginWithPrivy, privyAvailable } = useAuth();
-  const navigate = useNavigate();
+  const { user, signOut, loginWithPrivy, privyAvailable } = useAuth();
   if (user) {
     const label = user.wallet ? `${user.wallet.slice(0, 4)}…${user.wallet.slice(-4)}` : 'Account';
     // Show the user's NAME, never the long email: display_name is the server's
     // chosen-handle field; an email account without one falls back to its local
-    // part (up to the '@'), and guests keep the wallet label.
+    // part (up to the '@'). No guest states exist anymore (Amendment 2).
     const name = user.display_name || (user.email ? String(user.email).split('@')[0] : null);
-    const display = name ? `${name}${user.kind === 'email' ? '' : ' · guest'}` : `${label} · guest`;
+    const display = name || label;
     return (
       <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
         <Link
@@ -24,18 +23,15 @@ export default function WalletButton() {
       </div>
     );
   }
+  // Logged out: login-or-nothing (Amendment 2). Privy modal when mounted; the
+  // /signin route otherwise (it explains honestly when Privy is unavailable).
   return (
     <div className="flex items-center gap-1.5 sm:gap-2">
       {privyAvailable ? (
-        <button onClick={loginWithPrivy} className="bg-white text-black px-3 sm:px-4 py-2 rounded-full text-sm font-bold shrink-0">Sign in</button>
+        <button onClick={loginWithPrivy} data-testid="sign-in-cta" className="bg-white text-black px-3 sm:px-4 py-2 rounded-full text-sm font-bold shrink-0 min-h-[44px]">Sign in</button>
       ) : (
-        <Link to="/signin" className="bg-white text-black px-3 sm:px-4 py-2 rounded-full text-sm font-bold shrink-0">Sign in</Link>
+        <Link to="/signin" data-testid="sign-in-cta" className="bg-white text-black px-3 sm:px-4 py-2 rounded-full text-sm font-bold shrink-0 min-h-[44px] inline-flex items-center">Sign in</Link>
       )}
-      {/* Phones reach guest mode from the Sign-in page (same handler); the inline
-          affordance lives on >=sm widths so the top row never crowds. */}
-      <button onClick={() => signIn().then(() => navigate('/portfolio'))} disabled={loading} className="hidden sm:inline text-xs text-white/60 hover:text-white">
-        {loading ? 'Signing in…' : 'Continue as guest'}
-      </button>
     </div>
   );
 }

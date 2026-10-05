@@ -28,7 +28,7 @@ function SearchField({ term, setTerm, onSubmit, className = '', id }) {
           type="submit"
           aria-label="Submit search"
           data-icon
-          className="absolute right-1 top-1/2 -translate-y-1/2 w-9 h-9 grid place-items-center rounded-full text-white/50 hover:text-white cursor-pointer"
+          className="absolute right-0 top-1/2 -translate-y-1/2 w-11 h-11 grid place-items-center rounded-full text-white/50 hover:text-white cursor-pointer"
         >⌕</button>
       </div>
     </form>
@@ -41,6 +41,23 @@ export default function TopNav() {
   const q = new URLSearchParams(location.search).get('q') || '';
   const [term, setTerm] = useState(q);
   useEffect(() => { setTerm(q); }, [q]);
+
+  // Bottom-tab 'Search' deep-links /?search=1: focus the right field for the
+  // viewport, then strip the marker so the URL stays clean (an active q is
+  // preserved — only the marker is removed).
+  useEffect(() => {
+    const p = new URLSearchParams(location.search);
+    if (location.pathname !== '/' || p.get('search') !== '1') return undefined;
+    const raf = window.requestAnimationFrame(() => {
+      const wide = window.matchMedia('(min-width: 640px)').matches;
+      const el = document.getElementById(wide ? 'desktop-search' : 'mobile-search');
+      if (el) el.focus();
+      p.delete('search');
+      const qs = p.toString();
+      navigate(qs ? `/?${qs}` : '/', { replace: true });
+    });
+    return () => window.cancelAnimationFrame(raf);
+  }, [location.pathname, location.search, navigate]);
 
   const onSubmit = (e) => {
     e.preventDefault();
