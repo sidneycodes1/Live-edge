@@ -82,6 +82,12 @@ const schema = z.object({
   GEMINI_API_KEY: z.string().optional(),
   GEMINI_MODEL: z.string().default('gemini-3.8-flash'),
   GEMINI_BUDGET_PER_DAY: z.unknown().optional(),
+  // Privy auth (docs/PRIVY_AUTH_SPEC.md). OPTIONAL + STRICT, same degrade policy as
+  // every other provider: absent creds DISABLE Privy session auth (the route answers
+  // 503) rather than crashing boot. Both are secrets — never logged/echoed, never in
+  // a tracked file or test fixture.
+  PRIVY_APP_ID: z.string().optional(),
+  PRIVY_APP_SECRET: z.string().optional(),
 });
 
 export function loadEnv(raw = process.env) {
@@ -159,6 +165,13 @@ export function loadEnv(raw = process.env) {
   if (!geminiEnabled) {
     warnings.push('GEMINI_API_KEY missing → Gemini features disabled (no crash; model would use GEMINI_MODEL if enabled)');
   }
+  // Privy session auth (docs/PRIVY_AUTH_SPEC.md). Enabled ONLY when both creds are
+  // present; otherwise disabled with a startup notice (never a crash). Guests are
+  // unaffected — this gates the Privy exchange endpoint alone.
+  const privyEnabled = Boolean(env.PRIVY_APP_ID && env.PRIVY_APP_SECRET);
+  if (!privyEnabled) {
+    warnings.push('PRIVY_APP_ID/PRIVY_APP_SECRET missing → Privy session auth disabled (POST /auth/privy/session returns 503; guest + wallet sign-in unaffected)');
+  }
   // Loud-but-non-fatal signals so an operator knows which providers will be silent.
   if (!kickEnabled) warnings.push('KICK_CLIENT_ID/KICK_CLIENT_SECRET missing → Kick contributes no live channels');
   if (!youtubeEnabled) warnings.push('YOUTUBE_API_KEY missing → YouTube contributes no live channels');
@@ -181,6 +194,7 @@ export function loadEnv(raw = process.env) {
     floorFallback,
     footballApiEnabled,
     geminiEnabled,
+    privyEnabled,
     simBetWindowMin,
     warnings,
   };

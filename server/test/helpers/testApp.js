@@ -92,3 +92,31 @@ export async function makeApp() {
     close: async () => {},
   };
 }
+
+// Builds an EXTRA app on the shared test DB with an INJECTED Privy verifier (a fake),
+// so privy-auth tests exercise POST /auth/privy/session hermetically — no live network.
+// The singleton app (makeApp) has no creds and honestly 503s; this is the injection
+// seam the spec calls for ("tests pass a fake"). Caller must close() it.
+export async function makePrivyApp(verifyPrivyToken) {
+  if (!sharedDb) throw new Error('Call setupTestEnv() in before() before makePrivyApp()');
+  const app = await createApp({ env: sharedEnv, db: sharedDb, privyVerifier: verifyPrivyToken });
+  const server = app.listen(0);
+  await new Promise((r) => server.once('listening', r));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  async function fetchJson(p, opts = {}) {
+    const res = await fetch(`${base}${p}`, {
+      ...opts,
+      headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) },
+    });
+    const json = await res.json().catch(() => ({}));
+    return { res, json };
+  }
+  async function close() {
+    if (app._interval) clearInterval(app._interval);
+    if (app._engine && app._engine.stop) app._engine.stop();
+    if (app._spectator && app._spectator.stop) app._spectator.stop();
+    if (app._hub) app._hub.stop();
+    await new Promise((r) => server.close(r));
+  }
+  return { app, db: sharedDb, base, fetchJson, env: sharedEnv, close };
+}

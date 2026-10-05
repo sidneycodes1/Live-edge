@@ -26,8 +26,35 @@ function normalizeEmail(email) {
   return String(email).trim().toLowerCase();
 }
 
-function publicUser(u) {
-  return { id: u.id, wallet: u.wallet, email: u.email ?? null, kind: u.kind ?? 'guest', display_name: u.display_name };
+// pg returns jsonb as a parsed array, but a hand-built value or an older row may be a
+// string — normalize to a real array so the API shape is stable (never a null surprise).
+export function normalizeInterests(value) {
+  if (Array.isArray(value)) return value;
+  if (typeof value === 'string' && value.trim()) {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+// publicUser is the single shape returned by every auth surface (/verify, /login,
+// /register, /upgrade, /me) and reused by the Privy session + profile routes. The
+// Privy spec adds `interests` + `privy_linked`; both derive ONLY from real columns
+// (privy_did presence), never fabricated (§2 honesty).
+export function publicUser(u) {
+  return {
+    id: u.id,
+    wallet: u.wallet,
+    email: u.email ?? null,
+    kind: u.kind ?? 'guest',
+    display_name: u.display_name,
+    interests: normalizeInterests(u.interests),
+    privy_linked: Boolean(u.privy_did),
+  };
 }
 
 function isValidBase58(s) {

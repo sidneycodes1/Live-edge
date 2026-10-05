@@ -23,6 +23,9 @@ import { createPriceCache } from './services/priceCache.js';
 import { healthRouter } from './routes/health.js';
 import { configRouter } from './routes/config.js';
 import { authRouter } from './routes/auth.js';
+import { privyRouter } from './routes/privy.js';
+import { profileRouter } from './routes/profile.js';
+import { createPrivyVerifier } from './privy/verifier.js';
 import { roomsRouter } from './routes/rooms.js';
 import { marketsRouter } from './routes/markets.js';
 import { ordersRouter } from './routes/orders.js';
@@ -44,7 +47,7 @@ import { createRateLimiters } from './middleware/rateLimit.js';
 import { errorHandler } from './middleware/error.js';
 import { notFound } from './middleware/notFound.js';
 
-export async function createApp({ env: rawEnv, db: existingDb } = {}) {
+export async function createApp({ env: rawEnv, db: existingDb, privyVerifier: injectedVerifier } = {}) {
   const env = rawEnv || loadEnv(process.env);
   const db = existingDb || (await createDb(env));
   if (!existingDb) {
@@ -157,6 +160,11 @@ export async function createApp({ env: rawEnv, db: existingDb } = {}) {
   // auth middleware (used by protected routes and by authRouter's /me, /logout, /upgrade)
   const auth = createAuth(env);
 
+  // Privy server-side auth (docs/PRIVY_AUTH_SPEC.md). The verifier is INJECTED so
+  // hermetic tests pass a fake and no live network is touched. With no creds,
+  // createPrivyVerifier returns null and the session route honestly answers 503.
+  const privyVerifier = injectedVerifier !== undefined ? injectedVerifier : createPrivyVerifier(env);
+
   // health (no /api prefix)
   app.use(healthRouter(db));
 
@@ -165,7 +173,15 @@ export async function createApp({ env: rawEnv, db: existingDb } = {}) {
 
   // auth (rate limited). /nonce and /verify stay public; /me, /logout, /upgrade
   // apply `auth` per-route inside the router.
-  app.use('/api/auth', isTest ? passThrough : authLimiter, authRouter({ db, env, auth, notify }));
+  app.use(
+    '/api/auth',
+    isTest ? passThrough : authLimiter,
+    authRouter({ db, env, auth, notify }),
+    privyRouter({ db, env, verifyPrivyToken: privyVerifier, notify }),
+  );
+
+  // User profile (auth): PUT /api/me/profile writes display_name + interests.
+  app.use('/api/me', auth, profileRouter({ db }));
 
   // streaming (public)
   app.use('/api/stream', streamRouter({ hub }));
