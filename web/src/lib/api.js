@@ -42,6 +42,11 @@ export const api = {
   getConfig: () => request('/api/config'),
   getHealth: () => request('/health'),
   getReady: () => request('/ready'),
+  // LEGACY guest/password surface (docs/PRIVY_AUTH_SPEC.md Amendment 2): the
+  // server keeps /auth/nonce|verify|register|login|upgrade during the migration,
+  // but the APP must never call these — no guest mode, no email+password UI.
+  // Kept here only as a thin mirror of live server routes for the lead's
+  // migration tooling; grep: nothing in web/src imports them.
   nonce: (wallet) => request('/api/auth/nonce', { method:'POST', body:{ wallet } }),
   verify: (wallet, signature) => request('/api/auth/verify', { method:'POST', body:{ wallet, signature } }),
   register: (email, password, wallet) => request('/api/auth/register', { method:'POST', body:{ email, password, wallet } }),
@@ -50,9 +55,14 @@ export const api = {
   logout: () => request('/api/auth/logout', { method:'POST', auth:true }),
   upgrade: (email, password) => request('/api/auth/upgrade', { method:'POST', body:{ email, password }, auth:true }),
   // Privy session exchange (docs/PRIVY_AUTH_SPEC.md API contract 1). PUBLIC route;
-  // carries the guest LiveEdge JWT (if any) so the server can ATTACH the did to
-  // that guest account. guestToken defaults to the stored JWT when omitted.
+  // carries an existing LiveEdge JWT (legacy attach path b) when the tab has one.
   privySession: (privyToken, guestToken) => request('/api/auth/privy/session', { method:'POST', body:{ privyToken }, token: guestToken || getToken() || undefined }),
+  // Profile write (spec API contract 2): displayName + interests(0-3) → publicUser.
+  updateProfile: (body) => request('/api/me/profile', { method:'PUT', body, auth:true }),
+  // Onboarding setup (docs/ONBOARDING_PLAN.md §4 — built IN PARALLEL by Agent A2).
+  // Body: { displayName, interests, termsVersion, accepted:true } → { user } with
+  // setup_completed. Contract-coded; errors surface honestly until the route ships.
+  meSetup: (body) => request('/api/me/setup', { method:'POST', body, auth:true }),
   listRooms: () => request('/api/rooms'),
   getRoom: (id) => request(`/api/rooms/${id}`),
   listTwitchLive: (limit=12) => request(`/api/twitch/live?limit=${limit}`),

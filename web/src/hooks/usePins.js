@@ -5,12 +5,12 @@ import { useAuth } from './useAuth.js';
 
 // ---------------------------------------------------------------------------
 // The user's pinned-stream shelf. Pins persist SERVER-side (max 4), so they
-// survive reloads and follow the account, not the browser. A signed-out
-// visitor who clicks pin gets the existing silent guest sign-in first (same
-// flow as "Continue as guest") so their shelf is real immediately.
+// survive reloads and follow the account, not the browser. Guest mode is
+// REMOVED (docs/PRIVY_AUTH_SPEC.md Amendment 2): a signed-out visitor who
+// clicks pin gets the Privy login modal, never a silent guest sign-in.
 // ---------------------------------------------------------------------------
 export function usePins() {
-  const { user, signIn } = useAuth();
+  const { user, loginWithPrivy, privyAvailable } = useAuth();
   const [pins, setPins] = useState([]);
 
   const load = useCallback(() => {
@@ -19,25 +19,25 @@ export function usePins() {
       return;
     }
     api.getPins().then((r) => setPins(r.items || [])).catch(() => {});
-  }, [user?.id]);
+  }, []);
 
-  useEffect(() => { load(); }, [load]);
+  // Refetch whenever the signed-in account changes (login via the Privy modal
+  // must pull the real shelf in without a page reload).
+  useEffect(() => { load(); }, [load, user?.id]);
 
   const pinnedIds = useMemo(() => new Set(pins.map((p) => String(p.stream_id))), [pins]);
 
   // Returns {ok, reason} so the UI can explain a refusal honestly
-  // ('limit' = all 4 slots full, 'error' = network/server).
+  // ('login' = sign-in required — the Privy modal was opened,
+  //  'limit' = all 4 slots full, 'error' = network/server).
   async function toggle(card) {
     const body = pinBodyFromCard(card);
     if (!body) return { ok: false, reason: 'no-id' };
-    let signedIn = Boolean(getToken());
-    if (!signedIn) {
-      try {
-        await signIn();
-        signedIn = true;
-      } catch {
-        return { ok: false, reason: 'sign-in' };
-      }
+    if (!getToken()) {
+      // Login-or-nothing (Amendment 2): open the Privy modal; the pin itself
+      // is NOT queued or faked — the user taps again once signed in.
+      if (privyAvailable) loginWithPrivy();
+      return { ok: false, reason: 'login' };
     }
     try {
       if (pinnedIds.has(body.streamId)) {
