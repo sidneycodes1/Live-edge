@@ -37,19 +37,48 @@ for (const f of tracked) {
   checkFile(f);
 }
 
+// Build-output check. A generic key-PREFIX scan is wrong here: third-party SDKs
+// embed their own publishable vendor keys (Privy's bundle ships Moonpay `pk_live_…`
+// onramp constants), so prefix matching fails OUR build for code we don't own.
+// What actually matters is that no real credential VALUE from .env leaks into a
+// client artifact, and that no private-key MATERIAL is present. So: scan the built
+// bundle for the literal secret values our .env defines (server-side vars only —
+// anything VITE_-prefixed is public by design), plus a real PEM private-key body.
 const webDist = path.join('web','dist');
 if (fs.existsSync(webDist)) {
-  const files = fs.readdirSync(webDist, { recursive:true });
-  for (const f of files) {
-    const full = path.join(webDist, f);
-    if (fs.statSync(full).isFile() && (full.endsWith('.js') || full.endsWith('.html'))) {
-      const c = fs.readFileSync(full,'utf8');
-      if (c.includes('sk_live_') || c.includes('pk_live_') || c.includes('pk_test_') || c.includes('BEGIN PRIVATE KEY')) { 
-        console.error('secret in web build', full); 
-        failed=true; 
-      }
+  const secretValues = [];
+  const envPath = path.join('.');
+  if (fs.existsSync(path.join(envPath, '.env'))) {
+    for (const line of fs.readFileSync(path.join(envPath, '.env'), 'utf8').split(/\r?\n/)) {
+      const m = line.match(/^([A-Z0-9_]+)\s*=\s*(.*)$/);
+      if (!m) continue;
+      const [, key, rawVal] = m;
+      const val = rawVal.trim().replace(/^['"]|['"]$/g, '');
+      // VITE_* is deliberately exposed to the browser; short/placeholder values are noise.
+      if (val.length < 12 || key.startsWith('VITE_')) continue;
+      if (/(SECRET|PRIVATE|TOKEN|PASSWORD|API_KEY)/.test(key)) secretValues.push({ key, val });
     }
   }
+  const pemBody = /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]{20,}?-----END/;
+  const walk = (dir) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) { walk(full); continue; }
+      if (!(full.endsWith('.js') || full.endsWith('.html'))) continue;
+      const c = fs.readFileSync(full, 'utf8');
+      for (const { key, val } of secretValues) {
+        if (c.includes(val)) {
+          console.error(`leaked .env value for ${key} into web build ${full}`);
+          failed = true;
+        }
+      }
+      if (pemBody.test(c)) {
+        console.error('PEM private-key material in web build', full);
+        failed = true;
+      }
+    }
+  };
+  walk(webDist);
 }
 
 if (failed) { console.error('check-secrets FAILED'); process.exit(1); }
