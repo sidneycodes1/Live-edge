@@ -16,6 +16,65 @@ wrong, STOP and report it — never silently deviate. Base for all work:
 - D3 — Privy's DEFAULT login modal is used (we own the trigger UI); custom
   login screens are explicitly out of scope.
 
+## Diagram flows (the plan, visualized)
+
+A. New-user journey (login + wallet + reward + algorithm settings):
+```
+Visitor lands (guest, instant — no wall)
+  → browses / pins streams (silent guest sign-in, as today)
+  → taps avatar → "Sign in" (bottom sheet on mobile, button on desktop)
+      → [Continue with Google]  |  [Email one-time code]      (Privy — no passwords, D2)
+  → Privy auth → embedded Solana wallet auto-created (createOnLogin)
+  → client: privy.getAccessToken() → POST /api/auth/privy/session
+  → server: verifyAccessToken (appId+appSecret, server-only)
+      a. privy_did known            → sign in
+      b. guest JWT sent + privy new → ATTACH did to the guest account
+                                         (balance, bets, pins all carry over)
+      c. brand-new                  → create user, wallet = embedded bs58 pubkey
+  → our 1h session JWT returned (all existing routes keep working unchanged)
+  → 🎁 WELCOME REWARD SHEET (once, just_created=true)
+      "$100.00" count-up 600ms · "Play money for predictions. Not real money."
+  → ⚙️ ALGORITHM SETTINGS — "Set up your edge" (2 screens, skippable)
+      1) display name (2–20 chars, inline validation)
+      2) interest chips: Trading & News · Sports · Live Streams (skip = all)
+  → PUT /api/me/profile → feed re-ranks LIVE:
+      pinned streams first (always) → interest-matched REAL cards → rest
+  → "Tuned for {name}" line under Live now (proves the choice did something)
+```
+
+B. Returning user:
+```
+app boot → PrivyProvider ready → cached access token?
+  yes → POST /auth/privy/session (silent) → our JWT → /me hydrates name/interests/pins/balance
+  no  → guest experience continues (pinning works via silent guest sign-in)
+```
+
+C. Claim signing (what changes vs today — nothing on the verify side):
+```
+today: guest keypair (browser) --sign--> verifyCanonical(wallet)        ✅ kept
+new:   Privy embedded wallet (solana_signMessage raw bytes)
+         --sign--> verifyCanonical(wallet)   ← SAME server code (Ed25519/bs58)
+SPIKE GATE (Agent B, phase 0): prove the detached sig verifies with tweetnacl.
+  SIGNING_FAIL → fallback: embedded wallet not used for signing; attached guest
+  keypair keeps signing; everything else in this spec is unaffected.
+```
+
+```mermaid
+sequenceDiagram
+  participant U as User (mobile)
+  participant W as Web app (PrivyProvider)
+  participant P as Privy (auth + wallet)
+  participant S as LiveEdge server
+  U->>W: taps "Continue with Google" / "Email code"
+  W->>P: login() → OAuth popup / OTP
+  P-->>W: authenticated + embedded Solana wallet (auto-created)
+  W->>P: getAccessToken()
+  W->>S: POST /api/auth/privy/session {privyToken} (+ guest JWT if signed in)
+  S->>P: verifyAccessToken (app id + secret, server-only)
+  S-->>W: {token: LiveEdge JWT, user, just_created}
+  W->>U: 🎁 $100 welcome sheet → name + interests → tuned feed
+```
+
 ## Environment / secrets (lead-only)
 - Server `.env`: `PRIVY_APP_ID`, `PRIVY_APP_SECRET` (secret NEVER leaves server).
 - Web `.env.local` (gitignored): `VITE_PRIVY_APP_ID` (+ `VITE_PRIVY_CLIENT_ID`
