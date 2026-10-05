@@ -2,8 +2,9 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { validate } from '../middleware/validate.js';
 import bs58 from 'bs58';
+import { assertTermsAccepted } from '../lib/termsGate.js';
 
-export function claimsRouter({ _db, panta, notify }) {
+export function claimsRouter({ db, panta, notify }) {
   const r = Router();
 
   const schema = z.object({ marketId: z.string().uuid(), signature: z.string().min(5) });
@@ -12,6 +13,8 @@ export function claimsRouter({ _db, panta, notify }) {
     try {
       if (!req.user) return res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Unauthorized' } });
       try { bs58.decode(req.body.signature); } catch { return res.status(400).json({ error: { code: 'VALIDATION_ERROR', message: 'Invalid signature' } }); }
+      // Money only moves on the committed claim — enforce the Terms gate here.
+      await assertTermsAccepted(db, req.user.id);
       const { marketId, signature } = req.body;
       let result;
       if (panta._sim) result = await panta._sim.submitClaim({ marketId, signature, userId: req.user.id });
@@ -29,6 +32,8 @@ export function claimsRouter({ _db, panta, notify }) {
     try {
       if (!req.user) return res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Unauthorized' } });
       try { bs58.decode(req.body.signature); } catch { return res.status(400).json({ error: { code: 'VALIDATION_ERROR', message: 'Invalid signature' } }); }
+      // Money only moves on the committed claim — enforce the Terms gate here.
+      await assertTermsAccepted(db, req.user.id);
       const { marketId, signature } = req.body;
       let result;
       if (panta._sim) result = await panta._sim.submitCreatorFeeClaim({ marketId, signature, userId: req.user.id });

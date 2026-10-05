@@ -120,3 +120,21 @@ export async function makePrivyApp(verifyPrivyToken) {
   }
   return { app, db: sharedDb, base, fetchJson, env: sharedEnv, close };
 }
+
+// Marks the current token’s account as having accepted the Terms (POST /api/me/setup),
+// so a guest account created via the wallet path can pass the TERMS_REQUIRED gate that
+// protects order placement + claims. Trade fixtures call this right after signing in so
+// their money assertions stay focused on money, not consent. Returns { res, json }.
+export async function acceptTerms(fetchJson, token, overrides = {}) {
+  return fetchJson('/api/me/setup', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({
+      displayName: 'trader_01',
+      interests: ['trading'],
+      termsVersion: 'terms-draft-1',
+      accepted: true,
+      ...overrides,
+    }),
+  });
+}

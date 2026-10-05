@@ -72,6 +72,9 @@ async function run() {
     const sig = sign(W.kp, message);
     let v = await fetchJson('/api/auth/verify', { method:'POST', body: JSON.stringify({ wallet: W.pub, signature: sig }) });
     assert(v.res.status===200 && v.json.token, 'auth verify '+W.pub.slice(0,4));
+    // Accept the Terms so the downstream order/claim probes clear the TERMS_REQUIRED gate.
+    const st = await fetchJson('/api/me/setup', { method:'POST', body: JSON.stringify({ displayName:'smoke_user', interests:['trading'], termsVersion:'terms-draft-1', accepted:true }), headers:{ Authorization:`Bearer ${v.json.token}` } });
+    assert(st.res.status===200, 'accept terms '+W.pub.slice(0,4));
     return { ...W, token: v.json.token, id: v.json.user.id };
   }
   const UA = await authUser(A);

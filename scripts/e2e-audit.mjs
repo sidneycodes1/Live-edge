@@ -81,6 +81,9 @@ async function authGuest(guest) {
     body: { wallet: guest.wallet, signature },
   });
   if (v.status !== 200 || !v.json.token) throw new Error(`verify ${v.status} ${JSON.stringify(v.json)}`);
+  // Accept the Terms so the audit’s order/claim steps clear the TERMS_REQUIRED gate.
+  const s = await api('POST', '/api/me/setup', { token: v.json.token, body: { displayName: 'auditor_01', interests: ['trading'], termsVersion: 'terms-draft-1', accepted: true } });
+  if (s.status !== 200) throw new Error(`accept terms ${s.status} ${JSON.stringify(s.json)}`);
   return v.json.token;
 }
 
