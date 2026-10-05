@@ -70,6 +70,25 @@ wrong, STOP and report it — never silently deviate. Base for all work:
   superseded here: login methods = wallet (Solana) (+ optional passkey); guests =
   none.
 
+## AMENDMENT 3 (owner decision, 2026-10-05 — supersedes Amendment 1's wallet-only)
+**LOGIN IS EMAIL / GMAIL ONLY.** Owner decision when reviewing the plan:
+- Privy dashboard enables **Email OTP + Google**; external wallet connect and
+  passkey are NOT login methods.
+- Embedded **Solana wallet is still created at login** (D1 unchanged — it is the
+  invisible signing key stored as users.wallet bs58). Amendment 1's chicken-and-egg
+  problem (new user with no wallet extension cannot sign up) is resolved by this.
+- "Wallet-only login" wording in Amendment 1 and in the onboarding diagram
+  ("Privy modal (wallet login)") is superseded — read it as "Privy modal
+  (email/Gmail login)".
+- Guest mode stays REMOVED (Amendment 2 fully intact).
+- Consequence for the spike: the Phase-0 signing spike is now runnable immediately
+  after dashboard config (log in via email OTP → embedded wallet exists →
+  solana_signMessage test). Until SIGNING_OK, bet actions still show the honest
+  "signing not yet available" state (Amendment 2 gate unchanged).
+- Terms & Conditions become part of account setup (see docs/ONBOARDING_PLAN.md):
+  18+, username REQUIRED, terms = one plain-language paragraph + checkbox, asked
+  LAST; server enforces via migration 012 + 403 TERMS_REQUIRED on orders.
+
 ## Diagram flows (the plan, visualized)
 
 A. New-user journey (login + wallet + reward + algorithm settings):

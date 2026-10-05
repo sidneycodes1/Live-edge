@@ -24,9 +24,10 @@ questions (name, interests) — conversion platforms front-load value and push
 the legal step to last, right before the reward. (DraftKings/Robinhood do this;
 putting terms first measurably leaks users.) Everything else in the brief stands.
 
-Note on "login with email": current locked decision (spec Amendment 1) is
-WALLET-ONLY login. The flow below is login-method agnostic — if you want email
-OTP back, it's a dashboard toggle + one spec sentence; say so explicitly.
+Note on "login with email": RESOLVED 2026-10-05 by owner (spec Amendment 3) —
+login is **Email OTP + Google via Privy's modal**; embedded Solana wallet is
+still auto-created at login as the invisible signing key. Read "Privy modal
+(wallet login)" below as "Privy modal (email/Gmail login)".
 
 ## 2. The flow (diagram)
 
@@ -35,7 +36,7 @@ Visitor (no account, browse-only)
   │  sees Live feed, markets, prices — everything READ-ONLY
   │  tries to pin / bet / open Portfolio
   ▼
-["Sign in to do that"] CTA  ──►  Privy modal (wallet login)  ──►  auth OK
+["Sign in to do that"] CTA  ──►  Privy modal (email/Gmail login)  ──►  auth OK
   │                                                              (server: session
   │ new account?                                                    path c creates
   ▼                                                                user + mints $100)
@@ -72,7 +73,7 @@ sequenceDiagram
   participant P as Privy
   participant S as LiveEdge server
   V->>W: click pin/bet (blocked) -> Sign up CTA
-  W->>P: login (wallet)
+  W->>P: login (email/Gmail)
   P-->>W: authenticated
   W->>S: POST /auth/privy/session
   S-->>W: token, just_created=true ($100 minted)
@@ -134,9 +135,11 @@ sequenceDiagram
   (A-follow-up) migration 012 + /api/me/setup + TERMS_REQUIRED gate, (lead)
   terms text draft + prompts.
 
-## 7. Decisions needed from the owner (the only open questions)
-1. Age line on terms checkbox: 13+ / 17+ / 18+? (recommend 17+, app-store safe)
-2. Username required (current plan) or allow Skip with "there" fallback?
-3. Email-OTP login truly OFF (wallet-only stands) — confirm after seeing the
-   Privy modal change; the cover flow works with any login method.
-4. Terms summary length: one paragraph (recommended) vs full ToS + Privacy pages?
+## 7. Decisions — RESOLVED by owner 2026-10-05
+1. Age line: **18+** (checkbox self-attestation; no verification mechanism —
+   flagged in TERMS_DRAFT "Requires Human/Legal Review").
+2. Username: **REQUIRED** (no Skip).
+3. Login: **Email/Gmail only** via Privy (spec Amendment 3; wallet connect and
+   passkey NOT login methods; embedded Solana wallet still auto-created).
+4. Terms: **one plain-language paragraph + "I agree" checkbox** (Step 3 of the
+   cover flow), full ToS page linked for depth. Draft: docs/TERMS_DRAFT.md.
