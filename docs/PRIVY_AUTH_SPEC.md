@@ -43,6 +43,33 @@ wrong, STOP and report it — never silently deviate. Base for all work:
   in-process). `web/.env.local` is NOT the mechanism; agents must not create or
   edit any .env* file.
 
+## AMENDMENT 2 (owner decision, 2026-10-05 — supersedes every guest-mode path)
+**GUEST MODE IS REMOVED. It is login-or-nothing — no "continue as guest".**
+- Accounts are created ONLY via POST /api/auth/privy/session path (c): wallet =
+  the embedded Solana (bs58) address. The $100 welcome mint fires there.
+- Client removes (Agent C): on-mount guest keypair adoption
+  (`getOrCreateGuestWallet` usage), silent guest sign-in in usePins.js, WalletButton
+  "Sign in as guest" affordances + guest chip state, /signin guest page (Sign-in
+  page may remain as a login landing with the Privy trigger only). Logged-out
+  visitors browse PUBLIC content (streams, markets, prices); every account action
+  (pin, bet, claim, portfolio) opens the Privy login modal instead.
+- Server: /auth/nonce, /verify, /register, /login, /upgrade and their tests STAY
+  (legacy surface; UI never uses them). Do not delete routes in this build.
+- Tests that assert guest behavior are OBSOLETE BY OWNER DECISION: Agent C must
+  UPDATE them to assert the new login-required contract (e.g. unauth pin → 401 /
+  login prompt), not silently delete coverage.
+- CONSEQUENCE (must state honestly): with no guest keypair, ALL claim/order
+  signing requires a Privy wallet signature → the Phase-0 spike becomes a LAUNCH
+  GATE for betting (not for welcome/onboarding/tailoring/mobile). Until a real
+  SIGNING_OK is captured and EMBEDDED_SIGNING_VERIFIED flips, betting UI must
+  show an honest "signing not yet available" state after login — never a fake
+  success. Prereqs for the spike: dashboard enables Wallet(Solana) (and/or
+  Passkey) login + embedded wallets; a real wallet app (e.g. Phantom) or passkey
+  exists for the test login.
+- D2's "replace email+password" and Amendment 1's retained guest flow are both
+  superseded here: login methods = wallet (Solana) (+ optional passkey); guests =
+  none.
+
 ## Diagram flows (the plan, visualized)
 
 A. New-user journey (login + wallet + reward + algorithm settings):
