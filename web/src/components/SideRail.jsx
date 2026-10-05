@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../lib/api.js';
 import { normalizeLive } from '../lib/live.js';
+import { buildRailEntries } from '../lib/rail.js';
 import { liveCardHref } from './LiveCard.jsx';
 import { useAuth } from '../hooks/useAuth.js';
 
@@ -36,37 +37,9 @@ export default function SideRail() {
     return () => { active = false; };
   }, []);
 
-  const roomEntries = rooms
-    // Demo seeds (ViewerSeed/StreamerSeed rooms) must never pollute the rail —
-    // real + engine rooms only. They stay reachable by direct URL for tests.
-    .filter((r) => !r.isSeed)
-    .map((r) => ({
-      key: `r-${r.id}`, to: `/room/${r.id}`,
-      name: r.title, sub: r.owner?.displayName || 'LiveEdge',
-      viewers: r.viewers || 0, real: false,
-    }));
-  // Live-grid channels fill the rail below the rooms; a room already listed for
-  // the same broadcast (engine room born from that stream) is not shown twice.
-  const seenTitles = new Set(roomEntries.map((e) => String(e.name || '').toLowerCase().trim()));
-  const liveEntries = live
-    .map((c) => ({
-      key: `l-${c.id}`,
-      to: liveCardHref(c) || `/watch/${encodeURIComponent(c.source || 'live')}/${encodeURIComponent(c.channelSlug || c.id || '')}`,
-      name: c.title || c.channelName || 'Live stream',
-      sub: c.channelName || 'Live',
-      viewers: c.viewerCount || 0, real: true,
-    }))
-    .filter((e) => !seenTitles.has(String(e.name).toLowerCase().trim()));
-
-  const channels = [
-    ...twitch.map((s) => ({
-      key: `t-${s.id}`, to: `/twitch/${encodeURIComponent(s.userLogin)}`,
-      name: s.userName || s.userLogin, sub: s.gameName || 'Live on Twitch',
-      viewers: s.viewerCount || 0, real: true,
-    })),
-    ...roomEntries,
-    ...liveEntries,
-  ].slice(0, 14);
+  // Merge rules live in lib/rail.js (pure, unit-tested): twitch → rooms (no
+  // demo seeds) → live-grid channels, deduped by title against the rooms.
+  const channels = buildRailEntries({ twitch, rooms, live, liveHref: liveCardHref });
 
   return (
     <aside

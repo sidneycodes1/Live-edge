@@ -2,19 +2,16 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import OddsBar from './OddsBar.jsx';
 import MoneyChip from './MoneyChip.jsx';
-import { fmtTimeLeft } from '../lib/format.js';
+import { countdownPill, startCountdownTick } from '../lib/countdown.js';
 import { marketThumb } from '../lib/live-now.js';
 
 // Re-render once per second while a countdown pill is on screen, so the timer
-// actually TICKS (fmtTimeLeft reads Date.now() at render; without a tick the
-// card would freeze at whatever second it first mounted). Costs nothing when
-// no pill is shown.
+// actually TICKS (see lib/countdown.js — the heartbeat itself is unit-tested).
 function useCountdownTick(active) {
   const [, setN] = useState(0);
   useEffect(() => {
     if (!active) return undefined;
-    const t = setInterval(() => setN((n) => n + 1), 1000);
-    return () => clearInterval(t);
+    return startCountdownTick(() => setN((n) => n + 1));
   }, [active]);
 }
 
@@ -33,9 +30,9 @@ export default function MarketCard({ room }) {
   const streamName = room.title;
   const showStream = Boolean(hero?.question && streamName && streamName !== headline);
   const betting = hero ? Math.max(0, Math.round((hero.volume || 0) / 10)) : 0;
-  const countdown = hero && hero.status === 'open' && hero.end_time ? fmtTimeLeft(hero.end_time) : null;
+  const countdown = countdownPill(hero);
   const thumb = marketThumb(room);
-  const showPill = Boolean(countdown && countdown !== 'closed' && countdown !== '—');
+  const showPill = Boolean(countdown);
   useCountdownTick(showPill);
 
   return (
