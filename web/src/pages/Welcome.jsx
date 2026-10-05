@@ -160,7 +160,14 @@ export default function Welcome() {
       setPhase('congrats');
     } catch (e) {
       // Honest failure: say it failed, keep everything they typed, let them retry.
-      setSubmitError(e?.message || 'Could not create your account. Check your connection and try again.');
+      // A rejected payload (server status + code) carries a real message; a network
+      // failure is a bare TypeError whose .message is the browser's own
+      // "Failed to fetch" — never show that raw string to a user.
+      setSubmitError(
+        e?.status
+          ? e.message || 'Could not create your account. Check the details and try again.'
+          : 'Could not reach LiveEdge. Check your connection and try again — nothing was saved.'
+      );
     } finally {
       setSubmitting(false);
     }
