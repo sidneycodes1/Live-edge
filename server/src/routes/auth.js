@@ -54,6 +54,7 @@ export function publicUser(u) {
     display_name: u.display_name,
     interests: normalizeInterests(u.interests),
     privy_linked: Boolean(u.privy_did),
+    setup_completed: Boolean(u.setup_completed_at),
   };
 }
 
