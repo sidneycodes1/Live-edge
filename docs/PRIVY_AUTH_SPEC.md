@@ -16,6 +16,31 @@ wrong, STOP and report it — never silently deviate. Base for all work:
 - D3 — Privy's DEFAULT login modal is used (we own the trigger UI); custom
   login screens are explicitly out of scope.
 
+## AMENDMENT 1 (owner decision, 2026-10-05 — supersedes parts of D2/D3)
+- LOGIN IS **WALLET-ONLY**. Google and Email-OTP are NOT enabled.
+  Privy auth methods to configure: Solana/Ethereum **wallet connect**
+  (external wallets like Phantom) + **embedded Solana wallet**.
+  D2's "replace password with email OTP" is shelved: the existing
+  browser-keypair GUEST flow stays as today and IS the wallet login for
+  users without an external wallet; password routes may be retired separately
+  later — do not delete them in this build.
+- Session exchange (spec §API contract 1) applies ONLY to Privy-authenticated
+  users (wallet-connected). Guests keep nonce/verify + our JWT unchanged.
+- OPEN VERIFICATION ITEM (Agent B spike, report as UNVERIFIED until proven):
+  whether Privy creates embedded wallets for GUEST sessions
+  (createOnLogin 'all-users') and whether a guest session can produce a
+  privy access token at all. If guests have no token → guests never call
+  /auth/privy/session (correct by design); embedded-wallet signing for guests
+  is then out of scope and the spike only proves signing for a
+  wallet-authenticated user.
+- Welcome-reward trigger for Agent C: first creation of ANY account kind is
+  already minted server-side (mint_events 'welcome'); C's sheet triggers on
+  our-JWT creation for a brand-new user (guest OR privy session just_created),
+  NOT on Privy login specifically.
+- Env note: VITE_PRIVY_APP_ID reaches the client via the ROOT .env loaded by
+  scripts/dev.mjs (process-env inheritance in Vite). web/.env.local is NOT the
+  mechanism; agents must not create or edit any .env* file.
+
 ## Diagram flows (the plan, visualized)
 
 A. New-user journey (login + wallet + reward + algorithm settings):
