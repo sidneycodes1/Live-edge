@@ -3,11 +3,11 @@ const BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 export function getToken() { return window.sessionStorage.getItem('liveedge_token'); }
 export function setToken(t) { if (t) window.sessionStorage.setItem('liveedge_token', t); else window.sessionStorage.removeItem('liveedge_token'); }
 
-async function request(path, { method='GET', body, auth=false, _retry=0 } = {}) {
+async function request(path, { method='GET', body, auth=false, token, _retry=0 } = {}) {
   const url = `${BASE}${path}`;
   const headers = { 'Content-Type': 'application/json' };
-  if (auth) {
-    const tok = getToken();
+  if (auth || token) {
+    const tok = token || getToken();
     if (tok) headers['Authorization'] = `Bearer ${tok}`;
   }
   // waking server retry with backoff up to ~70s
@@ -49,6 +49,10 @@ export const api = {
   me: () => request('/api/auth/me', { auth:true }),
   logout: () => request('/api/auth/logout', { method:'POST', auth:true }),
   upgrade: (email, password) => request('/api/auth/upgrade', { method:'POST', body:{ email, password }, auth:true }),
+  // Privy session exchange (docs/PRIVY_AUTH_SPEC.md API contract 1). PUBLIC route;
+  // carries the guest LiveEdge JWT (if any) so the server can ATTACH the did to
+  // that guest account. guestToken defaults to the stored JWT when omitted.
+  privySession: (privyToken, guestToken) => request('/api/auth/privy/session', { method:'POST', body:{ privyToken }, token: guestToken || getToken() || undefined }),
   listRooms: () => request('/api/rooms'),
   getRoom: (id) => request(`/api/rooms/${id}`),
   listTwitchLive: (limit=12) => request(`/api/twitch/live?limit=${limit}`),
