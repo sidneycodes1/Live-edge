@@ -5,6 +5,7 @@ import { PantaError } from '../panta/errors.js';
 import bs58 from 'bs58';
 import nacl from 'tweetnacl';
 import { canonicalStringify } from '../lib/signature.js';
+import { assertTermsAccepted } from '../lib/termsGate.js';
 
 function _verifySig(messageObj, signature, wallet) {
   try {
@@ -57,6 +58,8 @@ export function ordersRouter({ db, panta, hub }) {
   r.post('/submit', async (req, res, next) => {
     try {
       if (!req.user) return res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Unauthorized' } });
+      // Money only moves on the committed order — the honest place to enforce the gate.
+      await assertTermsAccepted(db, req.user.id);
       const parsed = submitSchema.safeParse(req.body);
       if (!parsed.success) throw new PantaError('VALIDATION_ERROR', 'Invalid input', { status: 400, details: parsed.error.issues });
       const { signature } = parsed.data;
