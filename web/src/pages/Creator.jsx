@@ -4,7 +4,6 @@ import CreatorPanel from '../components/CreatorPanel.jsx';
 import { useApi } from '../hooks/useApi.js';
 import { api } from '../lib/api.js';
 import { useState } from 'react';
-import { getOrCreateGuestWallet, signObject } from '../lib/wallet.js';
 import { isValidTwitchLogin } from '../lib/twitch.js';
 
 export default function Creator() {

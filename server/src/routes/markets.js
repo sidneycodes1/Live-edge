@@ -212,15 +212,18 @@ export function marketsRouter({ db, panta, hub, priceCache, notify, engine, env 
       }
     });
 
-  const registerSchema = z.object({ quoteId: z.string().min(1), signature: z.string().min(5) });
+  // Signature is OPTIONAL (owner decision, Oct 2026): guest mode is retired
+  // (PRIVY_AUTH_SPEC Amendment 2) and Privy embedded signing is still gated by
+  // the Phase-0 spike, so no client can produce a verifiable signature today.
+  // In sim mode the authenticated JWT session IS the creator's consent — the
+  // route stays open to a (recorded, unverified) signature for parity with the
+  // day embedded signing flips and real verification comes back.
+  const registerSchema = z.object({ quoteId: z.string().min(1), signature: z.string().min(5).optional() });
 
   r.post('/register', validate(registerSchema), async (req, res, next) => {
     try {
       if (!req.user) return res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Unauthorized' } });
       const { quoteId, signature } = req.body;
-      // verify signature is valid base58 and author matches wallet? For sim we verify ed25519 over signPayload.
-      // We don't have signPayload stored, but we can at least check signature decodes and then delegate to panta.
-      // For now allow any base58 signature and rely on panta simClient to handle duplicate check.
       let market;
       if (panta._sim && panta._sim.registerMarket) {
         // hybrid/sim path

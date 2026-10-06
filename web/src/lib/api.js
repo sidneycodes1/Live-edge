@@ -83,11 +83,16 @@ export const api = {
   getCatalog: () => request('/api/markets/catalog'),
   quoteMarket: (data) => request('/api/markets/quote', { method:'POST', body:data, auth:true }),
   buildMarket: (quoteId) => request('/api/markets/build', { method:'POST', body:{ quoteId }, auth:true }),
-  registerMarket: (quoteId, signature) => request('/api/markets/register', { method:'POST', body:{ quoteId, signature }, auth:true }),
+  // Signature is optional (Oct 2026 sim consent): the app has NO client signer
+  // until Privy embedded signing is verified, and the server treats the JWT
+  // session itself as the creator's consent for sim market registration.
+  registerMarket: (quoteId, signature) => request('/api/markets/register', { method:'POST', body: signature ? { quoteId, signature } : { quoteId }, auth:true }),
   resolveMarket: (id, outcome, force) => request(`/api/markets/${id}/resolve`, { method:'POST', body:{ outcome, force }, auth:true }),
   quoteOrder: (data) => request('/api/orders/quote', { method:'POST', body:data, auth:true }),
   buildOrder: (orderId) => request('/api/orders/build', { method:'POST', body:{ orderId }, auth:true }),
-  submitOrder: (orderId, signature) => request('/api/orders/submit', { method:'POST', body:{ orderId, signature }, auth:true }),
+  // Signature is optional (Oct 2026): the sim server treats the authenticated
+  // session as the bettor's consent, so submit sends no client signature.
+  submitOrder: (orderId, signature) => request('/api/orders/submit', { method:'POST', body: signature ? { orderId, signature } : { orderId }, auth:true }),
   getPortfolio: () => request('/api/portfolio', { auth:true }),
   getLedger: (limit=50, offset=0) => request(`/api/ledger?limit=${limit}&offset=${offset}`, { auth:true }),
   faucet: () => request('/api/faucet', { method:'POST', auth:true }),

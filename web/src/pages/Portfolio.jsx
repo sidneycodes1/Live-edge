@@ -1,4 +1,5 @@
 import { useAuth } from '../hooks/useAuth.js';
+import { useAuthModal } from '../hooks/useAuthModal.jsx';
 import { useBalance } from '../hooks/useBalance.js';
 import { useApi } from '../hooks/useApi.js';
 import { useToast } from '../hooks/useToast.js';
@@ -6,10 +7,10 @@ import { api } from '../lib/api.js';
 import { EMBEDDED_SIGNING_VERIFIED } from '../lib/privy.js';
 import PositionRow from '../components/PositionRow.jsx';
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
 
 export default function Portfolio() {
-  const { user, loginWithPrivy, privyAvailable } = useAuth();
+  const { user } = useAuth();
+  const { openAuth } = useAuthModal();
   const { showToast } = useToast();
   // Single source of truth (T2): header and this page both read BalanceContext.
   const { data, loading, refresh } = useBalance();
@@ -35,16 +36,12 @@ export default function Portfolio() {
   }
 
   if (!user) {
-    // Login-or-nothing (Amendment 2): browse-only visitors get the Privy modal,
-    // no guest path. Browsing public content stays open.
+    // Login-or-nothing (Amendment 2): browse-only visitors get the sign-in
+    // overlay, no guest path. Browsing public content stays open.
     return (
       <div className="max-w-3xl mx-auto px-4 py-10 text-center" data-testid="portfolio-signed-out">
         <p className="mb-4">Sign in to see your portfolio — it&rsquo;s play money only, never real.</p>
-        {privyAvailable ? (
-          <button onClick={loginWithPrivy} className="bg-white text-black px-6 py-2 rounded-full font-bold min-h-[44px]">Sign in</button>
-        ) : (
-          <Link to="/signin" className="bg-white text-black px-6 py-2 rounded-full font-bold">Sign in</Link>
-        )}
+        <button onClick={openAuth} className="bg-white text-black px-6 py-2 rounded-full font-bold min-h-[44px]">Sign in</button>
       </div>
     );
   }
@@ -60,7 +57,7 @@ export default function Portfolio() {
       {user.kind === 'guest' && (
         <div className="bg-surface border border-white/10 rounded-card p-4">
           <h2 className="font-heading font-bold text-sm mb-1">Legacy guest account</h2>
-          <p className="text-xs text-white/50">Guest sign-in was removed — this old browser account can no longer be signed into from the app. Sign in with Privy to start (or continue) a real account with $100 in play money.</p>
+          <p className="text-xs text-white/50">Guest sign-in was removed — this old browser account can no longer be signed into from the app. Sign in with Privy to start (or continue) a real account with play money.</p>
         </div>
       )}
       <h2 className="font-heading font-bold">Positions</h2>

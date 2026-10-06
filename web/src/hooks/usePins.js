@@ -7,10 +7,11 @@ import { useAuth } from './useAuth.js';
 // The user's pinned-stream shelf. Pins persist SERVER-side (max 4), so they
 // survive reloads and follow the account, not the browser. Guest mode is
 // REMOVED (docs/PRIVY_AUTH_SPEC.md Amendment 2): a signed-out visitor who
-// clicks pin gets the Privy login modal, never a silent guest sign-in.
+// clicks pin gets reason 'login' — the caller (Discover) shows the sign-in
+// OVERLAY trigger, never a silent guest sign-in.
 // ---------------------------------------------------------------------------
 export function usePins() {
-  const { user, loginWithPrivy, privyAvailable } = useAuth();
+  const { user } = useAuth();
   const [pins, setPins] = useState([]);
 
   const load = useCallback(() => {
@@ -28,15 +29,15 @@ export function usePins() {
   const pinnedIds = useMemo(() => new Set(pins.map((p) => String(p.stream_id))), [pins]);
 
   // Returns {ok, reason} so the UI can explain a refusal honestly
-  // ('login' = sign-in required — the Privy modal was opened,
+  // ('login' = sign-in required — the caller surfaces the overlay trigger,
   //  'limit' = all 4 slots full, 'error' = network/server).
   async function toggle(card) {
     const body = pinBodyFromCard(card);
     if (!body) return { ok: false, reason: 'no-id' };
     if (!getToken()) {
-      // Login-or-nothing (Amendment 2): open the Privy modal; the pin itself
-      // is NOT queued or faked — the user taps again once signed in.
-      if (privyAvailable) loginWithPrivy();
+      // Login-or-nothing (Amendment 2): the pin itself is NOT queued or faked
+      // — the caller shows the sign-in overlay and the user taps again once
+      // signed in.
       return { ok: false, reason: 'login' };
     }
     try {

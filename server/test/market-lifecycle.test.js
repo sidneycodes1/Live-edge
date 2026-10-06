@@ -109,4 +109,26 @@ describe('market lifecycle (B3)', () => {
     const mine = list.json.find((x) => x.id === roomId);
     assert.equal(mine.heroMarket.id, open.id, 'discover hero must be the open market, not the closed one');
   });
+
+  it('register accepts a signature-less request: the session itself is consent (sim)', async () => {
+    const { fetchJson } = await makeApp();
+    const A = genWallet();
+    const UA = await auth(fetchJson, A);
+    const roomId = await createRoom(fetchJson, UA);
+
+    // quote -> build, then register WITHOUT any signature (no client wallet).
+    const q = await fetchJson('/api/markets/quote', { method: 'POST', body: JSON.stringify({ roomId, question: 'Session-consent market question?', resolutionRule: 'YES rule for tests', sourcesOfTruth: ['https://x'], endInMinutes: 10 }), headers: { Authorization: `Bearer ${UA.token}` } });
+    assert.equal(q.res.status, 200, 'quote must succeed');
+    const quoteId = q.json.quoteId;
+    const b = await fetchJson('/api/markets/build', { method: 'POST', body: JSON.stringify({ quoteId }), headers: { Authorization: `Bearer ${UA.token}` } });
+    assert.equal(b.res.status, 200, 'build must succeed');
+
+    const r = await fetchJson('/api/markets/register', { method: 'POST', body: JSON.stringify({ quoteId }), headers: { Authorization: `Bearer ${UA.token}` } });
+    assert.equal(r.res.status, 201, 'register must succeed with no signature — session is consent');
+    assert.equal(r.json.status, 'open', 'market is live immediately');
+
+    // Anonymous register is still refused (auth middleware).
+    const anon = await fetchJson('/api/markets/register', { method: 'POST', body: JSON.stringify({ quoteId: 'does-not-matter' }) });
+    assert.ok(!anon.res.ok, 'unauthenticated register must fail');
+  });
 });

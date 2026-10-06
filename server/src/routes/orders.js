@@ -53,7 +53,12 @@ export function ordersRouter({ db, panta, hub }) {
       }
     });
 
-  const submitSchema = z.object({ orderId: z.string().min(1), quoteId: z.string().optional(), signature: z.string().min(5) });
+  // Signature is OPTIONAL (owner decision, Oct 2026): guest mode is retired
+  // (PRIVY_AUTH_SPEC Amendment 2) and Privy embedded signing is still spike-
+  // gated, so no client can produce a verifiable signature today. In sim mode
+  // the authenticated JWT session IS the bettor's consent; a supplied signature
+  // is recorded for parity with the day real verification comes back.
+  const submitSchema = z.object({ orderId: z.string().min(1), quoteId: z.string().optional(), signature: z.string().min(5).optional() });
 
   r.post('/submit', async (req, res, next) => {
     try {
@@ -64,12 +69,6 @@ export function ordersRouter({ db, panta, hub }) {
       if (!parsed.success) throw new PantaError('VALIDATION_ERROR', 'Invalid input', { status: 400, details: parsed.error.issues });
       const { signature } = parsed.data;
       const orderId = parsed.data.orderId || parsed.data.quoteId;
-      // verify signature encodes base58; actual payload verification is done via deterministic JSON? For sim we just check base58.
-      try {
-        bs58.decode(signature);
-      } catch {
-        throw new PantaError('VALIDATION_ERROR', 'Invalid signature encoding', { status: 400 });
-      }
       // delegate to panta sim
       let result;
       if (panta._sim) result = await panta._sim.submitBuy(orderId, signature, req.user.id);

@@ -8,22 +8,25 @@
 // Version string the client sends to POST /api/me/setup (plan §4 contract).
 export const TERMS_VERSION = '2026-10-draft-1';
 
-// TERMS_DRAFT.md Part 3 — the ONE paragraph users actually see. Verbatim.
+// TERMS_DRAFT.md Part 3 — the ONE paragraph users actually see. The old
+// "before your $100 lands" opener was retired with the $100 ceremony (owner
+// decision, Oct 2026): the paragraph stays honest about the play-money
+// economy without promising a specific number — Portfolio shows the real one.
 export const TERMS_SUMMARY_PARAGRAPH =
-  'One paragraph before your $100 lands. LiveEdge is a play-money prediction app: ' +
-  'the $100 and everything you "win" are fake money with no cash value — never ' +
-  'redeemable, never purchasable, and nothing real is ever at risk. You must be ' +
-  '18+; markets (some written by AI) resolve by the rules shown on them, live video ' +
-  'and scores come from third parties who may glitch or disappear, and you\u2019re ' +
+  'LiveEdge is a play-money prediction app: your balance and everything you ' +
+  '"win" are fake money with no cash value — never redeemable, never ' +
+  'purchasable, and nothing real is ever at risk. You must be 18+; markets ' +
+  '(some written by AI) resolve by the rules shown on them, live video and ' +
+  'scores come from third parties who may glitch or disappear, and you\u2019re ' +
   'responsible for keeping your login safe and your conduct decent. That\u2019s ' +
   'genuinely it — the full legal version is linked below.';
 
 // The consent checkbox label (plan §7 decision 1 + 4: 18+, agree-to-terms).
 export const TERMS_CHECKBOX_LABEL = "I'm 18 or older and I agree to the Terms & Conditions.";
 
-// The mandatory play-money line (spec "Honesty" law) shown with the funded amount.
+// The mandatory play-money line (spec "Honesty" law). FUNDED_LINE was removed
+// with the $100 congrats ceremony (Oct 2026) — do not re-add a number promise.
 export const PLAY_MONEY_LINE = 'Play money for predictions. Not real money.';
-export const FUNDED_LINE = 'Congratulations! Your account has been funded with $100 in play money.';
 
 // /legal page — TERMS_DRAFT.md Part 2, full text (DRAFT; attorney review
 // pending per Part 4). Sections: { n, title, body }.

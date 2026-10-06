@@ -7,58 +7,6 @@
 
 export const WELCOME_LATCH_KEY = 'liveedge_welcome_shown';
 export const TUNED_NOTE_KEY = 'liveedge_tuned_for';
-export const BALANCE_MIRROR_KEY = 'liveedge_balance_countup';
-
-// The funded amount is PLAY MONEY — always rendered with the mandatory
-// play-money wording next to it (product law, spec "Honesty").
-export const WELCOME_TARGET_USD = 100;
-export const COUNTUP_DURATION_MS = 600;
-
-// $X.XX — the exact surface format the congrats screen promises ("$100.00").
-export function formatUsd(value) {
-  const v = Number.isFinite(Number(value)) ? Number(value) : 0;
-  return `$${v.toFixed(2)}`;
-}
-
-// One frame of the count-up: maps elapsed time to a display string.
-//   * reducedMotion (prefers-reduced-motion) or a non-positive duration →
-//     STATIC fallback: always the final amount, no animation (spec: "static
-//     under prefers-reduced-motion").
-//   * easeOutCubic so the number "lands" on $100.00; clamped so it can never
-//     overshoot, and exactly formatUsd(target) at/after the duration.
-export function countUpFrame({
-  elapsedMs = 0,
-  durationMs = COUNTUP_DURATION_MS,
-  target = WELCOME_TARGET_USD,
-  reducedMotion = false,
-} = {}) {
-  if (reducedMotion || !(Number(durationMs) > 0)) return formatUsd(target);
-  const t = Math.min(1, Math.max(0, Number(elapsedMs) / Number(durationMs)));
-  if (!Number.isFinite(t)) return formatUsd(0);
-  const eased = 1 - Math.pow(1 - t, 3);
-  return formatUsd(target * eased);
-}
-
-// The full sequence (frames every `stepMs`, inclusive of the final frame) —
-// used by tests to prove the 600ms/$100.00 contract and by the header-balance
-// mirror so both surfaces animate identically.
-export function countUpSequence({
-  stepMs = 100,
-  durationMs = COUNTUP_DURATION_MS,
-  target = WELCOME_TARGET_USD,
-  reducedMotion = false,
-} = {}) {
-  if (reducedMotion || !(Number(durationMs) > 0) || !(Number(stepMs) > 0)) {
-    return [formatUsd(target)];
-  }
-  const out = [];
-  for (let t = 0; t <= durationMs; t += Number(stepMs)) {
-    out.push(countUpFrame({ elapsedMs: t, durationMs, target }));
-  }
-  const last = out[out.length - 1];
-  if (last !== formatUsd(target)) out.push(formatUsd(target));
-  return out;
-}
 
 // Greeting name (spec: display name → email local part → "there"). Never a
 // fabricated handle: every fallback is derived from a real stored field.
@@ -131,15 +79,26 @@ export function needsSetup(user) {
   return Boolean(user) && user.setup_completed === false;
 }
 
-// Shell redirect rule into the cover: explicit server "not completed" OR a
-// brand-new session account (just_created) whose completion flag has not been
-// proven true. covers the window where Agent A2's field is not shipped yet —
-// a just_created account has NEVER completed setup, so entering /welcome is
-// still server-driven truth, not a client-side guess.
-export function shouldEnterWelcome(user) {
+// --- landing gate (owner decision, Oct 2026) --------------------------------
+// The live feed (Discover) is the landing page — onboarding NEVER hijacks an
+// account out from under it; it is a dismissible OVERLAY (see Welcome.jsx).
+// Two honest, server-field-driven rules:
+//   * shouldAutoEnterWelcome: ONLY a brand-new session account (just_created,
+//     completion not yet proven true) is walked into the onboarding overlay
+//     automatically — the flow it just signed up for. It opens once; closing it
+//     does not re-force it (App tracks that with a per-mount ref).
+//   * canResumeWelcome: ANY signed-in account the server reports as unfinished
+//     (setup_completed === false) gets the dismissible resume bar back into the
+//     overlay. This intentionally also covers a just_created account that has
+//     already dismissed its one auto-open, so the path back is never lost.
+export function shouldAutoEnterWelcome(user) {
   if (!user) return false;
-  if (user.setup_completed === true) return false;
-  return user.setup_completed === false || user.just_created === true;
+  if (user.just_created !== true) return false;
+  return user.setup_completed !== true;
+}
+
+export function canResumeWelcome(user) {
+  return needsSetup(user);
 }
 
 // First INCOMPLETE step, from server fields: no VALID display name → 1; a name
@@ -204,12 +163,3 @@ export function consumeTunedNote(storage) {
   return raw;
 }
 
-// Header balance-chip mirror: when the congrats screen is shown, the next
-// HeaderBalance mount replays the SAME 600ms count-up on the chip (spec:
-// "Header balance chip mirrors the count-up"). One-shot: consumed on arrival.
-export function armBalanceMirror(storage) { safeSet(storage, BALANCE_MIRROR_KEY, '1'); }
-export function consumeBalanceMirror(storage) {
-  if (safeGet(storage, BALANCE_MIRROR_KEY) !== '1') return false;
-  safeRemove(storage, BALANCE_MIRROR_KEY);
-  return true;
-}

@@ -92,6 +92,34 @@ describe('orders', () => {
     assert.equal(Number(port.json.balance), 95);
   });
 
+  it('submit works with NO signature (session is consent) and is idempotent per order', async () => {
+    const { fetchJson } = await makeApp();
+    const A = genWallet();
+    const B = genWallet();
+    const UA = await auth(fetchJson, A);
+    const UB = await auth(fetchJson, B);
+    const marketId = await createMarket(fetchJson, UA, 'Signature-less orders?');
+
+    const q = await fetchJson('/api/orders/quote', { method: 'POST', body: JSON.stringify({ marketId, side: 'no', amount: 7 }), headers: { Authorization: `Bearer ${UB.token}` } });
+    assert.equal(q.res.status, 200, 'quote must succeed');
+    const oid = q.json.orderId;
+    const b = await fetchJson('/api/orders/build', { method: 'POST', body: JSON.stringify({ orderId: oid }), headers: { Authorization: `Bearer ${UB.token}` } });
+    assert.equal(b.res.status, 200, 'build must succeed');
+
+    // Submit WITHOUT any signature body field — the JWT session is the consent.
+    const first = await fetchJson('/api/orders/submit', { method: 'POST', body: JSON.stringify({ orderId: oid }), headers: { Authorization: `Bearer ${UB.token}` } });
+    assert.equal(first.res.status, 200, 'signature-less submit must succeed');
+    assert.equal(first.json.trade.side, 'no');
+
+    // A replay of the same order is idempotent (dedup keys on the order), so the
+    // balance is charged exactly once.
+    const second = await fetchJson('/api/orders/submit', { method: 'POST', body: JSON.stringify({ orderId: oid }), headers: { Authorization: `Bearer ${UB.token}` } });
+    assert.equal(second.res.status, 200);
+    assert.ok(second.json.idempotent, 'replay of the same order is idempotent');
+    const port = await fetchJson('/api/portfolio', { headers: { Authorization: `Bearer ${UB.token}` } });
+    assert.equal(Number(port.json.balance), 93, 'charged once (100 - 7)');
+  });
+
   it('3 parallel buys on same market', async () => {
     const { fetchJson, db } = await makeApp();
     const A = genWallet();
@@ -197,7 +225,7 @@ describe('orders', () => {
     assert.equal(Number(bAfter[0].sim_usdc), 3);
   });
 
-  it('order submit rejects bad signature encoding', async () => {
+  it('submit ignores bad signature encoding (sim mode: the session is consent, not the signature)', async () => {
     const { fetchJson } = await makeApp();
     const A = genWallet();
     const B = genWallet();
@@ -206,10 +234,11 @@ describe('orders', () => {
     const marketId = await createMarket(fetchJson, UA, 'Bad sig test orders?');
     const qq = await fetchJson('/api/orders/quote', { method: 'POST', body: JSON.stringify({ marketId, side: 'yes', amount: 5 }), headers: { Authorization: `Bearer ${UB.token}` } });
     const r = await fetchJson('/api/orders/submit', { method: 'POST', body: JSON.stringify({ orderId: qq.json.orderId, signature: '!!!not-base58!!!' }), headers: { Authorization: `Bearer ${UB.token}` } });
-    assert.ok(r.res.status === 400, `expected 400 got ${r.res.status}`);
+    assert.equal(r.res.status, 200, 'no signature is verified in sim mode, so encoding cannot fail the bet');
+    assert.equal(r.json.trade.side, 'yes');
   });
 
-  it('order submit rejects signature from different wallet', async () => {
+  it('submit attributes the bet to the SESSION, not the signature holder (wrong-wallet sig is ignored)', async () => {
     const { fetchJson } = await makeApp();
     const A = genWallet();
     const B = genWallet();
@@ -222,8 +251,14 @@ describe('orders', () => {
     const b = await fetchJson('/api/orders/build', { method: 'POST', body: JSON.stringify({ orderId: qq.json.orderId }), headers: { Authorization: `Bearer ${UB.token}` } });
     const badSig = signObj(UC.kp, b.json.signPayload);
     const r = await fetchJson('/api/orders/submit', { method: 'POST', body: JSON.stringify({ orderId: qq.json.orderId, signature: badSig }), headers: { Authorization: `Bearer ${UB.token}` } });
-    assert.equal(r.res.status, 400);
-    assert.equal(r.json.error.code, 'INVALID_SIGNATURE');
+    // The old INVALID_SIGNATURE 400 is retired: sim mode takes the authenticated
+    // session as consent, so a signature from another wallet neither fails nor
+    // redirects the bet — it is recorded and the SESSION user (UB) is charged.
+    assert.equal(r.res.status, 200);
+    const portB = await fetchJson('/api/portfolio', { headers: { Authorization: `Bearer ${UB.token}` } });
+    assert.equal(Number(portB.json.balance), 95, 'the session user (UB) is charged');
+    const portC = await fetchJson('/api/portfolio', { headers: { Authorization: `Bearer ${UC.token}` } });
+    assert.equal(Number(portC.json.balance), 100, 'the signature holder (UC) is untouched');
   });
 
   it('client canonical string equals server canonical string (side by side)', async () => {

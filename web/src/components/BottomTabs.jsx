@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth.js';
+import { useAuthModal } from '../hooks/useAuthModal.jsx';
 import { greetingName } from '../lib/welcome.js';
 import InterestChips from './InterestChips.jsx';
 import { IconFlame, IconSearch, IconPortfolio, IconUser } from './Icons.jsx';
@@ -16,7 +17,8 @@ import { IconFlame, IconSearch, IconPortfolio, IconUser } from './Icons.jsx';
 
 export default function BottomTabs() {
   const loc = useLocation();
-  const { user, signOut, saveProfile, loginWithPrivy, privyAvailable } = useAuth();
+  const { user, signOut, saveProfile } = useAuth();
+  const { openAuth } = useAuthModal();
   const [youOpen, setYouOpen] = useState(false);
   const [editInterests, setEditInterests] = useState([]);
   const [saving, setSaving] = useState(false);
@@ -139,26 +141,18 @@ export default function BottomTabs() {
               <>
                 <p className="text-sm text-white/60 mt-2 leading-relaxed">
                   Pinning, betting and Portfolio need an account. Sign in with email code or Google —
-                  it takes a few seconds and your $100 play money waits at the other end.
+                  it takes a few seconds.
                 </p>
-                {privyAvailable ? (
-                  <button
-                    type="button"
-                    onClick={() => { setYouOpen(false); loginWithPrivy(); }}
-                    data-testid="you-sign-in"
-                    className="mt-4 w-full min-h-[44px] rounded-full bg-live text-white text-sm font-bold cursor-pointer"
-                  >
-                    Sign in with Privy
-                  </button>
-                ) : (
-                  <Link
-                    to="/signin"
-                    data-testid="you-sign-in"
-                    className="block text-center mt-4 min-h-[44px] leading-[44px] rounded-full bg-live text-white text-sm font-bold"
-                  >
-                    Sign in
-                  </Link>
-                )}
+                {/* Sign-in is the centered overlay now (Oct 2026) — the sheet
+                    hands off to it instead of navigating to /signin. */}
+                <button
+                  type="button"
+                  onClick={() => { setYouOpen(false); openAuth(); }}
+                  data-testid="you-sign-in"
+                  className="mt-4 w-full min-h-[44px] rounded-full bg-live text-white text-sm font-bold cursor-pointer"
+                >
+                  Sign in
+                </button>
               </>
             )}
             <button

@@ -8,6 +8,7 @@ import { tailorByInterests } from '../lib/tailoring.js';
 import { consumeTunedNote } from '../lib/welcome.js';
 import { usePins } from '../hooks/usePins.js';
 import { useAuth } from '../hooks/useAuth.js';
+import { useAuthModal } from '../hooks/useAuthModal.jsx';
 import { countdownPill } from '../lib/countdown.js';
 import MarketCard from '../components/MarketCard.jsx';
 import LiveNow from '../components/LiveNow.jsx';
@@ -60,16 +61,24 @@ export default function Discover() {
   // (docs/PRIVY_AUTH_SPEC.md "Tailoring rule"): logged-out browsing keeps the
   // current order — nothing is guessed from cookies/history (honesty §4).
   const { user } = useAuth();
+  const { openAuth } = useAuthModal();
   // "Tuned for {name}" one-shot, written by the /welcome cover after a real
   // setup save; consumeTunedNote clears it, so it shows exactly once.
   const [tunedName] = useState(() => consumeTunedNote(window.sessionStorage));
 
   // Honest refusal when the 4 slots are full: say so, then fade the note.
+  // The login refusal carries the sign-in OVERLAY trigger (Oct 2026) — the
+  // note is a node there, plain text everywhere else.
   function handlePin(card) {
     return toggle(card).then((res) => {
       if (res.ok) setPinNote(null);
       else if (res.reason === 'limit') setPinNote(`You can pin up to ${MAX_PINS} streams — unpin one to make room.`);
-      else if (res.reason === 'login') setPinNote('Sign in to pin — your shelf follows your account, not this browser.');
+      else if (res.reason === 'login') setPinNote(
+        <span>
+          Sign in to pin — your shelf follows your account, not this browser.{' '}
+          <button type="button" onClick={openAuth} data-testid="pin-sign-in" className="underline font-bold cursor-pointer">Sign in</button>
+        </span>
+      );
       return res;
     });
   }

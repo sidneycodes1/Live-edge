@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import WalletButton from './WalletButton.jsx';
 import NotificationBell from './NotificationBell.jsx';
-import HeaderBalance from './HeaderBalance.jsx';
 
 // Quiet, full-width streaming top bar: brand + a central search on the left/middle,
 // navigation and the money/notification/profile cluster pinned right. Search is
@@ -77,7 +76,6 @@ export default function TopNav() {
           <Link to="/creator" className="text-white/70 hover:text-white">Create</Link>
         </div>
         <div className="flex items-center gap-1.5 sm:gap-2 ml-auto md:ml-0 shrink-0 min-w-0">
-          <HeaderBalance />
           <NotificationBell />
           <WalletButton />
         </div>

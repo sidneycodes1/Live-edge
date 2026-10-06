@@ -1,4 +1,4 @@
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 import { useApi } from '../hooks/useApi.js';
 import { api } from '../lib/api.js';
 import { useSSE } from '../hooks/useSSE.js';
@@ -15,6 +15,7 @@ import TradeSheet from '../components/TradeSheet.jsx';
 import Skeleton from '../components/Skeleton.jsx';
 import { useState, useEffect } from 'react';
 import { useAuth } from '../hooks/useAuth.js';
+import { useAuthModal } from '../hooks/useAuthModal.jsx';
 
 function LiveHeader({ viewers, lastUpdate }) {
   return (
@@ -41,9 +42,9 @@ function InRoomCreate({ roomId }) {
 
 // Sticky bottom BET PILL (mobile nav pass): the thumb-zone entry to the trade
 // sheet, sitting above the 4-tab bar. It goes through the SAME handleTrade
-// gate as the panel buttons (login-or-nothing, Amendment 2); the sheet itself
-// shows the honest 'signing not yet available' state until embedded signing
-// is verified — the pill never pretends more than that.
+// gate as the panel buttons (login-or-nothing, Amendment 2); once signed in the
+// sheet places a real play-money bet (the sim server takes the session as
+// consent, so there is no signing step to wait on).
 function BetPill({ market, onBet }) {
   if (!market) return null;
   return (
@@ -80,8 +81,8 @@ export default function Room() {
   const [tradeSide, setTradeSide] = useState(null);
   const [activeMarket, setActiveMarket] = useState(null);
   const [mobileTab, setMobileTab] = useState('market'); // mobile: show the bet panel under the video first ('chat' | 'market')
-  const { user, loginWithPrivy, privyAvailable } = useAuth();
-  const navigate = useNavigate();
+  const { user } = useAuth();
+  const { openAuth } = useAuthModal();
 
   useEffect(() => { if (room && room.markets && room.markets.length) { setActiveMarket(room.markets[0]); } }, [room]);
   // handle odds SSE to update price. Depends only on `events`; uses a functional
@@ -102,10 +103,10 @@ export default function Room() {
 
   const handleTrade = (side) => {
     if (!user) {
-      // Login-or-nothing (Amendment 2): betting opens the Privy modal, never a
-      // silent guest sign-in. No Privy mounted → honest /signin landing.
-      if (privyAvailable) loginWithPrivy();
-      else navigate('/signin');
+      // Login-or-nothing (Amendment 2): betting opens the sign-in OVERLAY
+      // (Oct 2026), never a silent guest sign-in and never a page navigation;
+      // the overlay itself carries the honest no-Privy state.
+      openAuth();
       return;
     }
     setTradeSide(side);

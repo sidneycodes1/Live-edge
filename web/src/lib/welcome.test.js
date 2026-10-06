@@ -1,25 +1,19 @@
 import { describe, it, expect } from 'vitest';
 import {
-  formatUsd,
-  countUpFrame,
-  countUpSequence,
   greetingName,
   markWelcomeShown,
   isWelcomeLatched,
   shouldShowCongrats,
   needsSetup,
-  shouldEnterWelcome,
+  shouldAutoEnterWelcome,
+  canResumeWelcome,
   resumeStep,
   resumeFields,
   welcomePhase,
   validateDisplayName,
   setTunedNote,
   consumeTunedNote,
-  armBalanceMirror,
-  consumeBalanceMirror,
   WELCOME_LATCH_KEY,
-  COUNTUP_DURATION_MS,
-  WELCOME_TARGET_USD,
 } from './welcome.js';
 
 // Pure logic only (no jsdom, no React). sessionStorage is faked by injection.
@@ -32,54 +26,6 @@ const fakeStorage = (initial = {}) => {
     _map: map,
   };
 };
-
-describe('formatUsd', () => {
-  it('renders $X.XX and never NaN', () => {
-    expect(formatUsd(100)).toBe('$100.00');
-    expect(formatUsd(0)).toBe('$0.00');
-    expect(formatUsd(12.5)).toBe('$12.50');
-    expect(formatUsd('nope')).toBe('$0.00');
-  });
-});
-
-describe('countUpFrame (600ms -> $100.00)', () => {
-  it('starts at $0.00 and lands EXACTLY on $100.00 at the duration', () => {
-    expect(countUpFrame({ elapsedMs: 0 })).toBe('$0.00');
-    expect(countUpFrame({ elapsedMs: COUNTUP_DURATION_MS })).toBe('$100.00');
-    expect(countUpFrame({ elapsedMs: COUNTUP_DURATION_MS + 5000 })).toBe('$100.00'); // clamped, never overshoots
-  });
-  it('increases monotonically mid-flight', () => {
-    const a = Number(countUpFrame({ elapsedMs: 150 }).slice(1));
-    const b = Number(countUpFrame({ elapsedMs: 300 }).slice(1));
-    const c = Number(countUpFrame({ elapsedMs: 450 }).slice(1));
-    expect(a).toBeLessThan(b);
-    expect(b).toBeLessThan(c);
-    expect(c).toBeLessThan(WELCOME_TARGET_USD);
-  });
-  it('reduced motion -> STATIC final amount (spec: no animation)', () => {
-    expect(countUpFrame({ elapsedMs: 0, reducedMotion: true })).toBe('$100.00');
-    expect(countUpFrame({ elapsedMs: 300, reducedMotion: true })).toBe('$100.00');
-  });
-  it('zero/negative duration is the static fallback too', () => {
-    expect(countUpFrame({ elapsedMs: 0, durationMs: 0 })).toBe('$100.00');
-  });
-});
-
-describe('countUpSequence', () => {
-  it('covers 0..600ms and ends exactly at $100.00', () => {
-    const seq = countUpSequence({ stepMs: 100 });
-    expect(seq[0]).toBe('$0.00');
-    expect(seq[seq.length - 1]).toBe('$100.00');
-    expect(seq.length).toBeGreaterThanOrEqual(7); // 0,100,...,600
-  });
-  it('reduced motion collapses to one static frame', () => {
-    expect(countUpSequence({ reducedMotion: true })).toEqual(['$100.00']);
-  });
-  it('garbage step/duration never throws and never loops', () => {
-    expect(countUpSequence({ stepMs: 0 })).toEqual(['$100.00']);
-    expect(countUpSequence({ durationMs: -5 })).toEqual(['$100.00']);
-  });
-});
 
 describe('greetingName', () => {
   it('prefers display_name, then email local part, then "there"', () => {
@@ -225,34 +171,33 @@ describe('tuned-note one-shot channel (Welcome -> Discover)', () => {
   });
 });
 
-describe('shouldEnterWelcome (cover-route takeover incl. pre-A2 window)', () => {
-  it('explicit setup_completed=false OR a just_created account enters /welcome', () => {
-    expect(shouldEnterWelcome({ setup_completed: false })).toBe(true);
-    expect(shouldEnterWelcome({ just_created: true, setup_completed: undefined })).toBe(true);
-    expect(shouldEnterWelcome({ just_created: true })).toBe(true);
+describe('landing gate (owner decision Oct 2026: the feed is the landing page)', () => {
+  it('ONLY a brand-new session account (just_created) is walked into /welcome', () => {
+    expect(shouldAutoEnterWelcome({ just_created: true, setup_completed: undefined })).toBe(true);
+    expect(shouldAutoEnterWelcome({ just_created: true, setup_completed: false })).toBe(true);
+    expect(shouldAutoEnterWelcome({ just_created: true })).toBe(true);
   });
-  it('completed setup NEVER re-enters, even with a stale just_created flag', () => {
-    expect(shouldEnterWelcome({ setup_completed: true, just_created: true })).toBe(false);
-    expect(shouldEnterWelcome({ setup_completed: true })).toBe(false);
+  it('completed setup NEVER auto-enters, even with a stale just_created flag', () => {
+    expect(shouldAutoEnterWelcome({ just_created: true, setup_completed: true })).toBe(false);
+    expect(shouldAutoEnterWelcome({ setup_completed: true })).toBe(false);
   });
-  it('established users without the field (pre-A2 server) are not hijacked', () => {
-    expect(shouldEnterWelcome({ id: 7 })).toBe(false);
-    expect(shouldEnterWelcome(null)).toBe(false);
+  it('a returning unfinished account is NOT hijacked — it gets the resume bar', () => {
+    expect(shouldAutoEnterWelcome({ setup_completed: false })).toBe(false);
+    expect(shouldAutoEnterWelcome({ id: 7 })).toBe(false);
+    expect(shouldAutoEnterWelcome(null)).toBe(false);
+    expect(canResumeWelcome({ setup_completed: false })).toBe(true);
+    expect(canResumeWelcome({ setup_completed: true })).toBe(false);
+    expect(canResumeWelcome({ id: 7 })).toBe(false);
+    expect(canResumeWelcome(null)).toBe(false);
   });
-});
-
-describe('balance-chip mirror one-shot (Welcome -> HeaderBalance)', () => {
-  it('arm + consume returns true ONCE', () => {
-    const s = fakeStorage();
-    expect(consumeBalanceMirror(s)).toBe(false);
-    armBalanceMirror(s);
-    expect(consumeBalanceMirror(s)).toBe(true);
-    expect(consumeBalanceMirror(s)).toBe(false);
-  });
-  it('hostile/absent storage degrades honestly', () => {
-    const bad = { getItem() { throw new Error('denied'); }, setItem() { throw new Error('denied'); }, removeItem() { throw new Error('denied'); } };
-    expect(() => armBalanceMirror(bad)).not.toThrow();
-    expect(consumeBalanceMirror(bad)).toBe(false);
-    expect(consumeBalanceMirror(null)).toBe(false);
+  it('the resume bar shows for ANY unfinished account (the overlay is dismissible)', () => {
+    // canResumeWelcome is now purely needsSetup: onboarding is a dismissible
+    // OVERLAY, not a forced takeover, so the path back must exist for every
+    // unfinished account — a fresh just_created one that closed its auto-open
+    // included. A completed (or unknown) setup never shows the bar.
+    expect(canResumeWelcome({ setup_completed: false, just_created: true })).toBe(true);
+    expect(canResumeWelcome({ setup_completed: false })).toBe(true);
+    expect(canResumeWelcome({ setup_completed: true })).toBe(false);
+    expect(canResumeWelcome({ just_created: true, setup_completed: true })).toBe(false);
   });
 });

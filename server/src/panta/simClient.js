@@ -66,22 +66,14 @@ export function createSimClient({ db, env }) {
     async registerMarket(quoteId, signature, userId) {
       const q = marketQuotes.get(quoteId);
       if (!q) throw new PantaError('QUOTE_EXPIRED', 'Quote expired', { status: 410 });
-      // Verify signature
+      // SIM CONSENT (owner decision, Oct 2026): the authenticated JWT session IS
+      // the creator's consent. Client-side signing is retired with guest mode
+      // (Amendment 2) and Privy embedded signing is still spike-gated, so there
+      // is no key the app could sign this with today — the old nacl check against
+      // the stored wallet always failed (400). The account must still exist, and
+      // any supplied signature is recorded for the day real verification returns.
       const { rows: uRows } = await db.query('select wallet from users where id=$1', [userId]);
       if (uRows.length === 0) throw new PantaError('UNAUTHORIZED', 'User not found', { status: 401 });
-      const wallet = uRows[0].wallet;
-      const signPayload = { kind: 'create_market', quoteId, wallet, question: q.question, nonce: q.nonce };
-      const canonical = canonicalStringify(signPayload);
-      const msgBytes = new TextEncoder().encode(canonical);
-      try {
-        const sigBytes = bs58.decode(signature);
-        const pubBytes = bs58.decode(wallet);
-        if (!nacl.sign.detached.verify(msgBytes, sigBytes, pubBytes)) {
-          throw new PantaError('INVALID_SIGNATURE', 'Invalid signature', { status: 400 });
-        }
-      } catch {
-        throw new PantaError('INVALID_SIGNATURE', 'Invalid signature encoding', { status: 400 });
-      }
       // check duplicate
       const { rows: dup } = await db.query('select id from markets where creator_id=$1 and question=$2', [userId, q.question]);
       if (dup.length > 0) throw new PantaError('DUPLICATE_MARKET', 'Duplicate market', { status: 409 });
@@ -178,8 +170,16 @@ export function createSimClient({ db, env }) {
       return { signPayload, canonicalPayload, preview: false, orderId: quoteId };
     },
     async submitBuy(quoteId, signature, walletUserId) {
-      // idempotent on signature
-      const { rows: existing } = await db.query('select * from trades where signature=$1', [signature]);
+      // SIM CONSENT (owner decision, Oct 2026): the authenticated JWT session IS
+      // the bettor's consent. Client-side signing is retired with guest mode
+      // (Amendment 2) and Privy embedded signing is still spike-gated, so there
+      // is no key the app could sign with today — the old nacl check against the
+      // stored wallet always failed (400). Idempotency keys on a deterministic
+      // per-order token when no real signature is supplied; a supplied signature
+      // is recorded for the day real verification returns.
+      const sigKey = signature || `sim:${quoteId}`;
+      // idempotent on the (derived) signature
+      const { rows: existing } = await db.query('select * from trades where signature=$1', [sigKey]);
       if (existing.length > 0) {
         // return original order info
         const t = existing[0];
@@ -191,22 +191,10 @@ export function createSimClient({ db, env }) {
       const order = oRows[0];
       if (order.user_id !== walletUserId) throw new PantaError('FORBIDDEN', 'Not your order', { status: 403 });
       if (new Date(order.expires_at) <= now()) throw new PantaError('QUOTE_EXPIRED', 'Quote expired', { status: 410 });
-      // Verify signature
+      // The account behind the session must still exist (same check the market
+      // register path keeps). No signature is verified in sim mode.
       const { rows: uRows } = await db.query('select wallet from users where id=$1', [walletUserId]);
       if (uRows.length === 0) throw new PantaError('UNAUTHORIZED', 'User not found', { status: 401 });
-      const wallet = uRows[0].wallet;
-      const signPayload = { orderId: quoteId, marketId: order.market_id, side: order.side, amount: Number(order.amount), expiresAt: normExpires(order.expires_at) };
-      const canonical = canonicalStringify(signPayload);
-      const msgBytes = new TextEncoder().encode(canonical);
-      try {
-        const sigBytes = bs58.decode(signature);
-        const pubBytes = bs58.decode(wallet);
-        if (!nacl.sign.detached.verify(msgBytes, sigBytes, pubBytes)) {
-          throw new PantaError('INVALID_SIGNATURE', 'Invalid signature', { status: 400 });
-        }
-      } catch {
-        throw new PantaError('INVALID_SIGNATURE', 'Invalid signature encoding', { status: 400 });
-      }
       // do ledger update in transaction
       return db.tx(async ({ query }) => {
         // lock market
@@ -249,7 +237,7 @@ export function createSimClient({ db, env }) {
         }
         await query(`update orders set status='confirmed' where id=$1`, [order.id]);
         const tradeId = randomUUID();
-        await query(`insert into trades(id, user_id, market_id, order_id, kind, side, amount, shares, signature) values($1,$2,$3,$4,'buy',$5,$6,$7,$8)`, [tradeId, order.user_id, order.market_id, order.id, order.side, order.amount, shares, signature]);
+        await query(`insert into trades(id, user_id, market_id, order_id, kind, side, amount, shares, signature) values($1,$2,$3,$4,'buy',$5,$6,$7,$8)`, [tradeId, order.user_id, order.market_id, order.id, order.side, order.amount, shares, sigKey]);
         // update chat? caller will do
         const { rows: updatedM } = await query('select * from markets where id=$1', [m.id]);
         return { trade: { id: tradeId, market_id: m.id, side: order.side, amount: order.amount, shares }, market: updatedM[0], idempotent: false };

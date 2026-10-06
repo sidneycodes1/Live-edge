@@ -1,8 +1,10 @@
 import { Link } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth.js';
+import { useAuthModal } from '../hooks/useAuthModal.jsx';
 
 export default function WalletButton() {
-  const { user, signOut, loginWithPrivy, privyAvailable } = useAuth();
+  const { user, signOut } = useAuth();
+  const { openAuth } = useAuthModal();
   if (user) {
     const label = user.wallet ? `${user.wallet.slice(0, 4)}…${user.wallet.slice(-4)}` : 'Account';
     // Show the user's NAME, never the long email: display_name is the server's
@@ -23,15 +25,12 @@ export default function WalletButton() {
       </div>
     );
   }
-  // Logged out: login-or-nothing (Amendment 2). Privy modal when mounted; the
-  // /signin route otherwise (it explains honestly when Privy is unavailable).
+  // Logged out: login-or-nothing (Amendment 2). Sign-in is the centered
+  // overlay now (Oct 2026) — no page navigation; the modal itself carries the
+  // honest "auth service unavailable" state when Privy is not mounted.
   return (
     <div className="flex items-center gap-1.5 sm:gap-2">
-      {privyAvailable ? (
-        <button onClick={loginWithPrivy} data-testid="sign-in-cta" className="bg-white text-black px-3 sm:px-4 py-2 rounded-full text-sm font-bold shrink-0 min-h-[44px]">Sign in</button>
-      ) : (
-        <Link to="/signin" data-testid="sign-in-cta" className="bg-white text-black px-3 sm:px-4 py-2 rounded-full text-sm font-bold shrink-0 min-h-[44px] inline-flex items-center">Sign in</Link>
-      )}
+      <button onClick={openAuth} data-testid="sign-in-cta" className="bg-white text-black px-3 sm:px-4 py-2 rounded-full text-sm font-bold shrink-0 min-h-[44px]">Sign in</button>
     </div>
   );
 }

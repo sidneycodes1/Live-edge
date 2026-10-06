@@ -4,7 +4,6 @@ import {
   TERMS_SUMMARY_PARAGRAPH,
   TERMS_CHECKBOX_LABEL,
   PLAY_MONEY_LINE,
-  FUNDED_LINE,
   TERMS_SECTIONS,
 } from './terms.js';
 
@@ -16,8 +15,7 @@ describe('frozen onboarding copy', () => {
   it('setup version matches the plan §4 contract', () => {
     expect(TERMS_VERSION).toBe('2026-10-draft-1');
   });
-  it('funded + play-money lines are the exact spec sentences', () => {
-    expect(FUNDED_LINE).toBe('Congratulations! Your account has been funded with $100 in play money.');
+  it('play-money line is the exact spec sentence ($100 funded line retired Oct 2026)', () => {
     expect(PLAY_MONEY_LINE).toBe('Play money for predictions. Not real money.');
   });
   it('checkbox label is the exact 18+/agree sentence', () => {

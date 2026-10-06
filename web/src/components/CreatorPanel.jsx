@@ -3,7 +3,6 @@ import { templates } from '../lib/templates.js';
 import { api } from '../lib/api.js';
 import { useToast } from '../hooks/useToast.js';
 import { useBalance } from '../hooks/useBalance.js';
-import { getOrCreateGuestWallet, signObject } from '../lib/wallet.js';
 
 export default function CreatorPanel({ roomId, onCreated }) {
   const { showToast } = useToast();
@@ -28,18 +27,18 @@ export default function CreatorPanel({ roomId, onCreated }) {
     } catch (e) { setError(e.message); setStatus(''); }
   }
 
-  // Step 2: confirm -> build, sign, register (the server deducts the fee here, F-010).
+  // Step 2: confirm -> build, register (the server deducts the fee here, F-010).
+  // No client signing (Oct 2026): the retired guest keypair could not sign for a
+  // Privy account (that mismatch was the 400), and embedded signing is still
+  // spike-gated — the authenticated session IS the consent server-side.
   async function handleConfirm() {
     if (!quote) return;
     setError('');
     try {
       setStatus('Building…');
-      const build = await api.buildMarket(quote.quoteId);
-      setStatus('Signing…');
-      const gw = getOrCreateGuestWallet();
-      const sig = signObject(gw.secretKey, build.signPayload);
+      await api.buildMarket(quote.quoteId);
       setStatus('Registering…');
-      const market = await api.registerMarket(quote.quoteId, sig);
+      const market = await api.registerMarket(quote.quoteId);
       setStatus('Created!');
       setQuote(null);
       showToast(`Market created! $${Number(quote.fee).toFixed(2)} creation fee deducted.`);
@@ -80,7 +79,7 @@ export default function CreatorPanel({ roomId, onCreated }) {
           {shortByFee && <p className="text-xs text-no mt-2">Insufficient balance for this fee — use the faucet or a smaller action.</p>}
           <div className="flex gap-2 mt-3">
             <button onClick={() => { setQuote(null); setError(''); }} className="flex-1 border border-white/20 rounded-full py-2 min-h-[44px] text-sm">Cancel</button>
-            <button onClick={handleConfirm} disabled={shortByFee || status === 'Building…' || status === 'Signing…' || status === 'Registering…'} className="flex-1 bg-white text-black font-bold rounded-full py-2 min-h-[44px] text-sm disabled:opacity-50" data-testid="confirm-create">Confirm &amp; create</button>
+            <button onClick={handleConfirm} disabled={shortByFee || status === 'Building…' || status === 'Registering…'} className="flex-1 bg-white text-black font-bold rounded-full py-2 min-h-[44px] text-sm disabled:opacity-50" data-testid="confirm-create">Confirm &amp; create</button>
           </div>
         </div>
       )}
