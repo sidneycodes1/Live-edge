@@ -1,10 +1,11 @@
-import { Link } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth.js';
 import { useAuthModal } from '../hooks/useAuthModal.jsx';
+import { usePanelModal } from '../hooks/usePanelModal.jsx';
 
 export default function WalletButton() {
   const { user, signOut } = useAuth();
   const { openAuth } = useAuthModal();
+  const { openPortfolio } = usePanelModal();
   if (user) {
     const label = user.wallet ? `${user.wallet.slice(0, 4)}…${user.wallet.slice(-4)}` : 'Account';
     // Show the user's NAME, never the long email: display_name is the server's
@@ -14,13 +15,14 @@ export default function WalletButton() {
     const display = name || label;
     return (
       <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
-        <Link
-          to="/portfolio"
-          className="min-w-0 max-w-[92px] sm:max-w-[160px] truncate text-xs bg-white/10 px-3 py-1 rounded-full hover:bg-white/20"
+        <button
+          onClick={openPortfolio}
+          data-testid="balance-chip"
           title={display}
+          className="min-w-0 max-w-[92px] sm:max-w-[160px] truncate text-xs bg-white/10 px-3 py-1 rounded-full hover:bg-white/20 cursor-pointer"
         >
           {display}
-        </Link>
+        </button>
         <button onClick={signOut} className="text-xs text-white/60 hover:text-white shrink-0">Sign out</button>
       </div>
     );

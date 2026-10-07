@@ -5,6 +5,7 @@ import { normalizeLive } from '../lib/live.js';
 import { buildRailEntries } from '../lib/rail.js';
 import { liveCardHref } from './LiveCard.jsx';
 import { useAuth } from '../hooks/useAuth.js';
+import { usePanelModal } from '../hooks/usePanelModal.jsx';
 
 // Twitch-style persistent left rail. Lists LIVE CHANNELS — mixing the platform's
 // own simulated rooms and any real Twitch channels from /api/twitch/live — each
@@ -25,6 +26,7 @@ export default function SideRail() {
   const [live, setLive] = useState([]);
   const [collapsed, setCollapsed] = useState(false);
   const { user } = useAuth();
+  const { openPortfolio, openCreator } = usePanelModal();
 
   useEffect(() => {
     let active = true;
@@ -59,8 +61,8 @@ export default function SideRail() {
 
       {user && !collapsed && (
         <nav className="px-2 pb-2 space-y-0.5 border-b border-white/5">
-          <Link to="/portfolio" className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-white/5 text-sm text-white/70">Your bets</Link>
-          <Link to="/creator" className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-white/5 text-sm text-white/70">Create a market</Link>
+          <button onClick={openPortfolio} className="w-full flex items-center gap-2 px-2 py-1.5 rounded hover:bg-white/5 text-sm text-white/70 text-center cursor-pointer">Your bets</button>
+          <button onClick={() => openCreator()} className="w-full flex items-center gap-2 px-2 py-1.5 rounded hover:bg-white/5 text-sm text-white/70 text-left cursor-pointer">Create a market</button>
         </nav>
       )}
 

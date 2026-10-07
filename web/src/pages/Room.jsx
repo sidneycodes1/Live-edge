@@ -1,4 +1,4 @@
-import { useParams, Link } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { useApi } from '../hooks/useApi.js';
 import { api } from '../lib/api.js';
 import { useSSE } from '../hooks/useSSE.js';
@@ -16,6 +16,7 @@ import Skeleton from '../components/Skeleton.jsx';
 import { useState, useEffect } from 'react';
 import { useAuth } from '../hooks/useAuth.js';
 import { useAuthModal } from '../hooks/useAuthModal.jsx';
+import { usePanelModal } from '../hooks/usePanelModal.jsx';
 
 function LiveHeader({ viewers, lastUpdate }) {
   return (
@@ -29,14 +30,16 @@ function LiveHeader({ viewers, lastUpdate }) {
 // stream you're watching. Reuses the existing Creator cockpit, pre-filled with
 // this room. Top-nav "Create" stays as the standalone secondary path.
 function InRoomCreate({ roomId }) {
+  const { openCreator } = usePanelModal();
   return (
-    <Link
-      to={`/creator/${roomId}`}
+    <button
+      type="button"
+      onClick={() => openCreator({ roomId })}
       data-testid="in-room-create"
-      className="block w-full text-center bg-white/5 hover:bg-white/10 border border-dashed border-white/20 rounded-card py-2.5 text-sm font-semibold text-white/80 transition"
+      className="block w-full text-center bg-white/5 hover:bg-white/10 border border-dashed border-white/20 rounded-card py-2.5 text-sm font-semibold text-white/80 transition cursor-pointer"
     >
       + Start a bet on this stream
-    </Link>
+    </button>
   );
 }
 
@@ -94,7 +97,17 @@ export default function Room() {
     setActiveMarket(m => {
       if (!m || lastOdds.data.marketId !== m.id) return m;
       if (m.yes_price === lastOdds.data.yesPrice && m.no_price === lastOdds.data.noPrice && m.volume === lastOdds.data.volume) return m;
-      return { ...m, yes_price: lastOdds.data.yesPrice, no_price: lastOdds.data.noPrice, volume: lastOdds.data.volume };
+      // Carry the price provenance through the live tick too, so the honesty chip
+      // never shows a stale label after a fresh poll (or the reverse). The server
+      // broadcasts priceSource/observedAt on every odds fan-out.
+      return {
+        ...m,
+        yes_price: lastOdds.data.yesPrice,
+        no_price: lastOdds.data.noPrice,
+        volume: lastOdds.data.volume,
+        ...(lastOdds.data.priceSource ? { price_source: lastOdds.data.priceSource } : {}),
+        ...(lastOdds.data.observedAt ? { price_observed_at: lastOdds.data.observedAt } : {}),
+      };
     });
   }, [events]);
 

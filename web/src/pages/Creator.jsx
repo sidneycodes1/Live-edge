@@ -1,29 +1,32 @@
-import { useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth.js';
+import { useAuthModal } from '../hooks/useAuthModal.jsx';
+import { usePanelModal } from '../hooks/usePanelModal.jsx';
 import CreatorPanel from '../components/CreatorPanel.jsx';
 import { useApi } from '../hooks/useApi.js';
 import { api } from '../lib/api.js';
 import { useState } from 'react';
 import { isValidTwitchLogin } from '../lib/twitch.js';
 
-export default function Creator() {
-  const { roomId } = useParams();
+// Create as an OVERLAY body (owner decision, Oct 2026): rendered inside
+// <PanelOverlay/>'s <Modal>. It is prop-driven (no route params) and keeps its
+// whole two-step flow INSIDE the overlay — "Start a room" → cockpit swaps in
+// place (no navigation), so there is always a ✕ back. Only finishing a market
+// leaves the overlay, handing you to the live room to watch your bet.
+export default function Creator({ roomId = null, prefillTitle = '', prefillChannel = '' }) {
   const navigate = useNavigate();
-  const [params] = useSearchParams();
-  const location = useLocation();
   const { user } = useAuth();
-  const { data: room } = useApi(()=> roomId ? api.getRoom(roomId) : Promise.resolve(null), [roomId]);
-  const { data: metrics } = useApi(()=> user ? api.metrics() : Promise.resolve(null), [user]);
+  const { openAuth } = useAuthModal();
+  const { closePanel } = usePanelModal();
+  // The room whose cockpit we show. Seeded from the opener (in-room "+ Start a
+  // bet" passes roomId); set locally once a new room is created, WITHOUT routing.
+  const [activeRoomId, setActiveRoomId] = useState(roomId);
+  const { data: room } = useApi(() => (activeRoomId ? api.getRoom(activeRoomId) : Promise.resolve(null)), [activeRoomId]);
+  const { data: metrics } = useApi(() => (user ? api.metrics() : Promise.resolve(null)), [user]);
   const [resolveOutcome, setResolveOutcome] = useState('yes');
   const [msg, setMsg] = useState('');
-  // Prefill the room title from ?title= (or router state) — set by the football
-  // match view's "Bet: Home / Draw / Away" CTAs so a fixture opens the Create flow
-  // with a genuine, already-written question. The user still signs the create.
-  const [roomTitle, setRoomTitle] = useState(
-    params.get('title') || (location.state && location.state.prefillTitle) || '',
-  );
-  // Prefill from ?twitchChannel= (set by the "Create a market on <ch>" CTA).
-  const [roomChannel, setRoomChannel] = useState(params.get('twitchChannel') || '');
+  const [roomTitle, setRoomTitle] = useState(prefillTitle);
+  const [roomChannel, setRoomChannel] = useState(prefillChannel);
   const [creating, setCreating] = useState(false);
   const [createErr, setCreateErr] = useState('');
 
@@ -46,7 +49,7 @@ export default function Creator() {
         }
       }
       const r = await api.createRoom(roomTitle.trim(), '', ch || undefined);
-      navigate(`/creator/${r.id}`);
+      setActiveRoomId(r.id); // swap to the cockpit inside the same overlay
     } catch (err) {
       setCreateErr(err.message || 'Could not create room');
       setCreating(false);
@@ -55,26 +58,39 @@ export default function Creator() {
 
   async function handleResolve() {
     try {
-      // resolve first market
       if (!room?.markets?.[0]) { setMsg('No market to resolve'); return; }
       await api.resolveMarket(room.markets[0].id, resolveOutcome, true);
-      setMsg('Resolved '+resolveOutcome);
+      setMsg('Resolved ' + resolveOutcome);
     } catch (e) { setMsg(e.message); }
   }
 
-  if (!user) return <div className="max-w-3xl mx-auto px-4 py-10 text-center"><p className="text-white/60">Sign in to access creator cockpit</p></div>;
+  // A finished market: close the overlay and open the live room to watch it.
+  function handleMarketCreated() {
+    closePanel();
+    navigate(`/room/${activeRoomId}`);
+  }
+
+  if (!user) {
+    return (
+      <div className="py-6 text-center" data-testid="creator-signed-out">
+        <h2 id="creator-modal-title" className="font-heading font-bold text-xl">Create a bet</h2>
+        <p className="mt-3 mb-4 text-sm text-white/70">Sign in to open the creator cockpit and start a market.</p>
+        <button onClick={openAuth} className="bg-white text-black px-6 py-2 rounded-full font-bold min-h-[44px]">Sign in</button>
+      </div>
+    );
+  }
 
   return (
-    <div className="max-w-3xl mx-auto px-4 py-6 pb-20 space-y-6">
-      <h1 className="font-heading font-bold text-2xl">Creator Cockpit</h1>
-      {roomId ? (
+    <div className="space-y-6" data-testid="creator-modal-body">
+      <h2 id="creator-modal-title" className="font-heading font-bold text-2xl">Creator Cockpit</h2>
+      {activeRoomId ? (
         <>
-          <CreatorPanel roomId={roomId} onCreated={()=>navigate(`/room/${roomId}`)} />
+          <CreatorPanel roomId={activeRoomId} onCreated={handleMarketCreated} />
           <div className="bg-surface border border-white/10 rounded-card p-4">
             <h3 className="font-bold text-sm">Resolve (sim)</h3>
             <p className="text-xs text-white/50">Sim resolver (stands in for Panta's oracle)</p>
             <div className="flex gap-2 mt-3">
-              <select value={resolveOutcome} onChange={e=>setResolveOutcome(e.target.value)} className="bg-black/30 border border-white/10 rounded px-3 py-2 text-sm">
+              <select value={resolveOutcome} onChange={e => setResolveOutcome(e.target.value)} className="bg-black/30 border border-white/10 rounded px-3 py-2 text-sm">
                 <option value="yes">YES</option><option value="no">NO</option>
               </select>
               <button onClick={handleResolve} className="bg-white text-black px-4 py-2 rounded-full text-sm font-bold">Resolve</button>
@@ -84,7 +100,7 @@ export default function Creator() {
         </>
       ) : (
         <div className="bg-surface border border-white/10 rounded-card p-6">
-          <h2 className="font-heading font-bold">Start a room</h2>
+          <h3 className="font-heading font-bold">Start a room</h3>
           <p className="text-xs text-white/50 mt-1 mb-4">Any signed-in account can create a room, then drop markets in it. Pick a room from Discover to manage an existing one.</p>
           <form onSubmit={handleCreateRoom} className="flex flex-col gap-2">
             <input value={roomTitle} onChange={(e) => setRoomTitle(e.target.value)} required minLength={3} maxLength={80} placeholder="Room title (e.g. Friday ranked grind)" className="flex-1 bg-black/30 border border-white/10 rounded px-3 py-2 text-sm" />

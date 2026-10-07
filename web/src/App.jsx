@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, useLocation, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, useLocation, useParams, useSearchParams, Navigate } from 'react-router-dom';
 import TopNav from './components/TopNav.jsx';
 import SideRail from './components/SideRail.jsx';
 import BottomTabs from './components/BottomTabs.jsx';
@@ -7,15 +7,16 @@ import Room from './pages/Room.jsx';
 import TwitchRoom from './pages/TwitchRoom.jsx';
 import WatchRoom from './pages/WatchRoom.jsx';
 import MatchView from './pages/MatchView.jsx';
-import Creator from './pages/Creator.jsx';
-import Portfolio from './pages/Portfolio.jsx';
 import Welcome from './pages/Welcome.jsx';
 import Legal from './pages/Legal.jsx';
 import About from './pages/About.jsx';
 import NotFound from './pages/NotFound.jsx';
 import AuthModal from './components/AuthModal.jsx';
+import PanelOverlay from './components/PanelOverlay.jsx';
 import SetupResumeBar from './components/SetupResumeBar.jsx';
+import PantaFooter from './components/PantaFooter.jsx';
 import { AuthModalContext, useAuthModal } from './hooks/useAuthModal.jsx';
+import { PanelModalContext, usePanelModal } from './hooks/usePanelModal.jsx';
 import { WelcomeModalContext, useWelcomeModal } from './hooks/useWelcomeModal.jsx';
 import { useAuthProvider, AuthContext, useAuth } from './hooks/useAuth.js';
 import { ToastContext } from './hooks/useToast.js';
@@ -42,6 +43,16 @@ export default function App() {
   const [welcomeOpen, setWelcomeOpen] = useState(false);
   const openWelcome = useCallback(() => { setAuthOpen(false); setWelcomeOpen(true); }, []);
   const closeWelcome = useCallback(() => setWelcomeOpen(false), []);
+  // Portfolio + Create are OVERLAYS too (owner decision, Oct 2026): same shape
+  // as sign-in — App owns which panel is open, any trigger calls openPortfolio()/
+  // openCreator(opts), and a single <PanelOverlay/> draws the box over the feed.
+  // `creatorOpts` tells the Create box how to open (room cockpit vs prefill).
+  const [panel, setPanel] = useState(null);
+  const [creatorOpts, setCreatorOpts] = useState({});
+  const openPortfolio = useCallback(() => setPanel('portfolio'), []);
+  const openCreator = useCallback((opts = {}) => { setCreatorOpts(opts); setPanel('creator'); }, []);
+  const closePanel = useCallback(() => setPanel(null), []);
+  const panelValue = { panel, creator: creatorOpts, openPortfolio, openCreator, closePanel };
   // Guest sign-in is REMOVED (Amendment 2) — no signIn wrapper/toast here
   // anymore; auth feedback belongs to the Privy flow + the /welcome cover.
   const balanceValue = useBalanceProvider(auth.user);
@@ -52,10 +63,13 @@ export default function App() {
           <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
             <AuthModalContext.Provider value={{ open: authOpen, openAuth, closeAuth }}>
               <WelcomeModalContext.Provider value={{ open: welcomeOpen, openWelcome, closeWelcome }}>
-                <Shell />
-                <AuthModal />
-                <WelcomeOverlayHost />
-                <Toast message={toast} onDone={() => setToast('')} />
+                <PanelModalContext.Provider value={panelValue}>
+                  <Shell />
+                  <AuthModal />
+                  <PanelOverlay />
+                  <WelcomeOverlayHost />
+                  <Toast message={toast} onDone={() => setToast('')} />
+                </PanelModalContext.Provider>
               </WelcomeModalContext.Provider>
             </AuthModalContext.Provider>
           </BrowserRouter>
@@ -118,15 +132,16 @@ function Shell() {
             <Route path="/watch/:source/:slug" element={<WatchRoom />} />
             <Route path="/watch/:source/:slug/:title" element={<WatchRoom />} />
             <Route path="/match/:fixtureId" element={<MatchView />} />
-            <Route path="/creator/:roomId" element={<Creator />} />
-            <Route path="/creator" element={<Creator />} />
-            <Route path="/portfolio" element={<Portfolio />} />
+            <Route path="/creator/:roomId" element={<CreatorBridge />} />
+            <Route path="/creator" element={<CreatorBridge />} />
+            <Route path="/portfolio" element={<PortfolioBridge />} />
             <Route path="/signin" element={<SigninBridge />} />
             <Route path="/welcome" element={<WelcomeBridge />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </div>
       </div>
+      <PantaFooter />
       <BottomTabs />
     </>
   );
@@ -146,6 +161,38 @@ function SigninBridge() {
 function WelcomeBridge() {
   const { openWelcome } = useWelcomeModal();
   useEffect(() => { openWelcome(); }, [openWelcome]);
+  return <Navigate to="/" replace />;
+}
+
+// /portfolio is retired as a page (owner decision, Oct 2026): any deep-link,
+// bookmark, or stale tab lands on the feed with the Portfolio OVERLAY already
+// open, so there is never a full-screen panel with no way back (mirrors
+// SigninBridge). openPortfolio is stable, so this runs once per mount.
+function PortfolioBridge() {
+  const { openPortfolio } = usePanelModal();
+  useEffect(() => { openPortfolio(); }, [openPortfolio]);
+  return <Navigate to="/" replace />;
+}
+
+// /creator (+ /creator/:roomId) likewise opens the Create OVERLAY instead of a
+// page, carrying whatever the old URL implied: a :roomId jumps to that room's
+// cockpit; ?title / ?twitchChannel prefill "Start a room"; a location.state
+// prefillTitle (match CTAs) is honored too. Then the URL hands back to the feed.
+function CreatorBridge() {
+  const { openCreator } = usePanelModal();
+  const { roomId } = useParams();
+  const [searchParams] = useSearchParams();
+  const location = useLocation();
+  useEffect(() => {
+    const opts = {};
+    if (roomId) opts.roomId = roomId;
+    const title = searchParams.get('title') || location.state?.prefillTitle || '';
+    const channel = searchParams.get('twitchChannel') || '';
+    if (title) opts.prefillTitle = title;
+    if (channel) opts.prefillChannel = channel;
+    openCreator(opts);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   return <Navigate to="/" replace />;
 }
 

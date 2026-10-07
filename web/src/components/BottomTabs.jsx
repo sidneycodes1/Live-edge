@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth.js';
 import { useAuthModal } from '../hooks/useAuthModal.jsx';
+import { usePanelModal } from '../hooks/usePanelModal.jsx';
 import { greetingName } from '../lib/welcome.js';
 import InterestChips from './InterestChips.jsx';
 import { IconFlame, IconSearch, IconPortfolio, IconUser } from './Icons.jsx';
@@ -19,6 +20,7 @@ export default function BottomTabs() {
   const loc = useLocation();
   const { user, signOut, saveProfile } = useAuth();
   const { openAuth } = useAuthModal();
+  const { openPortfolio, panel } = usePanelModal();
   const [youOpen, setYouOpen] = useState(false);
   const [editInterests, setEditInterests] = useState([]);
   const [saving, setSaving] = useState(false);
@@ -63,24 +65,40 @@ export default function BottomTabs() {
   const tabs = [
     { key: 'live', label: 'Live', to: '/', icon: IconFlame, active: loc.pathname === '/' && !searchActive },
     { key: 'search', label: 'Search', to: '/?search=1', icon: IconSearch, active: searchActive },
-    { key: 'portfolio', label: 'Portfolio', to: '/portfolio', icon: IconPortfolio, active: loc.pathname.startsWith('/portfolio') },
+    // Portfolio is an OVERLAY now (Oct 2026), not a route: this tab pops the box
+    // over the current page instead of navigating, and highlights while it is open.
+    { key: 'portfolio', label: 'Portfolio', icon: IconPortfolio, onOpen: openPortfolio, active: panel === 'portfolio' },
   ];
 
   return (
     <>
       <div className="fixed bottom-0 inset-x-0 z-40 bg-surface border-t border-white/10 flex md:hidden pb-safe">
-        {tabs.map((t) => (
-          <Link
-            key={t.key}
-            to={t.to}
-            aria-current={t.active ? 'page' : undefined}
-            data-testid={`tab-${t.key}`}
-            className={`flex-1 !min-h-[56px] flex flex-col items-center justify-center gap-0.5 text-[10px] font-semibold ${t.active ? 'text-white' : 'text-white/55'}`}
-          >
-            <t.icon className="w-5 h-5" />
-            {t.label}
-          </Link>
-        ))}
+        {tabs.map((t) =>
+          t.onOpen ? (
+            <button
+              key={t.key}
+              type="button"
+              onClick={t.onOpen}
+              aria-current={t.active ? 'true' : undefined}
+              data-testid={`tab-${t.key}`}
+              className={`flex-1 !min-h-[56px] flex flex-col items-center justify-center gap-0.5 text-[10px] font-semibold cursor-pointer ${t.active ? 'text-white' : 'text-white/55'}`}
+            >
+              <t.icon className="w-5 h-5" />
+              {t.label}
+            </button>
+          ) : (
+            <Link
+              key={t.key}
+              to={t.to}
+              aria-current={t.active ? 'page' : undefined}
+              data-testid={`tab-${t.key}`}
+              className={`flex-1 !min-h-[56px] flex flex-col items-center justify-center gap-0.5 text-[10px] font-semibold ${t.active ? 'text-white' : 'text-white/55'}`}
+            >
+              <t.icon className="w-5 h-5" />
+              {t.label}
+            </Link>
+          ),
+        )}
         <button
           type="button"
           onClick={() => setYouOpen((v) => !v)}

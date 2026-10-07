@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import WalletButton from './WalletButton.jsx';
 import NotificationBell from './NotificationBell.jsx';
+import { usePanelModal } from '../hooks/usePanelModal.jsx';
 
 // Quiet, full-width streaming top bar: brand + a central search on the left/middle,
 // navigation and the money/notification/profile cluster pinned right. Search is
@@ -37,6 +38,7 @@ function SearchField({ term, setTerm, onSubmit, className = '', id }) {
 export default function TopNav() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { openPortfolio, openCreator } = usePanelModal();
   const q = new URLSearchParams(location.search).get('q') || '';
   const [term, setTerm] = useState(q);
   useEffect(() => { setTerm(q); }, [q]);
@@ -72,8 +74,8 @@ export default function TopNav() {
         <SearchField term={term} setTerm={setTerm} onSubmit={onSubmit} id="desktop-search" className="hidden sm:flex flex-1 max-w-xl" />
 
         <div className="hidden md:flex gap-4 text-sm ml-auto shrink-0">
-          <Link to="/portfolio" className="text-white/70 hover:text-white">Portfolio</Link>
-          <Link to="/creator" className="text-white/70 hover:text-white">Create</Link>
+          <button onClick={openPortfolio} data-testid="nav-portfolio" className="text-white/70 hover:text-white cursor-pointer">Portfolio</button>
+          <button onClick={() => openCreator()} data-testid="nav-create" className="text-white/70 hover:text-white cursor-pointer">Create</button>
         </div>
         <div className="flex items-center gap-1.5 sm:gap-2 ml-auto md:ml-0 shrink-0 min-w-0">
           <NotificationBell />
