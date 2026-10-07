@@ -1,187 +1,300 @@
 // Dev-only browser E2E (Playwright, headless Chromium). Drives the REAL web UI
-// against the REAL API (sim, in-memory PGlite) and captures a screenshot at each
-// step plus console errors and failed network requests. Requires the audit API
-// server (scripts/audit-api-server.mjs) on :4000 and `vite dev` on :5173.
-// Never part of runtime.
+// against the REAL API and captures a screenshot at every step plus console
+// errors and failed requests. Requires the stack on :4000 (API) and :5173 (vite)
+// — `pnpm dev`, or `node scripts/audit-api-server.mjs` + `pnpm --dir web dev`.
+// Never part of runtime, never part of `pnpm test`.
+//
+// CONTRACT (docs/PRIVY_AUTH_SPEC.md Amendments 2-3, docs/ONBOARDING_PLAN.md §2-§4,
+// as shipped by Agent C + the lead's fixes):
+//   * no guest mode: a logged-out visitor browses, and the word "guest" never
+//     appears in the UI;
+//   * an account whose server setup_completed is false is TAKEN OVER by the
+//     full-screen /welcome cover, starting at the REQUIRED username step with an
+//     EMPTY field (the server's wallet-derived placeholder must not count as a
+//     chosen name, and must never be pre-filled);
+//   * terms are LAST and the CTA stays disabled until the 18+/agree box is ticked;
+//   * success lands on the one congrats screen that counts up to $100.00 with
+//     mandatory play-money wording, and the header chip mirrors it and then shows
+//     the REAL balance;
+//   * a finished account arriving at /welcome by reload/bookmark/back is handed
+//     back to the app instead of being re-onboarded;
+//   * bet submission renders an HONEST disabled state until the lead's signing
+//     spike flips EMBEDDED_SIGNING_VERIFIED (web/src/lib/privy.js).
+//
+// Sessions are bootstrapped over the legacy wallet API (/api/auth/nonce +
+// /verify) and injected into sessionStorage, because Privy's email-OTP modal
+// cannot be completed headlessly. That is the same our-JWT the app hydrates from
+// after a real Privy exchange, so the UI path under test is unchanged.
 import { chromium } from 'playwright';
 import { mkdirSync } from 'node:fs';
+import nacl from 'tweetnacl';
+import bs58 from 'bs58';
 
-const WEB = 'http://localhost:5173';
-const API = 'http://localhost:4000';
-const ROOM_ID = process.argv[2] || '';
-const SHOTS = 'audit/screenshots';
+const WEB = process.env.E2E_WEB || 'http://localhost:5173';
+const API = process.env.E2E_API || 'http://localhost:4000';
+const HANDLE = `e2e_${Date.now().toString(36).slice(-6)}`; // <=20 chars, regex-safe
+const SHOTS = 'audit/screenshots-live';
 mkdirSync(SHOTS, { recursive: true });
 
-const consoleErrors = [];
-const failedRequests = [];
 let pass = 0;
 let fail = 0;
+const consoleErrors = [];
+const failedRequests = [];
+// Static-asset noise (a missing favicon) is not a React runtime error; keep the
+// "0 console errors" gate about app health.
+const isAppError = (e) => !/Failed to load resource|favicon|DevTools/i.test(e);
 function rec(name, ok, detail = '') {
   if (ok) pass++;
   else fail++;
   console.log(`${ok ? 'PASS' : 'FAIL'} | ${name}${detail ? ' | ' + detail : ''}`);
 }
-// Static-asset noise (e.g. a missing favicon 404) is a network event, not a React
-// runtime error; track it separately so the "0 console errors" gate reflects app health.
-const isAppError = (e) => !/Failed to load resource|favicon/i.test(e);
+
+// ---- legacy wallet session bootstrap (API side) ---------------------------
+async function api(path, { method = 'GET', body, token } = {}) {
+  const res = await fetch(`${API}${path}`, {
+    method,
+    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const json = await res.json().catch(() => ({}));
+  return { status: res.status, json };
+}
+
+async function mintSession() {
+  const kp = nacl.sign.keyPair();
+  const wallet = bs58.encode(kp.publicKey);
+  const sign = (msg) => bs58.encode(nacl.sign.detached(new TextEncoder().encode(msg), kp.secretKey));
+  const n = await api('/api/auth/nonce', { method: 'POST', body: { wallet } });
+  if (n.status !== 200 || !n.json.message) throw new Error(`nonce failed: ${n.status} ${JSON.stringify(n.json)}`);
+  const v = await api('/api/auth/verify', { method: 'POST', body: { wallet, signature: sign(n.json.message) } });
+  if (v.status !== 200 || !v.json.token) throw new Error(`verify failed: ${v.status} ${JSON.stringify(v.json)}`);
+  return { token: v.json.token, wallet, userId: v.json.user?.id };
+}
+
+async function preflight() {
+  const health = await api('/health').catch(() => null);
+  if (!health || health.status !== 200) throw new Error(`API not answering on ${API} — start the stack (pnpm dev).`);
+  const web = await fetch(WEB).catch(() => null);
+  if (!web || web.status >= 500) throw new Error(`vite not answering on ${WEB} — start the stack (pnpm dev).`);
+}
+
+async function pickRoom() {
+  const { json } = await api('/api/rooms');
+  const list = Array.isArray(json) ? json : [];
+  const open = list.find((r) => r.heroMarket && r.heroMarket.status === 'open') || list[0];
+  return open ? open.id : '';
+}
+
+const STEP_LABEL = '[data-testid="step-indicator"]:visible, [data-testid="step-indicator-desktop"]:visible';
+const shot = (page, name) => page.screenshot({ path: `${SHOTS}/${name}.png`, fullPage: true }).catch(() => {});
+// Pages here hold an open EventSource (/api/stream/<room>), so "networkidle"
+// NEVER settles — and upstream provider calls can take seconds. Load on
+// domcontentloaded and wait for the specific hook each checkpoint needs instead.
+async function settle(page, selector, timeout = 20000) {
+  await page.waitForSelector(selector, { timeout }).catch(() => {});
+}
+const RAIL = '[data-testid="rail-live"], [data-testid="livenow-empty"], [data-testid="livenow-collapse"]';
 
 async function main() {
+  await preflight();
+  const session = await mintSession();
+  const me0 = await api('/api/auth/me', { token: session.token });
+  console.log(`session minted: user=${session.userId} setup_completed=${me0.json.user?.setup_completed} display_name=${JSON.stringify(me0.json.user?.display_name)}`);
+
   const browser = await chromium.launch({ headless: true });
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const page = await ctx.newPage();
-
-  page.on('console', (m) => {
-    if (m.type() === 'error') consoleErrors.push(m.text());
-  });
+  page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(m.text()); });
   page.on('pageerror', (e) => consoleErrors.push('PAGEERROR ' + e.message));
-  page.on('requestfailed', (r) => failedRequests.push(`${r.method()} ${r.url()} :: ${r.failure()?.errorText}`));
-  page.on('response', (r) => {
-    if (r.status() >= 400) failedRequests.push(`HTTP ${r.status()} ${r.request().method()} ${r.url()}`);
-  });
+  page.on('response', (r) => { if (r.status() >= 400) failedRequests.push(`HTTP ${r.status()} ${r.url()}`); });
 
-  // ---- Discover ----
-  await page.goto(WEB + '/', { waitUntil: 'networkidle' });
-  const heading = await page.getByRole('heading', { name: 'Live Rooms' }).count();
-  rec('Discover renders "Live Rooms"', heading === 1);
-  await page.screenshot({ path: `${SHOTS}/01-discover-desktop.png`, fullPage: true });
-  const cards = await page.locator('main a, .rounded-card').count();
-  rec('Discover shows market cards', cards >= 1, `cards=${cards}`);
+  // ---- 1. logged-out browsing, with no trace of guest mode ----------------
+  await page.goto(`${WEB}/`, { waitUntil: 'domcontentloaded' });
+  await settle(page, RAIL);
+  rec('logged-out visitor is NOT taken over by /welcome', !page.url().includes('/welcome'), page.url());
+  const guestText = await page.evaluate(() => (/guest/i.test(document.body.innerText) ? 'FOUND' : '')).catch(() => 'ERR');
+  rec('no "guest" wording in the logged-out UI (Amendment 2)', guestText === '', `match=${guestText}`);
+  // The feed is asserted by its testids, not by heading text: the rail renders one
+  // of three HONEST states (real cards / empty / streams-failed collapse) and every
+  // one of them is a valid page, so the gate is "a rail exists and says what it is".
+  const rail = await page.getByTestId('rail-live').count();
+  const grid = await page.getByTestId('livenow-grid').count();
+  const empty = await page.getByTestId('livenow-empty').count();
+  const collapsed = await page.getByTestId('livenow-collapse').count();
+  rec('Discover renders the "Live now" rail', rail === 1, `rails=${rail}`);
+  rec('the rail shows real cards or an honest no-data state', grid + empty + collapsed >= 1, `grid=${grid} empty=${empty} collapse=${collapsed}`);
+  await shot(page, '01-logged-out-discover');
 
-  const roomId = ROOM_ID || (await page.evaluate(async () => {
-    const r = await fetch('http://localhost:4000/api/rooms');
-    const j = await r.json();
-    // Prefer a room whose hero market is still open (a resolved/closed one would
-    // not expose the OPEN badge this checkpoint looks for).
-    const open = j.find((x) => x.heroMarket && x.heroMarket.status === 'open');
-    return (open || j[0]).id;
-  }));
+  // ---- 2. the takeover: session whose setup is incomplete ------------------
+  await page.addInitScript((tok) => window.sessionStorage.setItem('liveedge_token', tok), session.token);
+  await page.goto(`${WEB}/`, { waitUntil: 'domcontentloaded' });
+  await page.waitForURL('**/welcome', { timeout: 15000 }).catch(() => {});
+  rec('unfinished account is taken over by the /welcome cover', page.url().includes('/welcome'), page.url());
 
-  // ---- Room (F-002 infinite-render checkpoint) ----
-  const errorsBeforeRoom = consoleErrors.length;
-  await page.goto(`${WEB}/room/${roomId}`, { waitUntil: 'networkidle' });
-  const yesBtn = page.getByRole('button', { name: 'YES', exact: true });
-  await yesBtn.first().waitFor({ timeout: 8000 });
-  // Let SSE odds + several render passes happen before sampling the error count.
-  await page.waitForTimeout(3000);
-  const roomNewErrors = consoleErrors.slice(errorsBeforeRoom).filter(isAppError);
-  const updateDepth = roomNewErrors.filter((e) => /Maximum update depth exceeded/i.test(e)).length;
-  rec('F-002: 0 app console errors on Room (was 22 in audit)', roomNewErrors.length === 0, `room-new-errors=${roomNewErrors.length} max-update-depth=${updateDepth}`);
-  const openBadge = await page.getByText('open', { exact: true }).count();
-  rec('Room shows the OPEN market (B3)', openBadge >= 1, `badges=${openBadge}`);
-  const closedText = await page.getByText('closed', { exact: true }).count();
-  rec('Room open market shows no stray "closed" (B4)', closedText === 0, `closed-count=${closedText}`);
-  await page.screenshot({ path: `${SHOTS}/02-room-desktop.png`, fullPage: true });
+  // Step 1 is REQUIRED: the server-stored wallet placeholder must NOT be treated
+  // as a chosen username, and must NOT pre-fill the field. (The label is rendered
+  // twice in the DOM — mobile strip + desktop rail — so only the VISIBLE one
+  // counts; asserting on both would be a false failure.)
+  await page.getByTestId('welcome-username').waitFor({ timeout: 8000 });
+  const label = await page.locator(STEP_LABEL).first().innerText().catch(() => '');
+  const prefill = await page.getByTestId('welcome-username').inputValue();
+  rec('resume starts at the REQUIRED username step', /Step 1 of 3/.test(label), `label=${JSON.stringify(label)}`);
+  rec('username field is empty (placeholder not pre-filled)', prefill === '', `value=${JSON.stringify(prefill)}`);
+  await shot(page, '02-step1-username');
 
-  // ---- Sign in (F-005 toast). Guest sign-in now redirects to /portfolio. ----
-  await page.locator('nav').getByRole('button', { name: 'Continue as guest' }).click();
-  await page.waitForURL('**/portfolio', { timeout: 8000 });
-  await page.getByRole('button', { name: 'Sign out' }).waitFor({ timeout: 8000 });
-  const signInToast = await page.getByText(/Signed in as demo wallet/).count();
-  rec('F-005 sign-in toast visible', signInToast >= 1, `matches=${signInToast}`);
-  await page.screenshot({ path: `${SHOTS}/03-signed-in.png` });
+  // ---- 3. inline validation before the required field is valid ------------
+  await page.getByTestId('welcome-username').fill('a b');
+  await page.getByTestId('welcome-username').blur();
+  const errVisible = await page.getByTestId('username-error').count();
+  const ctaDisabled = await page.getByTestId('welcome-continue-1').isDisabled().catch(() => false);
+  rec('invalid username shows the inline error', errVisible === 1);
+  rec('Continue stays disabled while the username is invalid', ctaDisabled === true);
+  await page.getByTestId('welcome-username').fill(HANDLE);
+  await page.getByTestId('welcome-continue-1').click();
 
-  // ---- Trade on the seeded room (F-005 toast) — return to the room first ----
-  await page.goto(`${WEB}/room/${roomId}`, { waitUntil: 'networkidle' });
-  await yesBtn.first().waitFor({ timeout: 8000 });
-  await yesBtn.first().click();
-  const confirm = page.getByRole('button', { name: /Confirm/ });
-  await confirm.waitFor({ timeout: 6000 });
-  await page.getByRole('button', { name: '$10' }).click();
-  await page.screenshot({ path: `${SHOTS}/04-tradesheet.png` });
-  await confirm.click();
-  const tradeToastOk = await page.getByText(/Order confirmed:/).waitFor({ timeout: 6000 }).then(() => true).catch(() => false);
-  rec('F-005 trade-confirm toast visible', tradeToastOk);
-  await page.waitForTimeout(1500);
-  await page.screenshot({ path: `${SHOTS}/05-trade-after.png`, fullPage: true });
+  // ---- 4. interests (step 2) ----------------------------------------------
+  await page.getByTestId('welcome-continue-2').waitFor({ timeout: 6000 });
+  const chip = page.getByTestId('interest-trading');
+  await chip.first().click();
+  const pressed = await chip.first().getAttribute('aria-pressed');
+  rec('interest chip reports its selected state', pressed === 'true', `aria-pressed=${pressed}`);
+  await shot(page, '03-step2-interests');
+  await page.getByTestId('welcome-continue-2').click();
 
-  // ---- Creator flow: create a room+market we own, buy, resolve -> a claimable win ----
-  const claimRoomId = await page.evaluate(async (api) => {
-    const tok = globalThis.sessionStorage.getItem('liveedge_token');
-    const r = await fetch(`${api}/api/rooms`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tok}` },
-      body: JSON.stringify({ title: 'Claim E2E Room', videoUrl: '' }),
-    });
-    const j = await r.json();
-    return j.id;
-  }, API);
-  rec('Setup: creator opened an owned room', !!claimRoomId, `roomId=${claimRoomId}`);
+  // ---- 5. terms LAST, CTA gated by the checkbox ---------------------------
+  await page.getByTestId('welcome-terms-checkbox').waitFor({ timeout: 6000 });
+  const createDisabledBefore = await page.getByTestId('welcome-create').isDisabled().catch(() => true);
+  rec('"Create my account" is disabled before the Terms are accepted', createDisabledBefore === true);
+  const legal = await page.getByTestId('welcome-legal-link').count();
+  rec('the Terms paragraph links to the full /legal text', legal === 1);
+  await shot(page, '04-step3-terms-unticked');
+  await page.getByTestId('welcome-terms-checkbox').check();
+  await page.getByTestId('welcome-create').click();
 
-  await page.goto(`${WEB}/creator/${claimRoomId}`, { waitUntil: 'networkidle' });
-  // F-010: creation is now a two-step preview -> confirm (the fee is quoted, then paid).
-  await page.getByRole('button', { name: /Preview creation fee/ }).click();
-  await page.getByTestId('fee-preview').waitFor({ timeout: 6000 });
-  await page.getByTestId('confirm-create').click();
-  const createToastOk = await page.getByText(/Market created!/).waitFor({ timeout: 6000 }).then(() => true).catch(() => false);
-  rec('F-005 market-creation toast visible', createToastOk);
+  // ---- 6. the funded congrats moment --------------------------------------
+  await page.getByTestId('welcome-congrats').waitFor({ timeout: 8000 });
+  // rAF can be suspended in a headless/background tab: the contract is that the
+  // promise LANDS on $100.00, not that every eased frame is observed.
+  let frame = '';
+  for (let i = 0; i < 12; i++) {
+    frame = await page.getByTestId('congrats-countup').innerText().catch(() => '');
+    if (frame.trim() === '$100.00') break;
+    await page.waitForTimeout(400);
+  }
+  rec('count-up lands on the promised $100.00', frame.trim() === '$100.00', `final=${JSON.stringify(frame)}`);
+  const body = await page.evaluate(() => document.body.innerText);
+  rec('congrats states the funded amount in play money', /funded with \$100 in play money/i.test(body));
+  rec('play-money wording is shown next to the amount', /not real money/i.test(body));
+  await shot(page, '05-congrats');
+
+  // ---- 7. into the app, and the header chip hands back to the real number --
+  await page.getByTestId('first-prediction-cta').click();
+  await settle(page, '[data-testid="header-balance"]', 8000);
+  let chipText = '';
+  for (let i = 0; i < 12; i++) {
+    chipText = await page.getByTestId('header-balance').innerText().catch(() => '');
+    if (/\$100\.00/.test(chipText)) break;
+    await page.waitForTimeout(400);
+  }
+  rec('header chip settles on the real balance', /\$100\.00/.test(chipText), `chip=${JSON.stringify(chipText)}`);
+  // The tuning note is a ONE-SHOT channel consumed by Discover's mount, so a
+  // single snapshot can miss it. Poll and remember whether it EVER appeared —
+  // that, not "is it on screen right now", is the contract under test.
+  let tunedSeen = false;
+  let tunedProbe = {};
+  for (let i = 0; i < 20; i++) {
+    tunedProbe = await page.evaluate(() => ({
+      path: location.pathname,
+      note: (document.querySelector('[data-testid="livenow-note"]') || {}).innerText || '',
+      key: window.sessionStorage.getItem('liveedge_tuned_for') || '',
+    }));
+    if (tunedProbe.note && tunedProbe.note.includes(`Tuned for ${HANDLE}`)) { tunedSeen = true; break; }
+    await page.waitForTimeout(250);
+  }
+  rec('one-shot "Tuned for <name>" note appears after the tuning', tunedSeen, `probe=${JSON.stringify(tunedProbe)}`);
+
+  // ---- 8. a finished account must not be re-onboarded ----------------------
+  await page.goto(`${WEB}/welcome`, { waitUntil: 'domcontentloaded' });
+  await settle(page, RAIL, 8000);
   await page.waitForTimeout(1200);
+  rec('a completed account reloading /welcome is handed back to the app', !page.url().includes('/welcome'), page.url());
+  const stepsAgain = await page.locator(STEP_LABEL).count();
+  rec('no congrats/re-onboarding flash for a finished account', stepsAgain === 0, `visible-step-labels=${stepsAgain}`);
+  await shot(page, '06-back-to-app');
 
-  // Buy YES $10 on our own market (navigated to /room/:id by onCreated).
-  await page.getByRole('button', { name: 'YES', exact: true }).first().waitFor({ timeout: 8000 });
-  await page.getByRole('button', { name: 'YES', exact: true }).first().click();
-  const confirm2 = page.getByRole('button', { name: /Confirm/ });
-  await confirm2.waitFor({ timeout: 6000 });
-  await page.getByRole('button', { name: '$10' }).click();
-  await confirm2.click();
-  await page.waitForTimeout(1500);
-
-  // Resolve YES as creator.
-  await page.goto(`${WEB}/creator/${claimRoomId}`, { waitUntil: 'networkidle' });
-  await page.getByRole('button', { name: 'Resolve', exact: true }).click();
-  await page.getByText(/Resolved/).waitFor({ timeout: 6000 }).catch(() => {});
-  await page.waitForTimeout(800);
-  await page.screenshot({ path: `${SHOTS}/06-resolved.png`, fullPage: true });
-
-  // ---- Claim via the real Portfolio button (F-003) ----
-  await page.goto(`${WEB}/portfolio`, { waitUntil: 'networkidle' });
-  await page.getByRole('heading', { name: 'Portfolio' }).waitFor({ timeout: 6000 });
-  const balBefore = Number(String(await page.locator('.num').first().textContent()).replace(/[^0-9.]/g, ''));
-  const claimBtn = page.getByRole('button', { name: /Claim \$/ }).first();
-  const hasClaim = await claimBtn.count();
-  rec('F-003 UI exposes a Claim button for the resolved win', hasClaim >= 1, `claim-buttons=${hasClaim}`);
-  await claimBtn.click();
-  const claimToastOk = await page.getByText(/Claimed! \+\$/).waitFor({ timeout: 6000 }).then(() => true).catch(() => false);
-  rec('F-003 + F-005 claim succeeds with success toast', claimToastOk);
+  // ---- 9. congrats and the tuning note never repeat ------------------------
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await settle(page, RAIL, 8000);
   await page.waitForTimeout(1200);
-  const balAfter = Number(String(await page.locator('.num').first().textContent()).replace(/[^0-9.]/g, ''));
-  rec('F-003 claim increases the balance', balAfter > balBefore, `balance ${balBefore} -> ${balAfter}`);
-  await page.screenshot({ path: `${SHOTS}/07-portfolio-claimed.png`, fullPage: true });
+  const congratsAgain = await page.getByTestId('welcome-congrats').count();
+  const tunedAgain = await page.evaluate(() => document.body.innerText.includes('Tuned for')).catch(() => false);
+  rec('the funded congrats moment does not repeat on reload', congratsAgain === 0, `congrats=${congratsAgain}`);
+  rec('the tuning note is consumed once', tunedAgain === false, `tuned-on-reload=${tunedAgain}`);
 
-  // ---- Faucet toast (F-005) ----
-  await page.getByRole('button', { name: /Faucet/ }).click();
-  const faucetToastOk = await page.getByText(/Faucet: \+\$100 added/).waitFor({ timeout: 6000 }).then(() => true).catch(() => false);
-  rec('F-005 faucet success toast visible', faucetToastOk);
+  // ---- 10. betting shows the honest, pre-launch state ----------------------
+  const roomId = (await pickRoom()) || process.argv[2] || '';
+  if (roomId) {
+    // Desktop first: the sticky pill is md:hidden BY DESIGN (mobile thumb zone), so
+    // the desktop path is the in-panel YES/NO buttons. Both go through the same
+    // handleTrade login gate and the same honest signing-disabled sheet.
+    await page.goto(`${WEB}/room/${roomId}`, { waitUntil: 'domcontentloaded' });
+    await settle(page, '[data-testid="bet-pill"], [data-testid="in-room-create"]');
+    const pillHiddenOnDesktop = await page.locator('[data-testid="bet-pill"]:visible').count();
+    rec('the sticky bet pill stays mobile-only on a desktop viewport', pillHiddenOnDesktop === 0, `visible-pills=${pillHiddenOnDesktop}`);
+    await page.getByRole('button', { name: 'YES', exact: true }).first().click().catch(() => {});
+    const disabledNote = await page.getByTestId('bet-signing-disabled-note').count();
+    const openNote = await page.getByTestId('bet-signing-open').count();
+    const claimedSuccess = await page.getByText(/Order confirmed|Bet placed/i).count();
+    rec('the trade sheet renders EXACTLY ONE signing state', disabledNote + openNote === 1, `disabled=${disabledNote} open=${openNote}`);
+    rec('nothing pretends a bet was placed', claimedSuccess === 0, `fake-success=${claimedSuccess}`);
+    if (disabledNote === 1) {
+      const sheetText = await page.getByTestId('bet-signing-disabled-note').innerText();
+      rec('the disabled state says signing is not yet available', /not yet available/i.test(sheetText), JSON.stringify(sheetText.split('\n')[0]));
+    } else if (openNote === 1) {
+      rec('signing reports OPEN — the spike has flipped EMBEDDED_SIGNING_VERIFIED', true, 'bet-signing-open present');
+    } else {
+      rec('NEITHER signing state rendered — the sheet did not open', false, 'check the bet entry points');
+    }
+    await shot(page, '07-bet-signing-state-desktop');
 
-  // ---- Mobile pass ----
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto(WEB + '/', { waitUntil: 'networkidle' });
-  await page.screenshot({ path: `${SHOTS}/08-discover-mobile.png`, fullPage: true });
-  await page.goto(`${WEB}/room/${roomId}`, { waitUntil: 'networkidle' });
-  await page.screenshot({ path: `${SHOTS}/09-room-mobile.png`, fullPage: true });
-  rec('Mobile width renders discover + room', true);
+    // Mobile viewport: the pill is the entry point, and it must open the SAME sheet.
+    const mctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    const mpage = await mctx.newPage();
+    await mpage.addInitScript((tok) => window.sessionStorage.setItem('liveedge_token', tok), session.token);
+    await mpage.goto(`${WEB}/room/${roomId}`, { waitUntil: 'domcontentloaded' });
+    await settle(mpage, '[data-testid="bet-pill"]');
+    await mpage.waitForTimeout(800);
+    const pillVisible = await mpage.locator('[data-testid="bet-pill"]:visible').count();
+    rec('the sticky bet pill is visible in the mobile thumb zone', pillVisible === 1, `visible-pills=${pillVisible}`);
+    await mpage.getByTestId('bet-pill-yes').click().catch(() => {});
+    const mDisabled = await mpage.getByTestId('bet-signing-disabled-note').count();
+    const mOpen = await mpage.getByTestId('bet-signing-open').count();
+    rec('the pill opens the same honest signing state (mobile)', mDisabled + mOpen === 1, `disabled=${mDisabled} open=${mOpen}`);
+    const tabs = await mpage.locator('[data-testid^="tab-"]:visible').count();
+    rec('4-tab mobile nav renders', tabs === 4, `visible-tabs=${tabs}`);
+    await mpage.screenshot({ path: `${SHOTS}/08-mobile-room-betsheet.png`, fullPage: true }).catch(() => {});
+    await mctx.close();
+  } else {
+    rec('room under test exists', false, 'no rooms returned from /api/rooms');
+  }
 
-  await page.goto(`${WEB}/about`, { waitUntil: 'networkidle' });
-  await page.screenshot({ path: `${SHOTS}/10-about.png`, fullPage: true });
+  // ---- 11. server truth after the UI flow ----------------------------------
+  const me1 = await api('/api/auth/me', { token: session.token });
+  rec('server recorded the chosen username', me1.json.user?.display_name === HANDLE, `name=${me1.json.user?.display_name}`);
+  rec('server marked setup complete', me1.json.user?.setup_completed === true, `setup_completed=${me1.json.user?.setup_completed}`);
+
+  // ---- 12. clean console ---------------------------------------------------
+  const appErrors = consoleErrors.filter(isAppError);
+  rec('0 app console errors across the whole flow', appErrors.length === 0, `errors=${appErrors.slice(0, 3).join(' || ')}`);
+  const api4xx = failedRequests.filter((r) => !/favicon|\.png|\.ico/i.test(r));
+  rec('no failed API requests', api4xx.length === 0, `failed=${api4xx.slice(0, 3).join(' || ')}`);
 
   await browser.close();
-
-  const appErrors = consoleErrors.filter(isAppError);
-  console.log('\n# App console errors (total): ' + appErrors.length);
-  appErrors.slice(0, 15).forEach((e) => console.log('  - ' + e));
-  const maxDepthTotal = appErrors.filter((e) => /Maximum update depth exceeded/i.test(e)).length;
-  console.log('# "Maximum update depth exceeded" occurrences: ' + maxDepthTotal + ' (audit before = 22)');
-  console.log('# Failed/4xx network: ' + failedRequests.length);
-  [...new Set(failedRequests)].slice(0, 15).forEach((e) => console.log('  - ' + e));
-
-  // Global gate: no React runtime errors anywhere in the run.
-  rec('Whole run has 0 app console errors', appErrors.length === 0, `count=${appErrors.length}`);
-  rec('Whole run has 0 "Maximum update depth exceeded"', maxDepthTotal === 0);
-
-  console.log(`\n# BROWSER TOTAL ${pass + fail} | PASS ${pass} | FAIL ${fail}`);
+  console.log(`\nE2E ${fail === 0 ? 'PASSED' : 'FAILED'} | pass=${pass} fail=${fail} | user=${HANDLE}`);
   process.exit(fail === 0 ? 0 : 1);
 }
 
 main().catch((e) => {
-  console.error('BROWSER E2E crashed:', e);
-  process.exit(2);
+  console.error('E2E ERROR', e.message);
+  process.exit(1);
 });

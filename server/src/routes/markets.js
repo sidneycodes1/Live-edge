@@ -35,6 +35,27 @@ export function marketsRouter({ db, panta, hub, priceCache, notify, engine, env 
       graduated: m.graduated,
       source: m.source,
       is_seed: m.is_seed,
+      // Price provenance + freshness (Door 1 honesty): the UI MUST be able to label
+      // every rendered price 'panta_live' / 'simulated' / 'stale_panta' and show how
+      // old a Panta quote is. These come straight from the mirrored row.
+      price_source: m.price_source,
+      price_observed_at: m.price_observed_at,
+      // Panta read mirrors for a source='panta' market (null otherwise). Display /
+      // label inputs only — never a money source. The UI prefers `question` (already
+      // the top-level field) over Panta's sometimes-blank `title`.
+      panta:
+        m.source === 'panta'
+          ? {
+              market_id: m.panta_market_id,
+              phase: m.panta_phase,
+              status: m.panta_status,
+              resolved: m.panta_resolved,
+              yes_wins: m.panta_yes_wins,
+              oracle: m.panta_oracle,
+              graduated: m.panta_graduated,
+              total_volume_usdc: m.panta_total_volume_usdc != null ? Number(m.panta_total_volume_usdc) : null,
+            }
+          : null,
       bets: Number(m.bets ?? 0),
       start_time: m.start_time,
       end_time: m.end_time,
@@ -152,6 +173,21 @@ export function marketsRouter({ db, panta, hub, priceCache, notify, engine, env 
         creator_fees_claimed: m.creator_fees_claimed,
         isSeed: m.is_seed,
         source: m.source,
+        price_source: m.price_source,
+        price_observed_at: m.price_observed_at,
+        panta:
+          m.source === 'panta'
+            ? {
+                market_id: m.panta_market_id,
+                phase: m.panta_phase,
+                status: m.panta_status,
+                resolved: m.panta_resolved,
+                yes_wins: m.panta_yes_wins,
+                oracle: m.panta_oracle,
+                graduated: m.panta_graduated,
+                total_volume_usdc: m.panta_total_volume_usdc != null ? Number(m.panta_total_volume_usdc) : null,
+              }
+            : null,
         start_time: m.start_time,
         end_time: m.end_time,
         resolution_time: m.resolution_time,

@@ -47,6 +47,7 @@ export async function teardownTestEnv() {
   if (sharedApp) {
     if (sharedApp._interval) clearInterval(sharedApp._interval);
     if (sharedApp._engine && sharedApp._engine.stop) sharedApp._engine.stop();
+    if (sharedApp._pantaSync && sharedApp._pantaSync.stop) sharedApp._pantaSync.stop();
     if (sharedApp._spectator && sharedApp._spectator.stop) sharedApp._spectator.stop();
     if (sharedApp._hub) sharedApp._hub.stop();
   }
@@ -64,7 +65,7 @@ export async function resetDb() {
   if (!sharedDb) throw new Error('DB not initialized - call setupTestEnv first');
   // Single TRUNCATE across all tables with RESTART IDENTITY CASCADE for cheap reset
   await sharedDb.query(
-    'TRUNCATE TABLE users, auth_nonces, rooms, markets, orders, trades, balances, positions, chat_messages, notifications, mint_events, fee_events, engine_budget, live_pins RESTART IDENTITY CASCADE',
+    'TRUNCATE TABLE users, auth_nonces, rooms, markets, orders, trades, balances, positions, chat_messages, notifications, mint_events, fee_events, engine_budget, live_pins, panta_markets, panta_sync_state RESTART IDENTITY CASCADE',
   );
 }
 
@@ -114,6 +115,7 @@ export async function makePrivyApp(verifyPrivyToken) {
   async function close() {
     if (app._interval) clearInterval(app._interval);
     if (app._engine && app._engine.stop) app._engine.stop();
+    if (app._pantaSync && app._pantaSync.stop) app._pantaSync.stop();
     if (app._spectator && app._spectator.stop) app._spectator.stop();
     if (app._hub) app._hub.stop();
     await new Promise((r) => server.close(r));

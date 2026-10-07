@@ -53,15 +53,29 @@ export function createLiveClient({ baseUrl, apiKey, fetchImpl = fetch }) {
 
   return {
     buildPath: withTrailingSlash,
-    async listMarkets({ category, limit } = {}) {
+    async listMarkets({ category, limit, cursor } = {}) {
+      // The list endpoint BATCHES prices into each row (yesPrice/noPrice/
+      // primaryYesPrice...), so ONE read refreshes many markets — the poller must
+      // never fan out per-market (read budget is 120 req/60s). `nextCursor` in the
+      // response drives pagination; we echo it back on the next call.
       const qs = new URLSearchParams();
       if (category) qs.set('category', category);
       if (limit) qs.set('limit', String(limit));
+      if (cursor) qs.set('cursor', String(cursor));
       const suffix = qs.toString() ? `?${qs}` : '';
       return request(`/markets/${suffix}`);
     },
     async getMarket(id) {
       return request(`/markets/${id}/`);
+    },
+    // Real trade tape for one market (Phase 5's optional Activity tab). READ-ONLY;
+    // the poller never depends on it, so an unexpected shape just yields [].
+    async marketTrades(id, { limit, cursor } = {}) {
+      const qs = new URLSearchParams();
+      if (limit) qs.set('limit', String(limit));
+      if (cursor) qs.set('cursor', String(cursor));
+      const suffix = qs.toString() ? `?${qs}` : '';
+      return request(`/markets/${id}/trades/${suffix}`);
     },
     async quoteCreate(input) {
       const body = {

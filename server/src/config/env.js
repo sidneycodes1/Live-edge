@@ -88,6 +88,25 @@ const schema = z.object({
   // a tracked file or test fixture.
   PRIVY_APP_ID: z.string().optional(),
   PRIVY_APP_SECRET: z.string().optional(),
+  // Panta real-time integration (Door 1: real catalog/prices/outcomes + Panta's
+  // settlement LOGIC, run against our SIMULATED $100 ledger — never the chain).
+  // The whole feature is OFF unless the operator explicitly flips it on AND a
+  // server-only PANTA_API_KEY is present, so an accidental boot can never start
+  // polling Panta or spend a mainnet key. Everything degrades honestly: an
+  // unreachable upstream keeps the last-known price and never fabricates one
+  // (ToU §5). PANTA_API_KEY stays server-only — it is NEVER forwarded to the web
+  // bundle (only VITE_* vars reach the browser). See services/pantaSync.js.
+  PANTA_REALTIME_ENABLED: z.enum(['true', 'false']).optional(),
+  // Poll cadence for the single process-wide Panta read (list endpoint batches many
+  // markets per call; the read budget is 120 req/60s, so this must stay coarse).
+  PANTA_POLL_INTERVAL_MS: z.coerce.number().min(1000).default(15000),
+  // A mirrored Panta price older than this is honestly relabeled 'stale_panta' (the
+  // UI shows "Updated Xs ago / Stale") rather than presented as a live quote.
+  PANTA_PRICE_STALE_AFTER_MS: z.coerce.number().min(1000).default(60000),
+  // Bounded band (basis points, measured from the flat 0.5 mid) for OUR OWN
+  // simulated price movement where a Panta market has no live price. Clamps the
+  // drift so a simulated number can never masquerade as a real market signal.
+  SIM_DRIFT_MAX_BPS: z.coerce.number().min(0).max(10000).default(2000),
 });
 
 export function loadEnv(raw = process.env) {
@@ -172,6 +191,15 @@ export function loadEnv(raw = process.env) {
   if (!privyEnabled) {
     warnings.push('PRIVY_APP_ID/PRIVY_APP_SECRET missing → Privy session auth disabled (POST /auth/privy/session returns 503; guest + wallet sign-in unaffected)');
   }
+  // Panta real-time integration gate (Door 1). Enabled ONLY when the operator
+  // explicitly turns it on AND a server-only PANTA_API_KEY exists — the same
+  // creds-derived degrade as every other provider. Off ⇒ the poller never starts,
+  // markets keep serving sim/simulated prices, and NOTHING is fabricated. A stray
+  // 'true' with no key is a startup warning, never a crash or a live poll.
+  const pantaRealtimeEnabled = env.PANTA_REALTIME_ENABLED === 'true' && Boolean(env.PANTA_API_KEY);
+  if (env.PANTA_REALTIME_ENABLED === 'true' && !env.PANTA_API_KEY) {
+    warnings.push('PANTA_REALTIME_ENABLED=true but PANTA_API_KEY missing → Panta real-time sync disabled (markets stay simulated, never fabricated)');
+  }
   // Loud-but-non-fatal signals so an operator knows which providers will be silent.
   if (!kickEnabled) warnings.push('KICK_CLIENT_ID/KICK_CLIENT_SECRET missing → Kick contributes no live channels');
   if (!youtubeEnabled) warnings.push('YOUTUBE_API_KEY missing → YouTube contributes no live channels');
@@ -195,6 +223,7 @@ export function loadEnv(raw = process.env) {
     footballApiEnabled,
     geminiEnabled,
     privyEnabled,
+    pantaRealtimeEnabled,
     simBetWindowMin,
     warnings,
   };

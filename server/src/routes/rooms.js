@@ -56,6 +56,20 @@ export function roomsRouter({ db, hub, twitch }) {
                 image_url: hero.image_url,
                 volume: Number(hero.volume),
                 end_time: hero.end_time,
+                // Price provenance + Panta mirrors (Door 1 honesty labels). The
+                // Discover card renders a source chip from these.
+                source: hero.source,
+                price_source: hero.price_source,
+                price_observed_at: hero.price_observed_at,
+                panta:
+                  hero.source === 'panta'
+                    ? {
+                        phase: hero.panta_phase,
+                        status: hero.panta_status,
+                        resolved: hero.panta_resolved,
+                        total_volume_usdc: hero.panta_total_volume_usdc != null ? Number(hero.panta_total_volume_usdc) : null,
+                      }
+                    : null,
               }
             : null,
         });
@@ -112,6 +126,22 @@ export function roomsRouter({ db, hub, twitch }) {
           graduated: m.graduated,
           creator_fees_accrued: Number(m.creator_fees_accrued),
           isSeed: m.is_seed,
+          source: m.source,
+          price_source: m.price_source,
+          price_observed_at: m.price_observed_at,
+          panta:
+            m.source === 'panta'
+              ? {
+                  market_id: m.panta_market_id,
+                  phase: m.panta_phase,
+                  status: m.panta_status,
+                  resolved: m.panta_resolved,
+                  yes_wins: m.panta_yes_wins,
+                  oracle: m.panta_oracle,
+                  graduated: m.panta_graduated,
+                  total_volume_usdc: m.panta_total_volume_usdc != null ? Number(m.panta_total_volume_usdc) : null,
+                }
+              : null,
           end_time: m.end_time,
           resolution_time: m.resolution_time,
         })),

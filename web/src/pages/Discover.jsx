@@ -15,6 +15,8 @@ import LiveNow from '../components/LiveNow.jsx';
 import Rail from '../components/Rail.jsx';
 import OddsBar from '../components/OddsBar.jsx';
 import MoneyChip from '../components/MoneyChip.jsx';
+import MarketSourceChip from '../components/MarketSourceChip.jsx';
+import PoweredByPanta from '../components/PoweredByPanta.jsx';
 import Skeleton from '../components/Skeleton.jsx';
 import WakeServer from '../components/WakeServer.jsx';
 import { IconFlame, IconClock, IconTrending } from '../components/Icons.jsx';
@@ -240,12 +242,16 @@ export default function Discover() {
           <div className={`grid ${featuredThumb ? 'md:grid-cols-2' : ''}`}>
             <div className="order-2 md:order-1 p-5 flex flex-col justify-center">
               <span className="text-[11px] uppercase tracking-wide text-live font-bold">Featured · live now</span>
-              <h3 className="font-heading font-bold text-2xl mt-1.5 leading-tight line-clamp-3">{featured.heroMarket.question}</h3>
+              <div className="flex items-center gap-2 mt-1.5">
+                <h3 className="font-heading font-bold text-2xl leading-tight line-clamp-3">{featured.heroMarket.question}</h3>
+                <MarketSourceChip priceSource={featured.heroMarket.price_source} observedAt={featured.heroMarket.price_observed_at} className="shrink-0" />
+              </div>
               <div className="mt-4"><OddsBar yesPrice={featured.heroMarket.yesPrice} noPrice={featured.heroMarket.noPrice} /></div>
               <div className="flex items-center gap-3 mt-3 text-xs text-white/55">
                 <MoneyChip />
                 <span className="num">{Math.round((featured.heroMarket.volume || 0) / 10)} betting</span>
                 <span className="truncate">{featured.owner?.displayName}</span>
+                {featured.heroMarket.source === 'panta' && <PoweredByPanta className="ml-auto" />}
               </div>
             </div>
             {featuredThumb && (

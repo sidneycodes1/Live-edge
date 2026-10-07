@@ -98,12 +98,16 @@ export function ordersRouter({ db, panta, hub }) {
         await db.query(`insert into chat_messages(room_id, user_id, kind, body) values($1,$2,'trade',$3)`, [roomId, req.user.id, body]);
       }
       if (hub && roomId) {
-        const { rows: mRows2 } = await db.query('select yes_price, no_price, volume from markets where id=$1', [trade.market_id || market.id]);
+        const { rows: mRows2 } = await db.query('select yes_price, no_price, volume, price_source, price_observed_at from markets where id=$1', [trade.market_id || market.id]);
         const m2 = mRows2[0];
         if (m2) {
-          hub.broadcast(roomId, 'odds', { marketId: trade.market_id || market.id, yesPrice: Number(m2.yes_price), noPrice: Number(m2.no_price), volume: Number(m2.volume), ts: new Date().toISOString() });
+          // odds fans out WITH its provenance so a client can never render our
+          // simulated movement as if it were a live Panta quote (ToU §5 honesty).
+          hub.broadcast(roomId, 'odds', { marketId: trade.market_id || market.id, yesPrice: Number(m2.yes_price), noPrice: Number(m2.no_price), volume: Number(m2.volume), priceSource: m2.price_source, observedAt: m2.price_observed_at, ts: new Date().toISOString() });
         }
-        hub.broadcast(roomId, 'trade', { name, side: trade.side, amount: Number(trade.amount) });
+        // First-class trade tape event (useSSE already listens for 'trade'); labeled
+        // 'simulated' because on LiveEdge every bet is play-money.
+        hub.broadcast(roomId, 'trade', { name, side: trade.side, amount: Number(trade.amount), priceSource: 'simulated', ts: new Date().toISOString() });
         hub.broadcast(roomId, 'chat', { kind: 'trade', body, name });
       }
       res.json({ trade, market });

@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import OddsBar from './OddsBar.jsx';
 import MoneyChip from './MoneyChip.jsx';
+import MarketSourceChip from './MarketSourceChip.jsx';
+import PoweredByPanta from './PoweredByPanta.jsx';
 import { countdownPill, startCountdownTick } from '../lib/countdown.js';
 import { marketThumb } from '../lib/live-now.js';
 
@@ -53,9 +55,13 @@ export default function MarketCard({ room }) {
         </div>
       )}
       <div className="p-3">
-        {hero?.category && (
-          <span className="text-[10px] uppercase tracking-wide text-white/45">{hero.category}</span>
-        )}
+        <div className="flex items-center gap-2 min-w-0">
+          {hero?.category && (
+            <span className="text-[10px] uppercase tracking-wide text-white/45">{hero.category}</span>
+          )}
+          {/* Honesty label: where this price came from (Live·Panta / Stale / Simulated). */}
+          {hero && <MarketSourceChip priceSource={hero.price_source} observedAt={hero.price_observed_at} className="ml-auto shrink-0" />}
+        </div>
         <h3 className="font-heading font-bold text-[15px] leading-snug line-clamp-2 mt-0.5">{headline}</h3>
 
         {showStream && (
@@ -81,7 +87,9 @@ export default function MarketCard({ room }) {
         <div className="flex items-center gap-2 mt-2 text-[11px] text-white/45">
           <MoneyChip />
           {hero && <span className="num">{betting} betting</span>}
-          {showPill && <span className="ml-auto num whitespace-nowrap text-live/80">{"\u23F3"} {countdown}</span>}
+          {showPill && <span className="num whitespace-nowrap text-live/80">{"\u23F3"} {countdown}</span>}
+          {/* Mandatory attribution on every Panta-sourced surface (ToU §6). */}
+          {hero?.source === 'panta' && <PoweredByPanta className="ml-auto" />}
         </div>
       </div>
     </Link>

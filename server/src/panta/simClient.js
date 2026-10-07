@@ -11,6 +11,12 @@ export function createSimClient({ db, env }) {
   const FEE_BPS = Number(env.SIM_FEE_BPS);
   const CREATOR_SHARE_BPS = Number(env.SIM_CREATOR_SHARE_BPS);
   const GRADUATION_VOLUME = Number(env.SIM_GRADUATION_VOLUME);
+  // Bounded band (basis points from the flat 0.5 mid) for OUR OWN simulated price
+  // movement on an imported Panta market that has NO live price (ToU §5 / honesty
+  // law: a handful of fake bets must never swing a "real market's" price wildly or
+  // present our movement as a Panta quote). Ignored for our own sim/sim-engine
+  // markets, which are fully simulated by nature. Defaults to 20% (2000 bps).
+  const DRIFT_MAX_BPS = Number(env.SIM_DRIFT_MAX_BPS ?? 2000);
   // Simulated market-creation fee (play money), now actually deducted on register
   // (F-010). Defaults to $1; override via SIM_CREATE_FEE.
   const CREATE_FEE = Number(env.SIM_CREATE_FEE ?? 1);
@@ -222,10 +228,33 @@ export function createSimClient({ db, env }) {
         else newQn = round6(qn + shares);
         const newYesPrice = round6(priceYes(newQy, newQn, B));
         const newNoPrice = round6(priceNo(newQy, newQn, B));
+        // Displayed-price provenance (ToU §5 honesty): our LMSR curve may only DRIVE
+        // the shown price of a market that is genuinely ours to move. On an imported
+        // Panta market a fake bet must NEVER masquerade as a real Panta quote — so we
+        // either (a) keep the live Panta price untouched (the poller owns it), or (b)
+        // allow our bounded movement but relabel it 'simulated'. Money (q_yes/q_no/
+        // volume/positions/trades) is computed identically either way, so the ledger
+        // and the conservation invariant are completely unaffected by this display rule.
+        let displayYes = newYesPrice;
+        let displayNo = newNoPrice;
+        let displayPriceSource = m.price_source || 'simulated';
+        if (m.source === 'panta') {
+          if (m.price_source === 'panta_live') {
+            displayYes = Number(m.yes_price);
+            displayNo = Number(m.no_price);
+          } else {
+            const band = DRIFT_MAX_BPS / 10000;
+            const lo = 0.5 - band;
+            const hi = 0.5 + band;
+            displayYes = round6(Math.min(hi, Math.max(lo, newYesPrice)));
+            displayNo = round6(Math.min(hi, Math.max(lo, newNoPrice)));
+            displayPriceSource = 'simulated';
+          }
+        }
         const creatorShare = bpsFee(fee, CREATOR_SHARE_BPS);
         const newVolume = round6(Number(m.volume) + Number(order.amount));
         const graduated = newVolume >= GRADUATION_VOLUME ? true : m.graduated;
-        await query(`update markets set q_yes=$1, q_no=$2, yes_price=$3, no_price=$4, volume=$5, creator_fees_accrued = creator_fees_accrued + $6, graduated=$7 where id=$8`, [newQy, newQn, newYesPrice, newNoPrice, newVolume, creatorShare, graduated, m.id]);
+        await query(`update markets set q_yes=$1, q_no=$2, yes_price=$3, no_price=$4, volume=$5, creator_fees_accrued = creator_fees_accrued + $6, graduated=$7, price_source=$9 where id=$8`, [newQy, newQn, displayYes, displayNo, newVolume, creatorShare, graduated, m.id, displayPriceSource]);
         await query(`update balances set sim_usdc = sim_usdc - $1 where user_id=$2`, [order.amount, order.user_id]);
         // positions
         const { rows: posRows } = await query('select * from positions where user_id=$1 and market_id=$2', [order.user_id, order.market_id]);

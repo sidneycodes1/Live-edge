@@ -8,6 +8,7 @@ import { createDb } from './db/index.js';
 import { migrate } from './db/migrate.js';
 import { seed } from './db/seed.js';
 import { createPanta } from './panta/index.js';
+import { createLiveClient } from './panta/liveClient.js';
 import { createTwitchClient } from './twitch/client.js';
 import { createKickClient } from './kick/client.js';
 import { createYouTubeClient } from './youtube/client.js';
@@ -16,6 +17,7 @@ import { createFootballClient } from './football/client.js';
 import { createCuratedClient } from './curated/client.js';
 import { createGeminiClient } from './gemini/client.js';
 import { createMarketEngine } from './services/marketEngine.js';
+import { createPantaSync } from './services/pantaSync.js';
 import { createAiSpectator } from './services/aiChat.js';
 import { createLiveAggregator } from './aggregator/index.js';
 import { createHub } from './services/sse.js';
@@ -136,6 +138,16 @@ export async function createApp({ env: rawEnv, db: existingDb, privyVerifier: in
   const hub = createHub();
   const notify = createNotifier(db, hub);
   const priceCache = createPriceCache({ ttlMs: 10000 });
+  // Panta real-time sync (Door 1). A DEDICATED read client (independent of the
+  // settlement `panta` mode — we READ real prices yet still BET with fake money).
+  // The poller is constructed inert unless the operator explicitly enabled it AND a
+  // server-only key exists; it self-degrades and NEVER fabricates a price.
+  const pantaRealtimeEnabled =
+    env.pantaRealtimeEnabled ?? (env.PANTA_REALTIME_ENABLED === 'true' && Boolean(env.PANTA_API_KEY));
+  const pantaReadClient = pantaRealtimeEnabled
+    ? createLiveClient({ baseUrl: env.PANTA_BASE_URL, apiKey: env.PANTA_API_KEY })
+    : null;
+  const pantaSync = createPantaSync({ db, liveClient: pantaReadClient, hub, env, enabled: pantaRealtimeEnabled });
   const logger = pino({ level: env.NODE_ENV === 'test' ? 'silent' : 'info' });
 
   const app = express();
@@ -271,6 +283,11 @@ export async function createApp({ env: rawEnv, db: existingDb, privyVerifier: in
   // process alive, and app teardown (testApp + graceful shutdown) stops it explicitly.
   if (geminiEnabled) marketEngine.start();
 
+  // Panta real-time sync: start the single process-wide poller ONLY when explicitly
+  // enabled with a server-only key, and never under test (suites drive tick() with a
+  // fake client so no live network is touched). Unref'd interval; teardown stops it.
+  if (pantaRealtimeEnabled && env.NODE_ENV !== 'test') pantaSync.start();
+
   // AI spectator chat: labeled kind='ai' lines in rooms WITHOUT a real provider
   // chat and only while a viewer is connected (see services/aiChat.js honesty
   // contract). Disable with AI_SPECTATOR=off. Unref'd interval; teardown stops it.
@@ -290,6 +307,8 @@ export async function createApp({ env: rawEnv, db: existingDb, privyVerifier: in
   app._curated = curated;
   app._gemini = gemini;
   app._engine = marketEngine;
+  app._pantaSync = pantaSync;
+  app._pantaRealtimeEnabled = pantaRealtimeEnabled;
   app._spectator = aiSpectator;
   app._interval = interval;
 

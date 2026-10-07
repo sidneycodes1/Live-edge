@@ -33,6 +33,14 @@ export function configRouter(env) {
         enabled: Boolean(env.liveSources && env.liveSources.floor),
         hlsBase: env.FLOOR_HLS_BASE || '',
       },
+      // Panta real-time integration status (Door 1). Non-secret: whether the live
+      // poller runs + the freshness window after which the UI honestly relabels a
+      // price "stale". The API key itself NEVER appears here (server-only).
+      panta: {
+        realtimeEnabled: Boolean(env.pantaRealtimeEnabled ?? (env.PANTA_REALTIME_ENABLED === 'true' && env.PANTA_API_KEY)),
+        pollIntervalMs: env.PANTA_POLL_INTERVAL_MS || 15000,
+        priceStaleAfterMs: env.PANTA_PRICE_STALE_AFTER_MS || 60000,
+      },
       sim: {
         feeBps: env.SIM_FEE_BPS,
         graduationVolume: env.SIM_GRADUATION_VOLUME,

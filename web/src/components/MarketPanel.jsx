@@ -1,5 +1,7 @@
 import OddsBar from './OddsBar.jsx';
 import MoneyChip from './MoneyChip.jsx';
+import MarketSourceChip from './MarketSourceChip.jsx';
+import PoweredByPanta from './PoweredByPanta.jsx';
 import { IconClock } from './Icons.jsx';
 import { fmtTimeLeft } from '../lib/format.js';
 
@@ -14,6 +16,8 @@ export default function MarketPanel({ market, onTrade }) {
     <div className="bg-surface rounded-card border border-white/10 p-4">
       <div className="flex items-center gap-2 text-xs">
         <span className={`px-2 py-1 rounded-full text-xs ${market.status==='open'?'bg-live text-black':'bg-white/10'}`}>{market.status}</span>
+        {/* Honesty label for the price provenance (Door 1 / ToU §5). */}
+        <MarketSourceChip priceSource={market.price_source} observedAt={market.price_observed_at} />
         {showCountdown && (
           <span data-testid="market-countdown" className="num inline-flex items-center gap-1 px-2 py-1 rounded-full bg-white/5 border border-white/10 text-white/60"><IconClock className="w-3.5 h-3.5" /> {timeLeft}</span>
         )}
@@ -32,6 +36,12 @@ export default function MarketPanel({ market, onTrade }) {
         <button onClick={()=>onTrade('no')} className="flex-1 bg-no text-white font-bold py-3 rounded-full">NO</button>
       </div>
       <p className="text-xs text-white/40 mt-2">Volume ${market.volume}</p>
+      {/* Mandatory attribution on Panta-sourced markets (ToU §6) — never dismissible. */}
+      {market.source === 'panta' && (
+        <div className="mt-2 flex justify-end">
+          <PoweredByPanta />
+        </div>
+      )}
     </div>
   );
 }
