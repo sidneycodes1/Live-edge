@@ -1,5 +1,5 @@
 import { ProviderError } from '../aggregator/errors.js';
-import { makeLiveChannel } from '../aggregator/schema.js';
+import { makeLiveChannel, bucketForCategory } from '../aggregator/schema.js';
 
 // ---------------------------------------------------------------------------
 // Kick client — the PRIMARY real-stream provider since the Twitch retirement
@@ -69,6 +69,7 @@ export function normalizeKickStream(raw) {
     channelName: slug,
     channelSlug: slug,
     category: raw.category?.name,
+    bucket: bucketForCategory(raw.category?.name),
     viewerCount: raw.viewer_count,
     startedAt: raw.started_at,
     thumbnailUrl: '',
@@ -188,6 +189,14 @@ export function createKickClient({
         slug: raw.slug || norm,
         isLive: Boolean(raw.stream?.is_live),
         displayName: raw.display_name || raw.slug || norm,
+        // Enrichment for search exact-slug resolution (real values from the Channels
+        // response; absent fields stay absent rather than fabricated).
+        broadcasterUserId: raw.broadcaster_user_id ?? raw.channel_id ?? null,
+        category: raw.category?.name ?? '',
+        title: raw.stream_title ?? '',
+        viewerCount: raw.stream?.viewer_count ?? null,
+        startedAt: raw.stream?.start_time ?? null,
+        language: raw.language ?? null,
       };
     } catch (e) {
       warn(`Kick getChannelBySlug failed → returning null (${e.code || e.name})`);

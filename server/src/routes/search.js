@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { makeLiveChannel, bucketForCategory } from '../aggregator/schema.js';
 
 // ---------------------------------------------------------------------------
 // GET /api/search?q=<term> — keyless, quota-free search over the SAME live data
@@ -34,7 +35,13 @@ function clampInt(v, lo, hi, dflt) {
   return Math.min(hi, Math.max(lo, n));
 }
 
-export function searchRouter({ aggregator, warn = (msg) => console.warn(msg) } = {}) {
+// A Kick channel handle looks like a single lowercase token (alnum + -/_), 2..40 chars.
+// Used to decide when to run an EXACT slug lookup vs. a plain contains-filter.
+function looksLikeChannelSlug(q) {
+  return /^[a-z0-9](?:[a-z0-9_-]{1,39})$/.test(String(q || ''));
+}
+
+export function searchRouter({ aggregator, kick, warn = (msg) => console.warn(msg) } = {}) {
   const r = Router();
 
   r.get('/', async (req, res) => {
@@ -65,6 +72,38 @@ export function searchRouter({ aggregator, warn = (msg) => console.warn(msg) } =
       }
     } catch (e) {
       warn(`search: football feed unavailable → skipping match results (${e && (e.code || e.message)})`);
+    }
+
+    // Exact channel-slug resolution (BUILD_CONTRACT sec 5 / Agent B): when q looks like a
+    // single Kick channel handle, ask Kick directly and include the channel ONLY if it is
+    // live right now. A non-live/unknown slug is never a hit and we never fabricate a row;
+    // the contains-filter above still covers the Kick browse list.
+    try {
+      if (kick && typeof kick.getChannelBySlug === 'function' && looksLikeChannelSlug(q)) {
+        const ch = await kick.getChannelBySlug(q);
+        if (ch && ch.isLive) {
+          const hit = makeLiveChannel({
+            source: 'kick',
+            nativeId: ch.broadcasterUserId || ch.slug,
+            title: ch.title,
+            channelName: ch.displayName || ch.slug,
+            channelSlug: ch.slug,
+            category: ch.category,
+            viewerCount: ch.viewerCount,
+            startedAt: ch.startedAt,
+            thumbnailUrl: '',
+            isLive: true,
+            watchUrl: ch.slug ? 'https://kick.com/' + encodeURIComponent(ch.slug) : null,
+            language: ch.language,
+            bucket: bucketForCategory(ch.category),
+          });
+          if (!items.some((it) => it && it.id === hit.id)) {
+            items = [hit, ...items].slice(0, limit);
+          }
+        }
+      }
+    } catch (e) {
+      warn('search: kick slug lookup failed -> skipping exact hit (' + (e && (e.code || e.message)) + ')');
     }
 
     res.json({ query: q, items, football, count: items.length + football.length });

@@ -112,7 +112,10 @@ export function liveRouter({ aggregator, enabled = {}, warn = (msg) => console.w
       return;
     }
 
-    const items = agg.items || [];
+    // Kick-first product decision (BUILD_CONTRACT sec 0.4): the YouTube curated RSS fill
+    // is no longer a landing source, so drop curated rows here. Real Kick/YouTube/floor
+    // provider rows are untouched and we never fabricate a row.
+    const items = (agg.items || []).filter((it) => it && it.source !== 'curated-youtube');
     res.json({
       items,
       count: items.length,

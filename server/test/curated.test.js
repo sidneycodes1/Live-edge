@@ -346,7 +346,7 @@ describe('aggregator — curated post-merge fill (Phase 2)', () => {
       const json = await (await fetch(`http://127.0.0.1:${server.address().port}/api/live?limit=24`)).json();
       assert.deepEqual(Object.keys(json.sources), LIVE_SOURCES, 'wire keys stay kick/youtube/floor');
       assert.ok(!('curated' in json.sources), 'curated must NOT leak into the §3 sources object');
-      assert.equal(json.count, 2);
+      assert.equal(json.count, 1, 'curated rows are intentionally dropped from landing items (Kick-first, BUILD_CONTRACT sec 0.4/5); the sources-key guarantee pinned above is unchanged');
     } finally {
       await new Promise((r) => server.close(r));
     }
