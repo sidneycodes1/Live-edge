@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api.js';
 import { normalizeLive, normalizeChannel, normalizeMatch, normalizeFootballFeed } from '../lib/live.js';
-import { buildLiveNowCards, marketThumb } from '../lib/live-now.js';
+import { marketThumb } from '../lib/live-now.js';
 import { mergePinnedFirst, MAX_PINS } from '../lib/pins.js';
 import { tailorByInterests } from '../lib/tailoring.js';
 import { consumeTunedNote } from '../lib/welcome.js';
@@ -10,8 +10,14 @@ import { usePins } from '../hooks/usePins.js';
 import { useAuth } from '../hooks/useAuth.js';
 import { useAuthModal } from '../hooks/useAuthModal.jsx';
 import { countdownPill } from '../lib/countdown.js';
+import {
+  groupKickByBucket, pickTopKickChannel, ladderLabel, tileGradient, channelInitial,
+} from '../lib/landing.js';
 import MarketCard from '../components/MarketCard.jsx';
-import LiveNow from '../components/LiveNow.jsx';
+import CategorySection from '../components/CategorySection.jsx';
+import LiveCard from '../components/LiveCard.jsx';
+import KickVideo from '../components/KickVideo.jsx';
+import { liveCardHref, liveCardState } from '../components/LiveCard.jsx';
 import Rail from '../components/Rail.jsx';
 import OddsBar from '../components/OddsBar.jsx';
 import MoneyChip from '../components/MoneyChip.jsx';
@@ -19,7 +25,7 @@ import MarketSourceChip from '../components/MarketSourceChip.jsx';
 import PoweredByPanta from '../components/PoweredByPanta.jsx';
 import Skeleton from '../components/Skeleton.jsx';
 import WakeServer from '../components/WakeServer.jsx';
-import { IconFlame, IconClock, IconTrending } from '../components/Icons.jsx';
+import { IconClock, IconTrending } from '../components/Icons.jsx';
 
 // Per-visit rotation seed. A sessionStorage COUNTER (never a permanent
 // localStorage value) so consecutive visits cycle which category leads the
@@ -38,13 +44,18 @@ function nextVisitSeed() {
   return n;
 }
 
-// A playable live row is one that carries a REAL thumbnail (curated 24/7 and
-// YouTube rows do). Anything without art is dropped from the grid — we never
-// render a placeholder tile (Kick's API exposes no per-stream preview, so Kick
-// streams surface through the rail/watch pages instead). Football score cards
-// come from a SEPARATE data feed.
-const isPlayable = (c) => Boolean(c && c.source !== 'football-api' && c.thumbnailUrl);
+function fmtViewers(n) {
+  const v = Number(n) || 0;
+  if (v >= 1000) return `${(v / 1000).toFixed(v >= 10000 ? 0 : 1)}K`;
+  return String(v);
+}
 
+// Kick-first category landing (docs/BUILD_CONTRACT-browse-ui-chat.md §4/§5):
+// a hero featured Kick box + four sections — Sports = the real API-Football
+// match feed; News / IRL / Games = Kick rows filtered by their server-derived
+// `bucket`. Every tile is the honest placeholder (Kick exposes no thumbnails),
+// every empty bucket shows an honest empty state, and nothing is ever
+// backfilled from another provider.
 export default function Discover() {
   const [rooms, setRooms] = useState(null);
   const [live, setLive] = useState(null);
@@ -58,7 +69,8 @@ export default function Discover() {
   const railRef = useRef(null);
   // Captured once per visit; drives the rotating category priority.
   const [seed] = useState(nextVisitSeed);
-  // The user's pinned streams (server shelf, max 4) — they LEAD the default grid.
+  // The user's pinned streams (server shelf, max 4) — they LEAD the section
+  // their bucket falls into (mergePinnedFirst runs before the bucket split).
   const { pins, pinnedIds, toggle } = usePins();
   const [pinNote, setPinNote] = useState(null);
   // Interest tailoring reads the SIGNED-IN user's stored interests only
@@ -92,8 +104,9 @@ export default function Discover() {
     return () => clearTimeout(t);
   }, [pinNote]);
 
-  // Search is server-side and keyless (/api/search). The landing grid re-uses the
-  // SAME "Live now" rail to show matches, so a query never looks like a dead bar.
+  // Search is server-side and keyless (/api/search). An active query narrows
+  // the SAME landing sections to the matching rows (never a dead bar, never a
+  // fabricated hit — the server only returns real matches).
   const q = (params.get('q') || '').trim().toLowerCase();
   const [searchView, setSearchView] = useState(null);
   const [searchLoading, setSearchLoading] = useState(false);
@@ -105,12 +118,14 @@ export default function Discover() {
     // The timer is cleared the moment data settles, so it never needs to read
     // `loading` (which would churn this effect's dependency array).
     const t = setTimeout(() => { if (!cancelled) setWaking(true); }, 2500);
-    // Settle BOTH live sources before clearing the skeleton so the rail flips to
-    // content (or the honest empty state) once, never in two jumpy passes.
+    // Settle BOTH live sources before clearing the skeleton so the sections flip
+    // to content (or their honest empty states) once, never in two jumpy passes.
+    // The grid asks for MORE rows than the old rail (48): each section can
+    // expand to 9 across three Kick buckets, so the fetched pool needs depth.
     Promise.allSettled([
       api.listRooms().then((r) => { if (!cancelled) setRooms(r); }),
-      api.getLive(24).then((r) => { if (!cancelled) setLive(normalizeLive(r)); }),
-      api.getLiveFootball(6).then((r) => { if (!cancelled) setFootball(normalizeFootballFeed(r)); }),
+      api.getLive(48).then((r) => { if (!cancelled) setLive(normalizeLive(r)); }),
+      api.getLiveFootball(9).then((r) => { if (!cancelled) setFootball(normalizeFootballFeed(r)); }),
     ]).then(() => {
       if (cancelled) return;
       clearTimeout(t);
@@ -163,27 +178,30 @@ export default function Discover() {
 
   const all = rooms || [];
 
-  // The "Live now" cards: from search matches when a query is active, else the
-  // default playable grid + football feed. Composed & rotated by seed. Pins only
-  // lead the DEFAULT feed — a search shows exactly what was searched for.
-  const playableSource = q ? (searchView?.items || []) : (live?.items || []);
-  const footballSource = q ? (searchView?.football || []) : (football?.items || []);
-  const baseCards = buildLiveNowCards(
-    { playable: playableSource.filter(isPlayable), football: footballSource },
-    seed,
-  );
-  // Order law: PINS FIRST (mergePinnedFirst) → then interest-tailored REAL
-  // cards (tailorByInterests keeps the pinned prefix via leadCount and only
-  // re-orders existing cards — never filters, never fabricates).
-  const cards = q
-    ? baseCards
-    : tailorByInterests(mergePinnedFirst(baseCards, pins), user?.interests || [], {
+  // The landing rows. Kick rows only (the bucket sections never show other
+  // providers — §4 source table). Order law (unchanged from the old rail):
+  // PINS FIRST (mergePinnedFirst) → then interest-tailored REAL rows
+  // (tailorByInterests only re-orders, never filters, never fabricates) →
+  // THEN the bucket split, so a pinned row leads the section it belongs to.
+  // A search shows exactly what was searched for (no pins/tailoring).
+  const channelSource = q ? (searchView?.items || []) : (live?.items || []);
+  const kickRows = channelSource.filter((c) => c.source === 'kick');
+  const laidKick = q
+    ? kickRows
+    : tailorByInterests(mergePinnedFirst(kickRows, pins), user?.interests || [], {
         leadCount: Math.min(pins.length, MAX_PINS),
       });
-  // How many REAL playable streams made it into the rail. When this is 0 while
-  // football scores remain, the grid has silently collapsed — LiveNow shows an
-  // honest "streams are loading / retry" panel instead of a football-only wall (D).
-  const playableCount = cards.reduce((n, c) => n + (c.source !== 'football-api' ? 1 : 0), 0);
+  const buckets = groupKickByBucket(laidKick);
+  const footballItems = q ? (searchView?.football || []) : (football?.items || []);
+  // Hero = the top Kick row by REAL viewerCount (all-null counts → first row,
+  // and its panel simply renders no number — never a fake one).
+  const hero = pickTopKickChannel(laidKick);
+  // Never-empty ladder honesty (§1): a stale/floor grid keeps its label.
+  const ladder = q ? null : ladderLabel(live?.servedFrom);
+  // Keep the seed referenced where it still matters: the section order itself
+  // is FIXED by the contract (§4 table), so the rotation seed now only drives
+  // the legacy Live-now composition helpers; nothing reshuffles on reload.
+  void seed;
 
   // Market rails re-present the SAME rooms through honest lenses (re-sorting,
   // never fabricating). When searching, narrow them to the matching query too.
@@ -216,25 +234,111 @@ export default function Discover() {
     );
   }
 
-  const livenowLoading = q ? searchLoading : liveLoading;
+  const sectionsLoading = q ? searchLoading : liveLoading;
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-6 pb-20">
-      {/* ① LIVE NOW — the mixed, rotating grid of real broadcasts + football scores */}
       <div ref={railRef}>
-        <LiveNow
-          cards={cards}
-          loading={livenowLoading}
-          playableCount={playableCount}
-          onRetry={() => setReload((n) => n + 1)}
-          icon={<IconFlame className="w-5 h-5" />}
+        {(pinNote || tunedName) && (
+          <p className="text-xs text-live/90 mb-2" data-testid="landing-note">{pinNote || `Tuned for ${tunedName}`}</p>
+        )}
+        {q && (
+          <p className="text-xs text-white/50 mb-2" data-testid="landing-search-context">
+            Live results for “{params.get('q')}”
+          </p>
+        )}
+
+        {/* ① HERO — the top Kick stream: real player embed + honest info panel */}
+        {hero && (
+          <section className="mt-2 grid lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] gap-4 items-stretch" data-testid="hero-kick">
+            <div className="min-w-0">
+              <KickVideo channel={hero.channelSlug} />
+            </div>
+            <div className="rounded-card border border-white/10 bg-surface p-5 flex flex-col gap-3 min-w-0">
+              <div className="flex items-center gap-3 min-w-0">
+                {/* Avatar: deterministic gradient + REAL initial — never invented art. */}
+                <span
+                  aria-hidden="true"
+                  className="w-11 h-11 shrink-0 rounded-full grid place-items-center font-heading font-bold text-lg text-white/90 border border-white/15"
+                  style={{ backgroundImage: tileGradient(hero.channelSlug) }}
+                >
+                  {channelInitial(hero)}
+                </span>
+                <div className="min-w-0">
+                  <h2 className="font-heading font-bold text-lg leading-tight truncate">{hero.channelName || hero.channelSlug || 'Live on Kick'}</h2>
+                  <p className="text-xs text-white/55 truncate mt-0.5">{hero.title || 'Live stream'}</p>
+                </div>
+              </div>
+              {/* Real viewer count ONLY when the provider exposed one (§1). */}
+              {hero.viewerCount != null && (
+                <p className="text-sm text-white/70" data-testid="hero-viewers">
+                  <span className="num font-semibold">{fmtViewers(hero.viewerCount)}</span> watching now
+                </p>
+              )}
+              {/* Tags: only fields the row actually carries. */}
+              {(hero.category || (hero.bucket && hero.bucket !== 'other')) && (
+                <div className="flex flex-wrap gap-1.5" data-testid="hero-tags">
+                  {hero.category && (
+                    <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded bg-live/20 text-live">{hero.category}</span>
+                  )}
+                  {hero.bucket && hero.bucket !== 'other' && (
+                    <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded bg-white/10 text-white/70">{hero.bucket}</span>
+                  )}
+                </div>
+              )}
+              <Link
+                to={liveCardHref(hero) || '/'}
+                state={liveCardState(hero)}
+                data-testid="hero-watch-link"
+                className="mt-auto text-sm font-semibold text-live hover:underline cursor-pointer"
+              >
+                Watch on LiveEdge →
+              </Link>
+            </div>
+          </section>
+        )}
+
+        {/* Honest ladder rung (stale/floor never presented as fresh, §1). */}
+        {ladder && <p className="text-xs text-white/55 mt-4" data-testid="live-ladder-note">{ladder}</p>}
+
+        {/* ② CATEGORY SECTIONS — the four landing buckets (§4), 3-col grids */}
+        <CategorySection
+          title="Sports"
+          sectionKey="sports"
+          items={footballItems}
+          loading={sectionsLoading}
+          testid="section-sports"
           pinnedIds={pinnedIds}
           onTogglePin={handlePin}
-          note={pinNote || (tunedName ? `Tuned for ${tunedName}` : null)}
+          renderCard={(m) => <LiveCard channel={m} pinned={pinnedIds?.has(String(m.id))} onTogglePin={handlePin} />}
+        />
+        <CategorySection
+          title="News"
+          sectionKey="news"
+          items={buckets.news}
+          loading={sectionsLoading}
+          pinnedIds={pinnedIds}
+          onTogglePin={handlePin}
+        />
+        <CategorySection
+          title="IRL"
+          sectionKey="irl"
+          items={buckets.irl}
+          loading={sectionsLoading}
+          pinnedIds={pinnedIds}
+          onTogglePin={handlePin}
+        />
+        <CategorySection
+          title="Games"
+          sectionKey="games"
+          items={buckets.games}
+          loading={sectionsLoading}
+          pinnedIds={pinnedIds}
+          onTogglePin={handlePin}
         />
       </div>
 
-      {/* ② FEATURED LIVE — one hero market (real thumbnail only, else text-first) */}
+      {/* ③ FEATURED LIVE — one hero market (real thumbnail only, else text-first) */}
       {featured && (
         <Link
           to={`/room/${featured.id}`}
@@ -271,10 +375,10 @@ export default function Discover() {
         </Link>
       )}
 
-      {/* ③ TRENDING BETS */}
+      {/* ④ TRENDING BETS */}
       <Rail title="Trending bets" icon={<IconTrending className="w-5 h-5" />} rooms={trending} testid="rail-trending" />
 
-      {/* ④ CLOSING SOON */}
+      {/* ⑤ CLOSING SOON */}
       <Rail title="Closing soon" icon={<IconClock className="w-5 h-5" />} rooms={closing} testid="rail-closing" />
 
       {/* Market browse grid (the simulated markets), narrowed by an active query. */}

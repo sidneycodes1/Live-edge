@@ -102,7 +102,7 @@ function matchClock(m) {
 // Tap rule: the BUTTON box is 44×44 (effective hit-area) while the visible
 // circle stays 28px, centred inside it — corner anchors below account for the
 // 8px transparent padding so the visual lands exactly where it did before.
-function PinButton({ pinned, onTogglePin, channel, className = '' }) {
+export function PinButton({ pinned, onTogglePin, channel, className = '' }) {
   if (!onTogglePin) return null;
   return (
     <button

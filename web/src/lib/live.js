@@ -18,6 +18,12 @@ export const LIVE_SOURCES = ['kick', 'youtube', 'floor', 'curated-youtube'];
 
 const SOURCE_SET = new Set(LIVE_SOURCES);
 
+// UI routing key from docs/BUILD_CONTRACT-browse-ui-chat.md §2a/§3 — derived
+// SERVER-side (Agent B) and passed straight through here. We never re-derive
+// it on the web (single source of truth); a row without a bucket — or with an
+// unknown one — tolerantly defaults to 'other', matching the server default.
+const BUCKET_SET = new Set(['news', 'sports', 'irl', 'games', 'other']);
+
 function str(v) { return v == null ? '' : String(v); }
 function int(v) { const n = Number(v); return Number.isFinite(n) && n >= 0 ? Math.floor(n) : 0; }
 // §4 honesty: a provider that exposes NO viewer count must stay null (render
@@ -38,6 +44,7 @@ export function normalizeChannel(raw) {
     channelName: str(raw.channelName),
     channelSlug: str(raw.channelSlug),
     category: str(raw.category),
+    bucket: BUCKET_SET.has(raw.bucket) ? raw.bucket : 'other',
     viewerCount: optInt(raw.viewerCount),
     startedAt: raw.startedAt == null ? null : str(raw.startedAt),
     thumbnailUrl: str(raw.thumbnailUrl),
