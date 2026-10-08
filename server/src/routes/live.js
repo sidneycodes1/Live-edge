@@ -31,8 +31,9 @@ function servedFrom({ usedStale, usedFloor, count }) {
   return 'live';
 }
 
-// Fixed key set in ladder order so the client always sees all four sources, enabled
-// or not, real or degraded. `reason` carries the ProviderError.code (§5) ONLY while
+// Fixed key set in ladder order so the client always sees every source (Kick →
+// YouTube → Floor since the Twitch retirement), enabled or not, real or
+// degraded. `reason` carries the ProviderError.code (§5) ONLY while
 // degraded (§3), letting the UI show an honest "using last results / demo floor".
 function buildSources(enabled, sourceCounts, degraded) {
   const sources = {};

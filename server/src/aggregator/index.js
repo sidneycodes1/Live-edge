@@ -8,7 +8,7 @@ import {
   BREAKER_COOLDOWN_MS,
   BULKHEAD_LIMIT,
 } from './resilience.js';
-import { makeLiveChannel, LIVE_SOURCES } from './schema.js';
+import { LIVE_SOURCES } from './schema.js';
 
 // Landing-grid fill goal (Phase 2): curated 24/7 channels top the merged result up
 // to at least this many real cards when live providers come up short (e.g. the
@@ -21,39 +21,19 @@ const CURATED_FILL_MIN = 12;
 //  1) MERGE: call every ENABLED provider concurrently — each wrapped in
 //     bulkhead(≤3) → circuit-breaker(3→30s) → retry(1) → timeout(2.5s) — and
 //     merge the results into one LiveChannel[] in priority order
-//     (Twitch→Kick→YouTube→Floor), deduped by namespaced id, sorted by viewers.
+//     (Kick→YouTube→Floor), deduped by namespaced id, sorted by viewers.
 //     A single provider failing never affects the others (runSafe → []).
 //
 //  2) NEVER-EMPTY LADDER (only when the merge is empty — every live source came
-//     back empty/failed): Twitch→Kick→YouTube were all tried above; then serve the
+//     back empty/failed): Kick→YouTube were both tried above; then serve the
 //     last-good STALE cache; then the config-driven Floor fallback (no network).
 //     If even the floor is unconfigured we return an honest [] (and the route
 //     reports degraded) rather than fabricate a stream — real-vs-simulated honesty.
 //
-// Twitch keeps its existing normalized shape (../twitch/client.js) and is mapped
-// here, NOT modified — the aggregator is the only place the LiveChannel contract is
-// assembled for twitch, so the shipped /api/twitch/live path is untouched.
+// Twitch was retired as a provider Oct 2026 (Kick is the primary real-stream
+// source); each remaining client already returns normalized LiveChannel[]s, so
+// the contract is assembled here with no per-source mapping left.
 // ---------------------------------------------------------------------------
-
-// Map a raw twitch stream (from twitch.getTopLiveStreams) → LiveChannel.
-export function twitchToLiveChannel(s) {
-  const login = s.userLogin || '';
-  return makeLiveChannel({
-    source: 'twitch',
-    nativeId: s.id,
-    title: s.title,
-    channelName: s.userName || login,
-    channelSlug: login,
-    category: s.gameName,
-    viewerCount: s.viewerCount,
-    startedAt: s.startedAt,
-    thumbnailUrl: s.thumbnailUrl,
-    isLive: true,
-    isMature: s.isMature,
-    watchUrl: login ? `https://twitch.tv/${encodeURIComponent(login)}` : null,
-    language: s.language,
-  });
-}
 
 function dedupeSorted(items, limit) {
   const seen = new Set();
@@ -132,7 +112,6 @@ function orderFootballFixtures(items, limit) {
 }
 
 export function createLiveAggregator({
-  twitch,
   kick,
   youtube,
   floor,
@@ -153,12 +132,6 @@ export function createLiveAggregator({
   // Per-provider thunks returning LiveChannel[]. Each is guarded so it can't throw
   // out of the merge. Providers are enabled independently (flag && client present).
   const defs = [
-    {
-      name: 'twitch',
-      isOn: enabled.twitch && typeof twitch?.getTopLiveStreams === 'function',
-      // Map twitch's own shape → LiveChannel here (aggregator-owned, not twitch).
-      fetch: (limit) => twitch.getTopLiveStreams(limit).then((list) => (list || []).map(twitchToLiveChannel)),
-    },
     {
       name: 'kick',
       isOn: enabled.kick && typeof kick?.getTopLiveChannels === 'function',

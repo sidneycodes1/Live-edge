@@ -5,9 +5,8 @@ import { useSSE } from '../hooks/useSSE.js';
 import RoomFeed from '../components/RoomFeed.jsx';
 import WatchPartyPanel from '../components/WatchPartyPanel.jsx';
 import { isFootball } from '../lib/categories.js';
-import TwitchVideo from '../components/TwitchVideo.jsx';
-import TwitchChat from '../components/TwitchChat.jsx';
-import { useTwitchConfig } from '../hooks/useTwitchConfig.js';
+import KickVideo, { KickChatLinkOut } from '../components/KickVideo.jsx';
+import { useLiveConfig } from '../hooks/useLiveConfig.js';
 import MarketPanel from '../components/MarketPanel.jsx';
 import ChatFeed from '../components/ChatFeed.jsx';
 import RecentBetsTicker from '../components/RecentBetsTicker.jsx';
@@ -80,7 +79,7 @@ export default function Room() {
   const { id } = useParams();
   const { data: room, loading, setData } = useApi(() => api.getRoom(id), [id]);
   const { events, viewers, lastUpdate } = useSSE(id);
-  const { parent } = useTwitchConfig();
+  const { parent } = useLiveConfig();
   const [tradeSide, setTradeSide] = useState(null);
   const [activeMarket, setActiveMarket] = useState(null);
   const [mobileTab, setMobileTab] = useState('market'); // mobile: show the bet panel under the video first ('chat' | 'market')
@@ -127,23 +126,25 @@ export default function Room() {
 
   const refetch = () => { api.getRoom(id).then(setData); };
 
-  // ---- Twitch-backed room: REAL video + REAL chat alongside the (still simulated)
-  // market panel. Desktop: video large, market below it, chat a fixed-width sidebar
-  // (never overlapping). Mobile: video, then a Chat/Market toggle (no room for a
-  // permanent sidebar). If the channel drops, TwitchVideo shows an offline state and
-  // the market panel keeps working. ----
-  if (room.twitch_channel) {
-    const ch = room.twitch_channel;
+  // ---- Kick-backed room: REAL video + the LiveEdge market chat alongside the
+  // (still simulated) market panel. Kick has no official chat-only embed, so the
+  // sidebar carries an honest link-out to the channel's real chat plus our own
+  // room chat (never a fake provider box). Desktop: video large, market below it,
+  // chat a fixed-width sidebar (never overlapping). Mobile: video, then a
+  // Chat/Market toggle. The Kick player shows its own offline screen if the
+  // channel drops; the market panel keeps working. ----
+  if (room.kick_channel) {
+    const ch = room.kick_channel;
     return (
       <div className="max-w-6xl mx-auto px-4 py-6 pb-20">
         <LiveHeader viewers={viewers} lastUpdate={lastUpdate} />
         <h1 className="font-heading font-bold text-xl mt-2">{room.title}</h1>
         <p className="text-xs text-white/45 mt-1">
-          Real Twitch stream: <span className="text-white/70">{ch}</span> · live video &amp; chat from Twitch, simulated prediction market
+          Real Kick stream: <span className="text-white/70">{ch}</span> · live video from Kick, simulated prediction market
         </p>
         <div className="mt-4 grid md:grid-cols-[1fr_320px] gap-4">
           <div className="space-y-4 min-w-0">
-            <TwitchVideo channel={ch} parent={parent} />
+            <KickVideo channel={ch} />
             <RecentBetsTicker events={events} />
             {/* mobile-only switch between chat and market */}
             <div className="md:hidden flex gap-2">
@@ -167,8 +168,13 @@ export default function Room() {
             </div>
           </div>
           <div className={`${mobileTab === 'chat' ? 'block' : 'hidden'} md:block`}>
-            <div className="h-[420px] md:h-[calc(100vh-8rem)] md:sticky md:top-4 rounded-card overflow-hidden border border-white/10">
-              <TwitchChat channel={ch} parent={parent} />
+            <div className="h-[420px] md:h-[calc(100vh-8rem)] md:sticky md:top-4 rounded-card overflow-hidden border border-white/10 flex flex-col">
+              <div className="shrink-0 h-[150px] border-b border-white/10">
+                <KickChatLinkOut channel={ch} />
+              </div>
+              <div className="flex-1 min-h-0 overflow-y-auto">
+                <ChatFeed messages={room.chat || []} sseEvents={events} />
+              </div>
             </div>
           </div>
         </div>
@@ -181,8 +187,8 @@ export default function Room() {
   // ---- Football watch-party room (§2): NO hosted match video. A bring-your-own-feed
   // panel + our markets + the live bets ticker + chat. Triggered when the room is
   // genuinely football (Agent C's `watch_party` marker, or a football category/title)
-  // and has no bound Twitch channel (that path is above). We never embed match footage.
-  const isWatchParty = !room.twitch_channel && (room.watch_party === true || isFootball(room.heroMarket?.category) || isFootball(room.title));
+  // and has no bound Kick channel (that path is above). We never embed match footage.
+  const isWatchParty = !room.kick_channel && (room.watch_party === true || isFootball(room.heroMarket?.category) || isFootball(room.title));
   if (isWatchParty) {
     return (
       <div className="max-w-6xl mx-auto px-4 py-6 pb-20" data-testid="watch-party-room">

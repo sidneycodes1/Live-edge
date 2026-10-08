@@ -58,9 +58,9 @@ describe('mergePinnedFirst', () => {
 
 describe('pinToCard', () => {
   it('backfills authoritative id/source/title over the snapshot', () => {
-    const c = pinToCard({ stream_id: 's', source: 'twitch', title: 'Authoritative', payload: { id: 'old', source: 'x', title: 'old' } });
+    const c = pinToCard({ stream_id: 's', source: 'kick', title: 'Authoritative', payload: { id: 'old', source: 'x', title: 'old' } });
     expect(c.id).toBe('s');
-    expect(c.source).toBe('twitch');
+    expect(c.source).toBe('kick');
     expect(c.title).toBe('Authoritative');
   });
 });

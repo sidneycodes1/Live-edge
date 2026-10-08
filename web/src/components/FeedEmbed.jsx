@@ -1,15 +1,15 @@
 import { buildVideoEmbed } from '../lib/embed.js';
 import { IconExternal } from './Icons.jsx';
-import TwitchVideo from './TwitchVideo.jsx';
+import KickVideo from './KickVideo.jsx';
 import HlsVideo from './HlsVideo.jsx';
 
 // Provider-agnostic video surface for the live grid's watch rooms. It resolves a
 // LiveChannel through the embed map (§6) and then:
-//   • Twitch / YouTube  → mount the VERIFIED embed (Twitch delegates to the existing
-//     tested TwitchVideo so its data-* attrs / testids are preserved).
-//   • Kick / Livepeer   → these are NOT VERIFIED in a real browser yet, so we DO NOT
-//     rely on them in the demo path. We show the caller's fallback (the honest
-//     simulated feed) plus a real "watch on the provider" outbound link. Gating —
+//   • Kick / YouTube  → mount the VERIFIED embed (Kick delegates to the tested
+//     KickVideo iframe so its data-* attrs / testids are preserved).
+//   • Livepeer        → NOT VERIFIED in a real browser yet, so we DO NOT rely on
+//     it in the demo path. We show the caller's fallback (the honest simulated
+//     feed) plus a real "watch on the provider" outbound link. Gating —
 //     not pretending — keeps the never-empty grid from looking broken (§4).
 //   • external / none    → fallback + outbound link (if any).
 //
@@ -39,11 +39,9 @@ function ExternalPanel({ title, embed, fallback }) {
       {fallback}
       <div className="bg-surface border border-white/10 rounded-card p-4">
         <p className="text-sm text-white/70">
-          {embed.provider === 'kick'
-            ? 'Kick playback isn’t verified in our demo yet.'
-            : embed.provider === 'floor'
-              ? 'Livepeer HLS playback isn’t verified in our demo yet.'
-              : 'This feed can’t be embedded here.'}{' '}
+          {embed.provider === 'floor'
+            ? 'Livepeer HLS playback isn’t verified in our demo yet.'
+            : 'This feed can’t be embedded here.'}{' '}
           Watch it on the provider instead — the market below still works.
         </p>
         {embed.watchUrl && (
@@ -62,7 +60,7 @@ function ExternalPanel({ title, embed, fallback }) {
   );
 }
 
-const PROVIDER_NAME = { kick: 'Kick', youtube: 'YouTube', twitch: 'Twitch', floor: 'stream' };
+const PROVIDER_NAME = { kick: 'Kick', youtube: 'YouTube', floor: 'stream' };
 
 export default function FeedEmbed({ channel, parent, fallback = null }) {
   const embed = buildVideoEmbed(channel, parent);
@@ -72,8 +70,8 @@ export default function FeedEmbed({ channel, parent, fallback = null }) {
   }
 
   if (embed.kind === 'iframe' && embed.verified) {
-    if (embed.provider === 'twitch') {
-      return <TwitchVideo channel={channel.channelSlug} parent={parent} />;
+    if (embed.provider === 'kick') {
+      return <KickVideo channel={channel.channelSlug} />;
     }
     if (embed.provider === 'youtube') {
       // videoId is the last path segment of the embed URL.
@@ -82,7 +80,7 @@ export default function FeedEmbed({ channel, parent, fallback = null }) {
     }
   }
 
-  // Unverified iframe (kick), hls (floor), external, or none → gate honestly.
+  // Unverified iframe, hls (floor), external, or none → gate honestly.
   const name = PROVIDER_NAME[embed.provider] || 'stream';
   return <ExternalPanel title={`Watch on ${name}`} embed={embed} fallback={fallback} />;
 }

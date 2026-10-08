@@ -11,7 +11,7 @@ import { createYouTubeClient, normalizeYouTubeChannel } from '../src/youtube/cli
 // enrichment, so the tests below specifically prove: (a) search filtering to
 // genuinely-live items, (b) enrichment failure NEVER drops results we already
 // have, (c) no invented category (spec: numeric categoryId only → ''), and
-// (d) cache/stale/single-flight parity with the twitch/kick siblings.
+// (d) cache/stale/single-flight parity with the kick sibling.
 // -----------------------------------------------------------------------------
 
 function makeRes(body, { status = 200 } = {}) {

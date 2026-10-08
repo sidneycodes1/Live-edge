@@ -10,7 +10,7 @@ import { createContext, useContext } from 'react';
 // `creator` carries how the Create overlay should open:
 //   { roomId }            → jump straight to that room's cockpit
 //   { prefillTitle }      → "Start a room" with a written question (match CTAs)
-//   { prefillChannel }    → "Start a room" bound to a Twitch channel
+//   { prefillChannel }    → "Start a room" bound to a Kick channel
 // ---------------------------------------------------------------------------
 
 export const PanelModalContext = createContext({

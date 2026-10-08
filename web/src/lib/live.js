@@ -14,7 +14,7 @@
 // verifier rather than silently patched on either side.
 // ---------------------------------------------------------------------------
 
-export const LIVE_SOURCES = ['twitch', 'kick', 'youtube', 'floor', 'curated-youtube'];
+export const LIVE_SOURCES = ['kick', 'youtube', 'floor', 'curated-youtube'];
 
 const SOURCE_SET = new Set(LIVE_SOURCES);
 

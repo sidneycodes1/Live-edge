@@ -237,12 +237,11 @@ describe('aggregator — curated post-merge fill (Phase 2)', () => {
   it('providers come FIRST, curated APPENDS to reach ≥12 (never exceeding limit)', async () => {
     const kickItems = [live('kick', 'k1', 5000), live('kick', 'k2', 4000)];
     const agg = createLiveAggregator({
-      twitch: { getTopLiveStreams: async () => [] },
       kick: { getTopLiveChannels: async () => kickItems },
       youtube: { getTopLiveChannels: async () => [] },
       floor: { getGuaranteedChannel: () => [] },
       curated: { getChannels: async () => Array.from({ length: 10 }, (_, i) => curatedItem(`c${i}`)) },
-      enabled: { twitch: true, kick: true, youtube: true, floor: true },
+      enabled: { kick: true, youtube: true, floor: true },
       ...quiet,
     });
     const r = await agg.getChannels(24);
@@ -257,12 +256,11 @@ describe('aggregator — curated post-merge fill (Phase 2)', () => {
 
   it('curated fills the grid even when EVERY live provider returns empty (search quota dead)', async () => {
     const agg = createLiveAggregator({
-      twitch: { getTopLiveStreams: async () => [] },
       kick: { getTopLiveChannels: async () => [] },
       youtube: { getTopLiveChannels: async () => [] },
       floor: { getGuaranteedChannel: () => [] },
       curated: { getChannels: async () => Array.from({ length: 10 }, (_, i) => curatedItem(`c${i}`)) },
-      enabled: { twitch: true, kick: true, youtube: true, floor: true },
+      enabled: { kick: true, youtube: true, floor: true },
       ...quiet,
     });
     const r = await agg.getChannels(24);
@@ -274,12 +272,11 @@ describe('aggregator — curated post-merge fill (Phase 2)', () => {
   it('dedupes curated against providers BY VIDEO ID across the yt-/youtube: namespaces', async () => {
     const yt = [live('youtube', 'dup', 9000)];
     const agg = createLiveAggregator({
-      twitch: { getTopLiveStreams: async () => [] },
       youtube: { getTopLiveChannels: async () => yt },
       floor: { getGuaranteedChannel: () => [] },
       // curated repeats the same video id 'dup' plus two new ones
       curated: { getChannels: async () => [curatedItem('dup'), curatedItem('n1'), curatedItem('n2')] },
-      enabled: { twitch: true, youtube: true, floor: true },
+      enabled: { youtube: true, floor: true },
       ...quiet,
     });
     const r = await agg.getChannels(24);
@@ -291,10 +288,9 @@ describe('aggregator — curated post-merge fill (Phase 2)', () => {
 
   it('curated FAILURE never breaks the grid (degraded, floor ladder still runs)', async () => {
     const agg = createLiveAggregator({
-      twitch: { getTopLiveStreams: async () => [] },
       floor: { getTopLiveChannels: async () => [], getGuaranteedChannel: () => [live('floor', 'guar', 0)] },
       curated: { getChannels: async () => { const e = new Error('rss down'); e.code = 'NETWORK'; throw e; } },
-      enabled: { twitch: true, floor: true },
+      enabled: { floor: true },
       resilience: { retries: 0, curatedTimeoutMs: 5000 },
       ...quiet,
     });
@@ -306,10 +302,9 @@ describe('aggregator — curated post-merge fill (Phase 2)', () => {
 
   it('when NO curated client is wired, getChannels behaves exactly as before (additive-safe)', async () => {
     const agg = createLiveAggregator({
-      twitch: { getTopLiveStreams: async () => [] },
       kick: { getTopLiveChannels: async () => [live('kick', 'k1', 1)] },
       floor: { getGuaranteedChannel: () => [] },
-      enabled: { twitch: true, kick: true, floor: true },
+      enabled: { kick: true, floor: true },
       ...quiet,
     });
     const r = await agg.getChannels(24);
@@ -320,11 +315,10 @@ describe('aggregator — curated post-merge fill (Phase 2)', () => {
   it('football items NEVER enter the general grid (unchanged phase rule)', async () => {
     let footballTouched = false;
     const agg = createLiveAggregator({
-      twitch: { getTopLiveStreams: async () => [] },
       floor: { getGuaranteedChannel: () => [] },
       football: { getLiveFixtures: async () => { footballTouched = true; return { items: [{ id: 'fb-1', source: 'football-api' }], stale: false }; } },
       curated: { getChannels: async () => [curatedItem('c1')] },
-      enabled: { twitch: true, floor: true, football: true },
+      enabled: { floor: true, football: true },
       ...quiet,
     });
     const r = await agg.getChannels(24);
@@ -333,24 +327,24 @@ describe('aggregator — curated post-merge fill (Phase 2)', () => {
     assert.ok(!agg.providers.includes('football'), 'football is not a grid provider');
   });
 
-  it('§3 wire contract UNCHANGED: the HTTP `sources` object still has exactly the 4 LIVE_SOURCES keys', async () => {
+  it('§3 wire contract UNCHANGED: the HTTP `sources` object still has exactly the LIVE_SOURCES keys', async () => {
     // The aggregator records an internal `sources.curated`, but the route builds its
     // wire payload strictly from LIVE_SOURCES — so §3 consumers see no new key.
     const stub = {
       getChannels: async () => ({
         items: [{ id: 'kick:k1', source: 'kick', viewerCount: 1 }, curatedItem('c9')],
-        sources: { twitch: 0, kick: 1, youtube: 0, floor: 0, curated: 1 },
+        sources: { kick: 1, youtube: 0, floor: 0, curated: 1 },
         degraded: [{ source: 'curated', reason: 'NETWORK' }],
         usedStale: false, usedFloor: false, generatedAt: 1,
       }),
     };
     const app = express();
-    app.use('/api/live', liveRouter({ aggregator: stub, enabled: { twitch: true, kick: true, youtube: false, floor: false }, warn: () => {} }));
+    app.use('/api/live', liveRouter({ aggregator: stub, enabled: { kick: true, youtube: false, floor: false }, warn: () => {} }));
     const server = app.listen(0);
     await new Promise((r) => server.once('listening', r));
     try {
       const json = await (await fetch(`http://127.0.0.1:${server.address().port}/api/live?limit=24`)).json();
-      assert.deepEqual(Object.keys(json.sources), LIVE_SOURCES, 'wire keys stay twitch/kick/youtube/floor');
+      assert.deepEqual(Object.keys(json.sources), LIVE_SOURCES, 'wire keys stay kick/youtube/floor');
       assert.ok(!('curated' in json.sources), 'curated must NOT leak into the §3 sources object');
       assert.equal(json.count, 2);
     } finally {

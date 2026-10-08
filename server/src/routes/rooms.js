@@ -5,7 +5,7 @@ import { validate } from '../middleware/validate.js';
 import { sanitizeText } from '../services/sanitize.js';
 import { ENGINE_USER } from '../services/marketEngine.js';
 
-export function roomsRouter({ db, hub, twitch }) {
+export function roomsRouter({ db, hub, kick }) {
   const r = Router();
 
   r.get('/', async (_req, res, next) => {
@@ -32,7 +32,7 @@ export function roomsRouter({ db, hub, twitch }) {
           id: room.id,
           title: room.title,
           video_url: room.video_url,
-          twitch_channel: room.twitch_channel || null,
+          kick_channel: room.kick_channel || null,
           status: room.status,
           isSeed: room.is_seed,
           // Queryable room facts (migration 007). Surfaced so the UI can detect a
@@ -99,7 +99,7 @@ export function roomsRouter({ db, hub, twitch }) {
         id: room.id,
         title: room.title,
         video_url: room.video_url,
-        twitch_channel: room.twitch_channel || null,
+        kick_channel: room.kick_channel || null,
         status: room.status,
         isSeed: room.is_seed,
         // Queryable room facts (migration 007) — see list route. The watch-party
@@ -162,9 +162,9 @@ export function roomsRouter({ db, hub, twitch }) {
   const createSchema = z.object({
     title: z.string().min(3).max(80),
     videoUrl: z.string().url().optional().or(z.literal('')).optional(),
-    // Optional real Twitch channel login to bind to this room (Phase C/D). Stored
-    // lowercased; validated server-side at creation time (Phase D).
-    twitchChannel: z.string().min(1).max(100).optional().or(z.literal('')).optional(),
+    // Optional real Kick channel slug to bind to this room. Stored
+    // lowercased; validated server-side at creation time.
+    kickChannel: z.string().min(1).max(100).optional().or(z.literal('')).optional(),
   });
 
   r.post('/', validate(createSchema), async (req, res, next) => {
@@ -172,22 +172,22 @@ export function roomsRouter({ db, hub, twitch }) {
       if (!req.user) return res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Unauthorized' } });
       const title = sanitizeText(req.body.title);
       const videoUrl = req.body.videoUrl || null;
-      const twitchChannel = (req.body.twitchChannel || '').trim().toLowerCase() || null;
-      // Don't silently accept garbage: when Twitch is verifiable, the channel must
+      const kickChannel = (req.body.kickChannel || '').trim().toLowerCase() || null;
+      // Don't silently accept garbage: when Kick is verifiable, the channel must
       // exist (offline is fine — embeds still work). If creds are absent we can't
       // verify, so we accept but flag it (never block a demo attachment).
-      let twitchVerified = null;
-      if (twitchChannel && twitch) {
-        const v = await twitch.validateChannel(twitchChannel);
+      let kickVerified = null;
+      if (kickChannel && kick) {
+        const v = await kick.validateChannel(kickChannel);
         if (v.verifiable && !v.exists) {
-          return res.status(400).json({ error: { code: 'VALIDATION_ERROR', message: `Twitch channel '${twitchChannel}' does not exist` } });
+          return res.status(400).json({ error: { code: 'VALIDATION_ERROR', message: `Kick channel '${kickChannel}' does not exist` } });
         }
-        twitchVerified = v.verifiable;
+        kickVerified = v.verifiable;
       }
       const id = randomUUID();
-      await db.query(`insert into rooms(id, owner_id, title, video_url, twitch_channel) values($1,$2,$3,$4,$5)`, [id, req.user.id, title, videoUrl, twitchChannel]);
+      await db.query(`insert into rooms(id, owner_id, title, video_url, kick_channel) values($1,$2,$3,$4,$5)`, [id, req.user.id, title, videoUrl, kickChannel]);
       const { rows } = await db.query('select * from rooms where id=$1', [id]);
-      res.status(201).json({ ...rows[0], twitchVerified });
+      res.status(201).json({ ...rows[0], kickVerified });
     } catch (e) {
       next(e);
     }

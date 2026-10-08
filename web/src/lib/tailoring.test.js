@@ -22,8 +22,8 @@ describe('matchesInterest (REAL fields only — category/source)', () => {
   });
   it('sports matches Football + Sports buckets', () => {
     expect(matchesInterest(card('f', { source: 'football-api', category: 'Football' }), 'sports')).toBe(true);
-    expect(matchesInterest(card('s', { source: 'twitch', category: 'NFL' }), 'sports')).toBe(true);
-    expect(matchesInterest(card('g', { source: 'twitch', category: 'Gaming' }), 'sports')).toBe(false);
+    expect(matchesInterest(card('s', { source: 'kick', category: 'NFL' }), 'sports')).toBe(true);
+    expect(matchesInterest(card('g', { source: 'kick', category: 'Gaming' }), 'sports')).toBe(false);
   });
   it('streams matches real broadcast rows, never bare data rows', () => {
     expect(matchesInterest(card('y', { source: 'youtube' }), 'streams')).toBe(true);
@@ -41,7 +41,7 @@ describe('tailorByInterests', () => {
   const grid = [
     card('music', { source: 'curated-youtube', category: 'Music' }),
     card('news1', { source: 'curated-youtube', category: 'News' }),
-    card('game', { source: 'twitch', category: 'Gaming' }),
+    card('game', { source: 'kick', category: 'Gaming' }),
     card('football', { source: 'football-api', category: 'Football' }),
   ];
 

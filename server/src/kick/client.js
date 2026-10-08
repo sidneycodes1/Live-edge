@@ -2,27 +2,35 @@ import { ProviderError } from '../aggregator/errors.js';
 import { makeLiveChannel } from '../aggregator/schema.js';
 
 // ---------------------------------------------------------------------------
-// Kick client — mirrors ../twitch/client.js exactly (single-flight token +
-// cache-aside list + stale fallback + never-throws public boundary). Kick's
-// official Developer API uses the SAME client-credentials app-token flow as
-// Twitch Helix, so the shape is a near-clone with different hosts/fields.
+// Kick client — the PRIMARY real-stream provider since the Twitch retirement
+// (Oct 2026). Kick's official Developer API uses the client-credentials
+// app-token flow (single-flight token + cache-aside list + stale fallback +
+// never-throws public boundary).
 //
 // Endpoint shapes verified against the official Kick Developer docs (cited):
 //  - App Access Token (client credentials grant):
 //      POST https://id.kick.com/oauth/token
 //        body (x-www-form-urlencoded): client_id, client_secret, grant_type=client_credentials
 //        resp: { access_token, expires_in (seconds), token_type: "Bearer" }
-//      (docs.kick.com "Getting an App Access Token"; flow identical to
-//       dev.twitch.tv/docs/authentication/getting-tokens-oauth#client-credentials)
+//      (docs.kick.com "Getting an App Access Token"; standard OAuth 2.1
+//       client-credentials grant — no JWT signing / private key needed)
 //  - Get Livestreams (public, app-token auth):
 //      GET https://api.kick.com/public/v1/livestreams?limit=<1..100>&sort=viewer_count
 //        headers: Authorization: Bearer <app token>
 //        resp.data[]: broadcaster_user_id, slug, stream_title, viewer_count,
 //                     started_at, language, has_mature_content,
 //                     category { id, name }, custom_tags[]
+//  - Get Channels (public, app-token auth) — creator-entered channel validation:
+//      GET https://api.kick.com/public/v1/channels?slug=<slug>
+//        headers: Authorization: Bearer <app token>
+//        resp.data[]: broadcaster_user_id, slug, stream_title, category,
+//                     stream { is_live, viewer_count, start_time, language }
+//      Returns the channel EVEN IF offline, so "exists" and "is live" can be
+//      answered from one lookup (the basis for validateChannel).
 //
-// Like twitch/client.js this NEVER throws at the public boundary: missing creds or
-// any upstream failure degrades to [] + a warning. The secret is never logged.
+// Unlike a throwing provider client this NEVER throws at the public boundary:
+// missing creds or any upstream failure degrades to [] + a warning. The secret
+// is never logged.
 // `category` is passed through as Kick's native name (no invented taxonomy).
 // ---------------------------------------------------------------------------
 
@@ -166,9 +174,53 @@ export function createKickClient({
     return streamsInflight;
   }
 
+  // Public: never throws. Looks up ONE channel by slug via Get Channels, which
+  // returns the channel EVEN IF offline. Returns { slug, isLive, displayName }
+  // or null (not found / no creds / request failed).
+  async function getChannelBySlug(slug) {
+    const norm = String(slug || '').trim().toLowerCase();
+    if (!hasCreds() || !norm) return null;
+    try {
+      const json = await apiGet(`/public/v1/channels?slug=${encodeURIComponent(norm)}`);
+      const raw = (json.data || [])[0];
+      if (!raw) return null;
+      return {
+        slug: raw.slug || norm,
+        isLive: Boolean(raw.stream?.is_live),
+        displayName: raw.display_name || raw.slug || norm,
+      };
+    } catch (e) {
+      warn(`Kick getChannelBySlug failed → returning null (${e.code || e.name})`);
+      return null;
+    }
+  }
+
+  // Public: never throws. Validates a creator-entered channel: exists (even if
+  // offline) and whether it's currently live, from ONE Channels lookup.
+  // Contract consumed by routes/rooms.js: { slug, exists, isLive, displayName,
+  // verifiable }. With no creds we cannot verify → verifiable:false (caller
+  // accepts-but-flags, never blocks).
+  async function validateChannel(slug) {
+    const norm = String(slug || '').trim().toLowerCase();
+    if (!norm) return { slug: '', exists: false, isLive: false, verifiable: hasCreds() };
+    if (!hasCreds()) {
+      return { slug: norm, exists: false, isLive: false, verifiable: false };
+    }
+    const ch = await getChannelBySlug(norm);
+    return {
+      slug: norm,
+      exists: Boolean(ch),
+      isLive: Boolean(ch?.isLive),
+      displayName: ch?.displayName || null,
+      verifiable: true,
+    };
+  }
+
   return {
     hasCreds,
     getTopLiveChannels,
+    getChannelBySlug,
+    validateChannel,
     // exposed for tests / advanced use; internal, may throw
     _requestAppToken: requestAppToken,
     _getAppToken: getAppToken,

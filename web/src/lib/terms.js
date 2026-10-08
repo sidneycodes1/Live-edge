@@ -53,7 +53,7 @@ export const TERMS_SECTIONS = [
   },
   {
     n: '6. Third parties, briefly named',
-    body: 'The video you watch comes from YouTube, Twitch, Kick, or Livepeer; match data from API-Football; log-in and embedded wallets from Privy; market generation from Google Gemini. Each has its own terms, and they apply to their slices of your experience. Streams can disappear at any moment — embeds are up to the platform, not us. Interruptions are not a refund of anything, because there\u2019s nothing to refund.',
+    body: 'The video you watch comes from YouTube, Kick, or Livepeer; match data from API-Football; log-in and embedded wallets from Privy; market generation from Google Gemini. Each has its own terms, and they apply to their slices of your experience. Streams can disappear at any moment — embeds are up to the platform, not us. Interruptions are not a refund of anything, because there\u2019s nothing to refund.',
   },
   {
     n: '7. Privacy snapshot',

@@ -10,6 +10,19 @@
 > `VERIFIED (how you confirmed it)` or `NOT VERIFIED (why)`. "Looks right" is not
 > VERIFIED. A criterion is VERIFIED only when you ran something that proves it.
 
+> **AMENDMENT OF RECORD (Oct 2026 — Twitch retirement).** Twitch was retired as a
+> live provider and its `server/src/twitch/` client + `/api/twitch` routes are
+> removed. The shipped grid is now **three sources**, priority order:
+> `LIVE_SOURCES = ['kick', 'youtube', 'floor']` (see `server/src/aggregator/schema.js`,
+> which is authoritative over the four-source table below). Kick is the PRIMARY
+> real-stream provider; its `https://player.kick.com/<slug>` embed is now
+> **VERIFIED** per official docs, so the "NOT VERIFIED" gates in §6 have flipped for
+> Kick. Two product gaps remain and are handled honestly (§4): Kick's API exposes no
+> per-stream thumbnail (no fabricated preview), and Kick offers no chat-only embed
+> (the UI links out to `kick.com/<slug>`). Legacy `twitch`/`TWITCH_*` references
+> below are kept as historical design context — the code no longer reads them, and
+> `rooms.twitch_channel` was renamed to `kick_channel` (migration `014_kick_channel.sql`).
+
 ---
 
 ## 0. Purpose

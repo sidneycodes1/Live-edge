@@ -9,7 +9,6 @@ import { migrate } from './db/migrate.js';
 import { seed } from './db/seed.js';
 import { createPanta } from './panta/index.js';
 import { createLiveClient } from './panta/liveClient.js';
-import { createTwitchClient } from './twitch/client.js';
 import { createKickClient } from './kick/client.js';
 import { createYouTubeClient } from './youtube/client.js';
 import { createFloorClient } from './floor/client.js';
@@ -39,7 +38,7 @@ import { streamerRouter } from './routes/streamer.js';
 import { faucetRouter } from './routes/faucet.js';
 import { notificationsRouter } from './routes/notifications.js';
 import { pinsRouter } from './routes/pins.js';
-import { twitchRouter } from './routes/twitch.js';
+import { kickRouter } from './routes/kick.js';
 import { liveRouter } from './routes/live.js';
 import { searchRouter } from './routes/search.js';
 import { ledgerRouter } from './routes/ledger.js';
@@ -54,25 +53,21 @@ export async function createApp({ env: rawEnv, db: existingDb, privyVerifier: in
   const db = existingDb || (await createDb(env));
   if (!existingDb) {
     await migrate(db);
-    await seed(db, { fallbackChannel: env.TWITCH_FALLBACK_CHANNEL });
+    await seed(db, { fallbackChannel: env.KICK_FALLBACK_CHANNEL });
   }
   const panta = createPanta({ db, env });
-  // Twitch live client (feature/twitch-live-integration). Always constructed; it
-  // self-degrades to [] / null when creds are missing, so no branching needed here.
-  const twitch = createTwitchClient({
-    clientId: env.TWITCH_CLIENT_ID,
-    clientSecret: env.TWITCH_CLIENT_SECRET,
-    cacheTtlMs: env.TWITCH_CACHE_TTL_MS,
-  });
-  // Multi-source live feed (feature/streaming-ui-overhaul → live-aggregation). All
-  // clients are always constructed and self-degrade ([] / no network) when creds
-  // are absent, exactly like twitch above. `liveSources` comes from loadEnv in prod;
-  // the fallback here keeps hand-built test envs (no loadEnv) booting unchanged.
+  // Kick live client — the PRIMARY real-stream provider since the Twitch
+  // retirement (Oct 2026). Always constructed; it self-degrades to [] / null
+  // when creds are missing, so no branching needed here.
   const kick = createKickClient({
     clientId: env.KICK_CLIENT_ID,
     clientSecret: env.KICK_CLIENT_SECRET,
     cacheTtlMs: env.KICK_CACHE_TTL_MS,
   });
+  // Multi-source live feed (feature/streaming-ui-overhaul → live-aggregation). All
+  // clients are always constructed and self-degrade ([] / no network) when creds
+  // are absent. `liveSources` comes from loadEnv in prod;
+  // the fallback here keeps hand-built test envs (no loadEnv) booting unchanged.
   const youtube = createYouTubeClient({
     apiKey: env.YOUTUBE_API_KEY,
     query: env.YOUTUBE_QUERY,
@@ -98,7 +93,6 @@ export async function createApp({ env: rawEnv, db: existingDb, privyVerifier: in
     cacheTtlMs: env.FLOOR_CACHE_TTL_MS,
   });
   const liveSources = env.liveSources || {
-    twitch: Boolean(env.TWITCH_CLIENT_ID && env.TWITCH_CLIENT_SECRET),
     kick: Boolean(env.KICK_CLIENT_ID && env.KICK_CLIENT_SECRET),
     youtube: Boolean(env.YOUTUBE_API_KEY),
     floor: Boolean(env.FLOOR_FALLBACK_URL || env.LIVEPEER_API_KEY),
@@ -128,7 +122,7 @@ export async function createApp({ env: rawEnv, db: existingDb, privyVerifier: in
   // sources plus the football data flag (`football` is ignored by the generic grid)
   // and the gemini groundwork flag (consumed by a later phase, not the grid).
   const enabled = { ...liveSources, football: footballEnabled, gemini: geminiEnabled };
-  const liveAggregator = createLiveAggregator({ twitch, kick, youtube, floor, football, curated, enabled });
+  const liveAggregator = createLiveAggregator({ kick, youtube, floor, football, curated, enabled });
   // Broadcast-aligned market engine (Phase 2). Gemini client is inert without a key
   // (generateJson returns null, no call), so the engine is ALWAYS constructed but a
   // real rotation only runs when the feature is enabled. It never throws at boot and
@@ -198,11 +192,11 @@ export async function createApp({ env: rawEnv, db: existingDb, privyVerifier: in
   // streaming (public)
   app.use('/api/stream', streamRouter({ hub }));
 
-  // Twitch "currently live" browse (public). Reads real Helix when creds exist,
-  // otherwise returns an empty/demo list — see routes/twitch.js.
-  app.use('/api/twitch', twitchRouter({ twitch, enabled: env.twitchEnabled }));
+  // Kick "currently live" browse (public). Reads the real Kick API when creds
+  // exist, otherwise returns an empty/demo list — see routes/kick.js.
+  app.use('/api/kick', kickRouter({ kick, enabled: liveSources.kick }));
 
-  // Resilient multi-source live feed (public): merges Twitch/Kick/YouTube/Floor into
+  // Resilient multi-source live feed (public): merges Kick/YouTube/Floor into
   // LiveChannel[] with a never-empty ladder. Never 500s — see routes/live.js.
   // `?category=football` additionally serves the API-Football DATA feed (docs/football-api.md).
   app.use('/api/live', liveRouter({ aggregator: liveAggregator, enabled }));
@@ -218,7 +212,7 @@ export async function createApp({ env: rawEnv, db: existingDb, privyVerifier: in
   app.use('/api/rooms', (req, res, next) => {
     if (req.method === 'POST') return auth(req, res, next);
     next();
-  }, roomsRouter({ db, hub, twitch }));
+  }, roomsRouter({ db, hub, kick }));
 
   // markets: some public, some auth. The GET listing rails (trending/closing/all),
   // /catalog and the single-market detail are public; create/resolve require auth.
@@ -300,7 +294,7 @@ export async function createApp({ env: rawEnv, db: existingDb, privyVerifier: in
   app._hub = hub;
   app._env = env;
   app._panta = panta;
-  app._twitch = twitch;
+  app._kick = kick;
   app._liveAggregator = liveAggregator;
   app._liveSources = liveSources;
   app._football = football;

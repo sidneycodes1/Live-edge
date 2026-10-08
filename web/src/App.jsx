@@ -4,7 +4,6 @@ import SideRail from './components/SideRail.jsx';
 import BottomTabs from './components/BottomTabs.jsx';
 import Discover from './pages/Discover.jsx';
 import Room from './pages/Room.jsx';
-import TwitchRoom from './pages/TwitchRoom.jsx';
 import WatchRoom from './pages/WatchRoom.jsx';
 import MatchView from './pages/MatchView.jsx';
 import Welcome from './pages/Welcome.jsx';
@@ -80,8 +79,8 @@ export default function App() {
 }
 
 // The persistent channel rail belongs on the Browse surface only. Watch pages
-// (room/twitch), the creator cockpit, portfolio and sign-in use the full width,
-// mirroring how Twitch drops the sidebar on a VOD/theater view — and keeping
+// (room/watch), the creator cockpit, portfolio and sign-in use the full width,
+// mirroring how Kick drops the sidebar on a theater view — and keeping
 // those pages' first paint lean.
 function Shell() {
   const { pathname } = useLocation();
@@ -128,7 +127,6 @@ function Shell() {
           <Routes>
             <Route path="/" element={<Discover />} />
             <Route path="/room/:id" element={<Room />} />
-            <Route path="/twitch/:login" element={<TwitchRoom />} />
             <Route path="/watch/:source/:slug" element={<WatchRoom />} />
             <Route path="/watch/:source/:slug/:title" element={<WatchRoom />} />
             <Route path="/match/:fixtureId" element={<MatchView />} />
@@ -176,7 +174,7 @@ function PortfolioBridge() {
 
 // /creator (+ /creator/:roomId) likewise opens the Create OVERLAY instead of a
 // page, carrying whatever the old URL implied: a :roomId jumps to that room's
-// cockpit; ?title / ?twitchChannel prefill "Start a room"; a location.state
+// cockpit; ?title / ?kickChannel prefill "Start a room"; a location.state
 // prefillTitle (match CTAs) is honored too. Then the URL hands back to the feed.
 function CreatorBridge() {
   const { openCreator } = usePanelModal();
@@ -187,7 +185,7 @@ function CreatorBridge() {
     const opts = {};
     if (roomId) opts.roomId = roomId;
     const title = searchParams.get('title') || location.state?.prefillTitle || '';
-    const channel = searchParams.get('twitchChannel') || '';
+    const channel = searchParams.get('kickChannel') || '';
     if (title) opts.prefillTitle = title;
     if (channel) opts.prefillChannel = channel;
     openCreator(opts);

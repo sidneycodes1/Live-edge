@@ -45,7 +45,7 @@ export async function seed(db, { fallbackChannel } = {}) {
   const { rows: existing } = await db.query('select count(*) as c from rooms');
   if (Number(existing[0].c) > 0) return;
 
-  // When a reliable 24/7 channel is configured (TWITCH_FALLBACK_CHANNEL) we bind it
+  // When a reliable 24/7 channel is configured (KICK_FALLBACK_CHANNEL) we bind it
   // to the gaming room so the "always-live" room is genuinely real. Embeds don't
   // need API creds. If unset, the room stays an honest `demo` room — we NEVER fake
   // a live channel (§4), so `source` reflects the binding, not wishful labeling.
@@ -72,7 +72,7 @@ export async function seed(db, { fallbackChannel } = {}) {
       title: '⚽ Match Night Watch-Party: City vs Rovers',
       // watch-party: bring-your-own legal feed, NO hosted stream → video_url null, no channel.
       video_url: null,
-      twitch_channel: null,
+      kick_channel: null,
       category: 'football',
       source: 'demo',
       watch_party: true,
@@ -82,7 +82,7 @@ export async function seed(db, { fallbackChannel } = {}) {
       owner: USERS.owner,
       title: 'Elder Ring - First Try Malenia',
       video_url: null, // animated demo mock unless a real channel is bound
-      twitch_channel: ch1,
+      kick_channel: ch1,
       category: 'gaming',
       source: gamingSource,
       watch_party: false,
@@ -92,7 +92,7 @@ export async function seed(db, { fallbackChannel } = {}) {
       owner: USERS.viewer,
       title: 'Sunrise Sketch & Chat',
       video_url: null,
-      twitch_channel: null,
+      kick_channel: null,
       category: 'lifestyle',
       source: 'demo',
       watch_party: false,
@@ -100,9 +100,9 @@ export async function seed(db, { fallbackChannel } = {}) {
   ];
   for (const room of rooms) {
     await db.query(
-      `insert into rooms(id, owner_id, title, video_url, twitch_channel, status, is_seed, category, source, watch_party)
+      `insert into rooms(id, owner_id, title, video_url, kick_channel, status, is_seed, category, source, watch_party)
        values($1,$2,$3,$4,$5,'live',true,$6,$7,$8)`,
-      [room.id, room.owner, room.title, room.video_url, room.twitch_channel, room.category, room.source, room.watch_party],
+      [room.id, room.owner, room.title, room.video_url, room.kick_channel, room.category, room.source, room.watch_party],
     );
   }
 

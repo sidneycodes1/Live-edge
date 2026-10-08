@@ -3,11 +3,12 @@ import { useParams, useLocation, Link } from 'react-router-dom';
 import { api } from '../lib/api.js';
 import { normalizeLive } from '../lib/live.js';
 import { buildChatEmbed } from '../lib/embed.js';
-import { useTwitchConfig } from '../hooks/useTwitchConfig.js';
+import { useLiveConfig } from '../hooks/useLiveConfig.js';
 import FeedEmbed from '../components/FeedEmbed.jsx';
 import VideoStage from '../components/VideoStage.jsx';
 
-// Generic watch surface for a non-Twitch LiveChannel opened from the grid.
+// Generic watch surface for a live-grid channel (Kick / YouTube / curated /
+// floor) opened from the grid.
 //
 // ROOM IDENTITY (Task A): the room is built DIRECTLY from the URL params + the
 // router `state` handed over by LiveCard. A YouTube URL carries the VIDEO id, a
@@ -130,7 +131,7 @@ function ChatColumn({ ch, chat }) {
         {/* Honest caption: cross-origin frames can show provider error pages
             (chat disabled/hold by the creator) we cannot detect or style. */}
         <p className="shrink-0 px-3 py-1.5 text-[10px] leading-relaxed text-white/40 border-t border-white/10">
-          Real {chat.provider === 'twitch' ? 'Twitch' : 'YouTube'} live chat for this broadcast —
+          Real {chat.provider === 'youtube' ? 'YouTube' : chat.provider} live chat for this broadcast —
           signed-in viewers can post. If the creator turned chat off, their notice shows here.
         </p>
       </div>
@@ -146,7 +147,19 @@ function ChatColumn({ ch, chat }) {
           : 'Live chat isn’t available for this stream.';
   return (
     <div className="w-full h-full grid place-items-center text-white/40 text-sm bg-black/20 px-5 text-center" data-testid="chat-note">
-      {note}
+      <div className="space-y-3 max-w-xs">
+        <p>{note}</p>
+        {ch.source === 'kick' && ch.channelSlug && (
+          <a
+            href={`https://kick.com/${encodeURIComponent(ch.channelSlug.toLowerCase())}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-block px-4 py-2 rounded-card bg-white text-black text-xs font-semibold cursor-pointer hover:bg-white/90 transition"
+          >
+            Open stream chat on Kick ↗
+          </a>
+        )}
+      </div>
     </div>
   );
 }
@@ -155,7 +168,7 @@ export default function WatchRoom() {
   const { source, slug, title: titleParam } = useParams();
   const location = useLocation();
   const st = location.state && typeof location.state === 'object' ? location.state : {};
-  const { parent } = useTwitchConfig();
+  const { parent } = useLiveConfig();
 
   const direct = useMemo(
     () => channelFromParams(source, slug, titleParam, st),

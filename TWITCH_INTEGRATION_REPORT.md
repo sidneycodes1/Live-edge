@@ -1,5 +1,12 @@
 # LIVEEDGE — Twitch Live Integration Report
 
+> **⚠ SUPERSEDED (Oct 2026).** Twitch was retired as a live provider: its client,
+> `/api/twitch` routes, `TWITCH_*` env vars, and web embeds are all removed. Kick is
+> now the primary real-stream provider (`/api/kick/live`, `player.kick.com/<slug>`);
+> `server/src/kick/` + `web/src/lib/kick.js` + `web/src/components/KickVideo.jsx` carry
+> that work. This document is kept only as historical design context and no longer
+> describes shipped behavior.
+
 Branch: `feature/twitch-live-integration` (created off `main`).
 Scope: add **real live-stream video**, **real live chat**, and a **real "currently
 live" browse grid** via Twitch free embeds + the Helix API, as a second layer

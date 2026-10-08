@@ -7,8 +7,8 @@ import { liveCardHref } from './LiveCard.jsx';
 import { useAuth } from '../hooks/useAuth.js';
 import { usePanelModal } from '../hooks/usePanelModal.jsx';
 
-// Twitch-style persistent left rail. Lists LIVE CHANNELS — mixing the platform's
-// own simulated rooms and any real Twitch channels from /api/twitch/live — each
+// Kick-style persistent left rail. Lists LIVE CHANNELS — mixing the platform's
+// own simulated rooms and any real Kick channels from /api/kick/live — each
 // with an avatar and a live viewer count, exactly like the browse sidebar. It
 // collapses to an icon strip (matching the "<" affordance in the reference shots)
 // and is hidden entirely below `md`, where BottomTabs already covers navigation.
@@ -22,7 +22,7 @@ function fmtWatchers(n) {
 
 export default function SideRail() {
   const [rooms, setRooms] = useState([]);
-  const [twitch, setTwitch] = useState([]);
+  const [kick, setKick] = useState([]);
   const [live, setLive] = useState([]);
   const [collapsed, setCollapsed] = useState(false);
   const { user } = useAuth();
@@ -31,7 +31,7 @@ export default function SideRail() {
   useEffect(() => {
     let active = true;
     api.listRooms().then((r) => active && setRooms(Array.isArray(r) ? r : [])).catch(() => {});
-    api.listTwitchLive(8).then((r) => active && setTwitch(r.items || [])).catch(() => {});
+    api.listKickLive(8).then((r) => active && setKick(r.items || [])).catch(() => {});
     // The real broadcast grid: when no platform ROOMS exist yet (engine between
     // rotations), the rail must still show what is actually live right now —
     // the same honest /api/live source the landing grid renders.
@@ -39,9 +39,9 @@ export default function SideRail() {
     return () => { active = false; };
   }, []);
 
-  // Merge rules live in lib/rail.js (pure, unit-tested): twitch → rooms (no
+  // Merge rules live in lib/rail.js (pure, unit-tested): kick → rooms (no
   // demo seeds) → live-grid channels, deduped by title against the rooms.
-  const channels = buildRailEntries({ twitch, rooms, live, liveHref: liveCardHref });
+  const channels = buildRailEntries({ kick, rooms, live, liveHref: liveCardHref });
 
   return (
     <aside

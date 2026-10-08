@@ -39,11 +39,10 @@ function titleSlug(t) {
 // `channelSlug` is the UC CHANNEL id — using it produced rooms that could not be
 // re-found in the rotating grid). Curated 24/7 rows are keyed by their UC channel
 // id (they embed by channel, live_stream?channel=UC…). Football fixtures open the
-// match detail route. Twitch keeps its dedicated surface.
+// match detail route.
 export function liveCardHref(ch) {
   if (!ch) return null;
   if (ch.source === 'football-api') return `/match/${encodeURIComponent(ch.id || '')}`;
-  if (ch.source === 'twitch' && ch.channelSlug) return `/twitch/${encodeURIComponent(ch.channelSlug)}`;
   if (ch.source === 'youtube') {
     const vid = extractYouTubeVideoId(ch);
     if (vid) {

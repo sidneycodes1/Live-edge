@@ -2,18 +2,21 @@
 // LiveChannel — the single merged shape GET /api/live returns, from every source.
 //
 // CONTRACT: docs/live-aggregation-spec.md §1 (LiveChannel) + §2 (taxonomy) are the
-// frozen authority (present in-repo since ba5753b). This module is a faithful,
-// additive superset of the ALREADY-SHIPPED twitch shape (../twitch/client.js
-// normalizeStream) so nothing downstream breaks. Edits here are NOT spec changes: if
+// frozen authority (present in-repo since ba5753b). This module stayed an
+// additive superset of the original shipped provider shape, so nothing
+// downstream breaks. Edits here are NOT spec changes: if
 // code and §1 ever diverge, reconcile through the verifier (who owns the spec),
 // never by silently rewriting either side.
 //
-// `category` carries the SOURCE-NATIVE label only (Twitch game_name, Kick category
-// name, YouTube title/topic, floor tag) — never an invented bucket, matching the
+// `category` carries the SOURCE-NATIVE label only (Kick category name, YouTube
+// title/topic, floor tag) — never an invented bucket, matching the
 // frontend rule in web/src/pages/Discover.jsx ("no invented taxonomy").
 // ---------------------------------------------------------------------------
 
-export const LIVE_SOURCES = ['twitch', 'kick', 'youtube', 'floor'];
+// Twitch retired as a provider Oct 2026 (Kick is the primary real-stream source);
+// the wire key set shrank from 4 to 3. docs/live-aggregation-spec.md §1 still
+// lists the original four — this line is the amendment of record.
+export const LIVE_SOURCES = ['kick', 'youtube', 'floor'];
 
 function str(v) {
   return v == null ? '' : String(v);

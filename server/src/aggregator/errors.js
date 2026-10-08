@@ -1,5 +1,5 @@
-// Aggregation error taxonomy. Mirrors ../twitch/errors.js TwitchError shape (and
-// ../panta/errors.js): thrown ONLY by internal request helpers so tests can assert
+// Aggregation error taxonomy. Mirrors ../panta/errors.js PantaError shape (and
+// ../gemini/errors.js): thrown ONLY by internal request helpers so tests can assert
 // failure paths; the public client methods and the resilience runner catch these
 // and degrade. `code` drives the retry classifier and the aggregator's per-source
 // `degraded` reporting, so it is part of the contract — keep values stable.

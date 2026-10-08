@@ -80,8 +80,8 @@ describe('marketEngine/candidateFromItem', () => {
     const c = candidateFromItem({ id: 'youtube:abc123', title: 'x', channelSlug: 'y' }, 'live');
     assert.equal(c.videoId, 'abc123');
   });
-  it('leaves videoId null for a twitch stream (no fabricated video id)', () => {
-    const c = candidateFromItem({ id: 'twitch:999', channelSlug: 'afro', title: 'play', thumbnailUrl: 't' }, 'live');
+  it('leaves videoId null for a kick stream (no fabricated video id)', () => {
+    const c = candidateFromItem({ id: 'kick:999', channelSlug: 'afro', title: 'play', thumbnailUrl: 't' }, 'live');
     assert.equal(c.videoId, null);
     assert.equal(c.channelSlug, 'afro');
   });

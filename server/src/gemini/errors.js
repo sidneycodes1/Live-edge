@@ -1,5 +1,5 @@
-// Gemini error taxonomy. Same shape as ProviderError (../aggregator/errors.js) and
-// TwitchError so failure paths are asserted the same way across providers. Thrown
+// Gemini error taxonomy. Same shape as ProviderError (../aggregator/errors.js)
+// so failure paths are asserted the same way across providers. Thrown
 // ONLY by the internal request helpers in ./client.js; consumers (the market engine)
 // catch it and degrade. `code` is part of the contract — keep values stable.
 //

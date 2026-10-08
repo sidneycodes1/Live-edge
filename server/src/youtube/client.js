@@ -2,7 +2,7 @@ import { ProviderError } from '../aggregator/errors.js';
 import { makeLiveChannel } from '../aggregator/schema.js';
 
 // ---------------------------------------------------------------------------
-// YouTube client — mirrors ../twitch/client.js's public boundary (cache-aside +
+// YouTube client — mirrors ../kick/client.js's public boundary (cache-aside +
 // stale fallback + never-throws). YouTube Data API v3 needs only an API key (no
 // OAuth token), so there is no single-flight token dance; the single-flight here
 // is on the two-step list fetch itself.

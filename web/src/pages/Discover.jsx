@@ -38,9 +38,11 @@ function nextVisitSeed() {
   return n;
 }
 
-// A playable live row is one that carries a REAL thumbnail (curated 24/7, Twitch,
-// Kick, YouTube all do). Anything without art is dropped from the grid — we never
-// render a placeholder tile. Football score cards come from a SEPARATE data feed.
+// A playable live row is one that carries a REAL thumbnail (curated 24/7 and
+// YouTube rows do). Anything without art is dropped from the grid — we never
+// render a placeholder tile (Kick's API exposes no per-stream preview, so Kick
+// streams surface through the rail/watch pages instead). Football score cards
+// come from a SEPARATE data feed.
 const isPlayable = (c) => Boolean(c && c.source !== 'football-api' && c.thumbnailUrl);
 
 export default function Discover() {

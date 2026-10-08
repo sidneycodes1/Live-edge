@@ -16,23 +16,16 @@ const schema = z.object({
   SIM_GRADUATION_VOLUME: z.coerce.number().default(100),
   SIM_LIQUIDITY_B: z.coerce.number().default(50),
   SIM_CREATE_FEE: z.coerce.number().min(0).default(1),
-  // Twitch live integration (feature/twitch-live-integration). All optional so the
-  // app boots and degrades to demo/fallback mode when creds are absent — the exact
-  // same policy as PANTA_API_KEY. Never logged/echoed (see integrity rules).
-  TWITCH_CLIENT_ID: z.string().optional(),
-  TWITCH_CLIENT_SECRET: z.string().optional(),
-  TWITCH_FALLBACK_CHANNEL: z.string().optional(),
-  // Embed `parent` must be the bare hosting domain (no protocol) per
-  // dev.twitch.tv/docs/embed/video-and-clips/. Driven by env, not hardcoded, so it
-  // doesn't silently break on deploy. Empty → frontend derives it from location.hostname.
-  TWITCH_PARENT_DOMAIN: z.string().optional(),
-  TWITCH_CACHE_TTL_MS: z.coerce.number().min(1000).default(45000),
   // Multi-source live feed (docs/live-aggregation-spec.md §7). Every key is
   // OPTIONAL: an absent cred disables that source (no boot error) and its client
-  // self-degrades exactly like Twitch. Strict parsing; secrets never logged/echoed.
-  // Kick Developer API (client-credentials app token, mirrors Twitch Helix).
+  // self-degrades with a startup warning. Strict parsing; secrets never
+  // logged/echoed.
+  // Kick Developer API (client-credentials app token) — the PRIMARY real-stream
+  // provider since the Twitch retirement (Oct 2026). A reliably-live 24/7 channel
+  // slug may be bound to the seed gaming room so "always live" is genuinely real.
   KICK_CLIENT_ID: z.string().optional(),
   KICK_CLIENT_SECRET: z.string().optional(),
+  KICK_FALLBACK_CHANNEL: z.string().optional(),
   KICK_CACHE_TTL_MS: z.coerce.number().min(1000).default(45000),
   // YouTube Data API v3 (single API key). YOUTUBE_QUERY seeds the live search.
   YOUTUBE_API_KEY: z.string().optional(),
@@ -123,15 +116,11 @@ export function loadEnv(raw = process.env) {
     warnings.push(`PANTA_MODE=${mode} but PANTA_API_KEY missing → running in sim mode`);
     mode = 'sim';
   }
-  // Twitch: real Helix calls / embeds need both creds. Missing → demo/fallback mode
-  // (labeled), never a crash. Mirrors the Panta downgrade above.
-  const twitchEnabled = !!(env.TWITCH_CLIENT_ID && env.TWITCH_CLIENT_SECRET);
-  if (!twitchEnabled) {
-    warnings.push('TWITCH_CLIENT_ID/TWITCH_CLIENT_SECRET missing → Twitch live browse runs in demo/fallback mode (no real Helix calls)');
-  }
   // Per-source enablement is derived from creds/config ONLY (§7: "booleans from
   // creds"). No separate kill-switch env exists — that was a divergence from the
   // frozen spec and has been removed so /api/config's features match §7 exactly.
+  // Kick is the primary real-stream source: no creds → honest demo/fallback mode
+  // (empty browse list), never a crash.
   const kickEnabled = !!(env.KICK_CLIENT_ID && env.KICK_CLIENT_SECRET);
   const youtubeEnabled = !!env.YOUTUBE_API_KEY;
   // Tier-B multi-query: parsed leniently (garbage segments are dropped, boot
@@ -176,7 +165,7 @@ export function loadEnv(raw = process.env) {
       warnings.push('SIM_BET_WINDOW_MIN must be a positive integer → falling back to 30');
     }
   }
-  const liveSources = { twitch: twitchEnabled, kick: kickEnabled, youtube: youtubeEnabled, floor: floorEnabled };
+  const liveSources = { kick: kickEnabled, youtube: youtubeEnabled, floor: floorEnabled };
   // Gemini feature flag (Phase 2 groundwork). Derived from the key's presence ONLY;
   // no creds → feature disabled with a startup notice, never a crash. No other Gemini
   // behavior is wired this phase (market generation is next).
@@ -216,7 +205,7 @@ export function loadEnv(raw = process.env) {
   return {
     ...env,
     effectiveMode: mode,
-    twitchEnabled,
+    kickEnabled,
     liveSources,
     youtubeQueries,
     floorFallback,

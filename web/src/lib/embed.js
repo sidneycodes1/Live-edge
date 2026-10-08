@@ -6,15 +6,15 @@
 // /api/config). Nothing is stored on the shared shape (§1).
 //
 // VERIFICATION STATUS is carried per-provider so the demo path never relies on an
-// unproven embed: Twitch + YouTube embeds are VERIFIED (official docs, unit-tested
-// URL construction); Kick + Livepeer-HLS are NOT VERIFIED in a real browser yet, so
-// they are treated best-effort and gated behind the floor/external fallback (§6).
+// unproven embed: Kick + YouTube embeds are VERIFIED (official docs, unit-tested
+// URL construction); Livepeer-HLS is NOT VERIFIED in a real browser yet, so it is
+// treated best-effort and gated behind the floor/external fallback (§6).
+// Twitch was retired as a provider (Oct 2026) — its branches are gone.
 // ---------------------------------------------------------------------------
 
 export const EMBED_VERIFIED = {
-  twitch: true,   // https://dev.twitch.tv/docs/embed/video-and-clips/
   youtube: true,  // https://developers.google.com/youtube/iframe_api_reference
-  kick: false,    // player.kick.com/<slug> — NOT VERIFIED in-browser yet
+  kick: true,     // official embed: https://player.kick.com/<slug> (docs.kick.com; no parent needed)
   floor: false,   // Livepeer HLS — playback implemented via hls.js (HlsVideo.jsx); browser verification pending
 };
 
@@ -72,15 +72,6 @@ export function buildVideoEmbed(channel, parent) {
   const slug = trim(channel?.channelSlug);
   const watchUrl = channel?.watchUrl ? String(channel.watchUrl) : null;
 
-  if (source === 'twitch' && slug && parent) {
-    const u = new URL('https://player.twitch.tv/');
-    u.searchParams.set('channel', slug.toLowerCase());
-    u.searchParams.set('parent', parent);
-    u.searchParams.set('muted', 'true');
-    u.searchParams.set('autoplay', 'true');
-    return { provider: 'twitch', verified: true, kind: 'iframe', src: u.toString(), watchUrl };
-  }
-
   // Curated 24/7 channel: embed by CHANNEL id (live_stream?channel=UC…) so it
   // always plays whatever that channel is live-streaming right now — no per-video
   // discovery, no search quota. Falls back to the concrete video id if present.
@@ -111,11 +102,11 @@ export function buildVideoEmbed(channel, parent) {
   }
 
   if (source === 'kick' && slug) {
-    // Best-effort: documented player host, but NOT proven in a browser here.
+    // Official Kick player iframe (docs.kick.com) — no parent domain handshake.
     const u = new URL(`https://player.kick.com/${encodeURIComponent(slug.toLowerCase())}`);
     u.searchParams.set('autoplay', 'true');
     u.searchParams.set('muted', 'true');
-    return { provider: 'kick', verified: false, kind: 'iframe', src: u.toString(), watchUrl };
+    return { provider: 'kick', verified: true, kind: 'iframe', src: u.toString(), watchUrl };
   }
 
   if (source === 'floor' && watchUrl && /\.m3u8($|\?)/i.test(watchUrl)) {
@@ -127,21 +118,13 @@ export function buildVideoEmbed(channel, parent) {
   return { provider: source || '', verified: false, kind: watchUrl ? 'external' : 'none', src: '', watchUrl };
 }
 
-// Live chat. Twitch is verified (real Helix embed). YouTube exposes an official
-// live_chat iframe keyed by the VIDEO id — we return it ONLY when a real video id
-// is known. A channel-level curated 24/7 embed has no single video, so it returns
-// null and the room shows an honest "chat unavailable" note — never a fake box.
-// Kick chat is not available here → null (§4: say so plainly).
+// Live chat. YouTube exposes an official live_chat iframe keyed by the VIDEO id —
+// we return it ONLY when a real video id is known. A channel-level curated 24/7
+// embed has no single video, so it returns null and the room shows an honest
+// "chat unavailable" note — never a fake box. Kick chat has NO official embed →
+// null (§4: the UI links out to the channel page instead of framing a fake box).
 export function buildChatEmbed(channel, parent) {
   const source = trim(channel?.source);
-  const slug = trim(channel?.channelSlug);
-  if (source === 'twitch' && slug && parent) {
-    return {
-      provider: 'twitch',
-      verified: true,
-      src: `https://www.twitch.tv/embed/${encodeURIComponent(slug.toLowerCase())}/chat?parent=${encodeURIComponent(parent)}`,
-    };
-  }
   if (source === 'youtube') {
     const videoId = extractYouTubeVideoId(channel);
     if (videoId) {
@@ -195,21 +178,12 @@ export function detectEmbedFromUrl(url, parent) {
       return { provider: 'youtube', verified: true, kind: 'iframe', src: e.toString(), watchUrl: raw };
     }
   }
-  if (host.includes('twitch.tv')) {
-    const slug = u.pathname.split('/').filter(Boolean)[0] || (host === 'www.twitch.tv' ? u.pathname.split('/').filter(Boolean)[0] : '');
-    if (slug && slug !== 'embed' && parent) {
-      const e = new URL('https://player.twitch.tv/');
-      e.searchParams.set('channel', slug.toLowerCase()); e.searchParams.set('parent', parent);
-      e.searchParams.set('muted', 'true'); e.searchParams.set('autoplay', 'true');
-      return { provider: 'twitch', verified: true, kind: 'iframe', src: e.toString(), watchUrl: raw };
-    }
-  }
   if (host.includes('kick.com')) {
     const slug = u.pathname.split('/').filter(Boolean)[0];
     if (slug) {
       const e = new URL(`https://player.kick.com/${encodeURIComponent(slug.toLowerCase())}`);
       e.searchParams.set('autoplay', 'true'); e.searchParams.set('muted', 'true');
-      return { provider: 'kick', verified: false, kind: 'iframe', src: e.toString(), watchUrl: raw };
+      return { provider: 'kick', verified: true, kind: 'iframe', src: e.toString(), watchUrl: raw };
     }
   }
   // Unknown source: never pretend it plays — offer the external page.

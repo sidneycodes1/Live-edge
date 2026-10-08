@@ -16,24 +16,17 @@ function withLive(extra) {
 describe('env.loadEnv — per-source live enablement (§7: derived from creds only)', () => {
   it('disables every source when no creds are present (no crash)', () => {
     const env = withLive({});
-    assert.deepEqual(env.liveSources, { twitch: false, kick: false, youtube: false, floor: false });
+    assert.deepEqual(env.liveSources, { kick: false, youtube: false, floor: false });
   });
 
   it('enables a source iff its creds/config exist', () => {
     const env = withLive({
-      TWITCH_CLIENT_ID: 'a',
-      TWITCH_CLIENT_SECRET: 'b',
       KICK_CLIENT_ID: 'c',
       KICK_CLIENT_SECRET: 'd',
       YOUTUBE_API_KEY: 'e',
       FLOOR_FALLBACK_URL: 'https://cdn/floor.m3u8',
     });
-    assert.deepEqual(env.liveSources, { twitch: true, kick: true, youtube: true, floor: true });
-  });
-
-  it('twitch needs BOTH id and secret; a lone cred leaves it disabled', () => {
-    const env = withLive({ TWITCH_CLIENT_ID: 'a' });
-    assert.equal(env.liveSources.twitch, false);
+    assert.deepEqual(env.liveSources, { kick: true, youtube: true, floor: true });
   });
 
   it('kick needs BOTH id and secret; a lone cred leaves it disabled', () => {
@@ -91,10 +84,10 @@ describe('GET /api/config — per-source flags (§7 shape)', () => {
     }
   }
 
-  it('reports features.{twitch,kick,youtube,floor}Live from creds and never echoes a secret', async () => {
+  it('reports features.{kick,youtube,floor}Live from creds and never echoes a secret', async () => {
     const env = withLive({ YOUTUBE_API_KEY: 'super-secret-key' });
     const json = await getConfig(env);
-    assert.deepEqual(json.features.twitchLive, false);
+    assert.equal('twitchLive' in json.features, false, 'twitch is fully retired from the config wire');
     assert.equal(json.features.kickLive, false);
     assert.equal(json.features.youtubeLive, true);
     assert.equal(json.features.floorLive, false);
@@ -102,8 +95,9 @@ describe('GET /api/config — per-source flags (§7 shape)', () => {
     assert.deepEqual(json.youtube, { enabled: true });
     assert.equal(json.floor.enabled, false);
     assert.equal(json.floor.hlsBase, 'https://stream.livepeer.com');
-    // Back-compat twitch block survives.
-    assert.equal(typeof json.twitch.enabled, 'boolean');
+    // Kick block exposes enabled + fallback channel (never a secret).
+    assert.equal(json.kick.enabled, false);
+    assert.equal(typeof json.kick.fallbackChannel, 'string');
     // No secret anywhere.
     const raw = JSON.stringify(json);
     assert.ok(!raw.includes('super-secret-key'), 'config must never echo the API key');

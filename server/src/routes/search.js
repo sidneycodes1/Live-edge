@@ -3,7 +3,7 @@ import { Router } from 'express';
 // ---------------------------------------------------------------------------
 // GET /api/search?q=<term> — keyless, quota-free search over the SAME live data
 // the landing grid already serves. It fans out to the aggregator's merged grid
-// (real Twitch/Kick/YouTube/Floor channels + the quota-free curated 24/7 fill)
+// (real Kick/YouTube/Floor channels + the quota-free curated 24/7 fill)
 // and the cached API-Football fixtures, then does a plain case-insensitive
 // contains-match. It NEVER fabricates a result: an empty query or no matches
 // returns empty arrays. It never 500s — a provider/aggregator failure degrades

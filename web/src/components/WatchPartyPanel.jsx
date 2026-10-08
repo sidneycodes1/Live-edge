@@ -4,7 +4,7 @@ import RoomFeed from './RoomFeed.jsx';
 // "Bring your own feed / where to watch" — the heart of the football watch-party
 // vertical (docs/live-aggregation-spec.md §2). Premium match footage is licensed,
 // so we NEVER host or embed the match ourselves. The fan pastes their OWN legal
-// stream (Twitch / YouTube / Kick / .mp4) and we embed it locally for the room;
+// stream (Kick / YouTube / .mp4) and we embed it locally for the room;
 // nothing is sent to the server and no video is fabricated. Until a feed is added we
 // show an honest "where to watch" prompt, not a dead player.
 export default function WatchPartyPanel({ parent }) {
@@ -27,7 +27,7 @@ export default function WatchPartyPanel({ parent }) {
               <h3 className="font-heading font-bold text-white/90">Bring your own feed</h3>
               <p className="text-xs text-white/50 mt-2">
                 We don’t host match video — it’s licensed elsewhere. Paste your legal stream
-                (Twitch, YouTube, Kick or an .mp4 link) and it plays right here while you follow
+                (Kick, YouTube or an .mp4 link) and it plays right here while you follow
                 the market and chat.
               </p>
             </div>

@@ -369,16 +369,16 @@ describe('GET /api/live?category=football — envelope (§3-shaped, sources:["fo
   it('football items do NOT leak into the generic (no-category) feed', async () => {
     let footballCalled = false;
     const stub = {
-      getChannels: async () => ({ items: [{ id: 'twitch:1', source: 'twitch', viewerCount: 3 }], sources: { twitch: 1 }, degraded: [], usedStale: false, usedFloor: false, generatedAt: 1 }),
+      getChannels: async () => ({ items: [{ id: 'kick:1', source: 'kick', viewerCount: 3 }], sources: { kick: 1 }, degraded: [], usedStale: false, usedFloor: false, generatedAt: 1 }),
       getFootballMatches: async () => { footballCalled = true; return { items: [], status: 'live' }; },
     };
-    const s = await start(stub, { twitch: true });
+    const s = await start(stub, { kick: true });
     try {
       const json = await (await fetch(`${s.base}/api/live`)).json();
       assert.equal(footballCalled, false, 'generic feed must not invoke the football data path');
-      assert.equal(json.items[0].source, 'twitch');
-      // §3 generic sources object (four keys) — NOT the football array.
-      assert.deepEqual(Object.keys(json.sources), ['twitch', 'kick', 'youtube', 'floor']);
+      assert.equal(json.items[0].source, 'kick');
+      // §3 generic sources object (three keys) — NOT the football array.
+      assert.deepEqual(Object.keys(json.sources), ['kick', 'youtube', 'floor']);
     } finally { await s.close(); }
   });
 });

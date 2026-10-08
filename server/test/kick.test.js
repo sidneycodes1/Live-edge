@@ -4,10 +4,9 @@ import { createKickClient, normalizeKickStream } from '../src/kick/client.js';
 
 // -----------------------------------------------------------------------------
 // Agent D (QA) contract tests for the Kick client (docs/live-aggregation-spec.md
-// §6, row "Kick — client DONE"; frozen). These tests PROVE the shipped module
-// honors the spec's non-negotiables; they do not exercise the network: fetch is
-// injected so every URL/header/body/status path is observable, matching the
-// mocked-fetch style already used for the sibling twitch.test.js. Prior green is
+// §6). These tests PROVE the shipped module honors the spec's non-negotiables;
+// they do not exercise the network: fetch is injected so every URL/header/body/
+// status path is observable (mocked-fetch style). Prior green is
 // never trusted — every assertion here was run (see commit body for the run).
 // -----------------------------------------------------------------------------
 
@@ -140,7 +139,7 @@ describe('kick client — missing credentials (spec §6: never throws, no networ
   });
 });
 
-describe('kick client — app token (client-credentials, mirrors twitch flow)', () => {
+describe('kick client — app token (client-credentials flow)', () => {
   it('POSTs the documented urlencoded body (client_id, client_secret, grant_type)', async () => {
     const { fn, calls } = mockRouter(TOKEN);
     const c = createKickClient({ clientId: CID, clientSecret: SECRET, fetchImpl: fn });
@@ -256,5 +255,102 @@ describe('kick client — getTopLiveChannels (contract + resilience boundary)', 
     assert.deepEqual(a, b);
     assert.deepEqual(b, d);
     assert.equal(calls.filter((x) => x.url.includes('/public/v1/livestreams')).length, 1, 'must coalesce inflight calls');
+  });
+});
+
+// ---- channel lookup / validation (rooms.js contract) -----------------------
+
+function channelRes(slug, { isLive = false, displayName = null } = {}) {
+  return makeRes({
+    data: [
+      {
+        channel_id: 'ch-1',
+        slug,
+        display_name: displayName || slug,
+        stream: { is_live: isLive },
+      },
+    ],
+  });
+}
+
+describe('kick client — getChannelBySlug (Channels endpoint returns OFFLINE channels too)', () => {
+  it('GETs /public/v1/channels?slug= with the Bearer header and normalizes the row', async () => {
+    const { fn, calls } = mockRouter([...TOKEN, { match: '/public/v1/channels', res: channelRes('amouranth', { isLive: true }) }]);
+    const c = createKickClient({ clientId: CID, clientSecret: SECRET, fetchImpl: fn });
+    const ch = await c.getChannelBySlug('Amouranth');
+    assert.equal(ch.slug, 'amouranth');
+    assert.equal(ch.isLive, true);
+    assert.equal(ch.displayName, 'amouranth');
+    const get = calls.find((x) => x.url.includes('/public/v1/channels'));
+    assert.ok(get.url.startsWith('https://api.kick.com/public/v1/channels?slug=amouranth'), get.url);
+    assert.equal(get.headers.Authorization, 'Bearer AT-KICK-1');
+  });
+
+  it('empty data → null (channel does not exist)', async () => {
+    const { fn } = mockRouter([...TOKEN, { match: '/public/v1/channels', res: makeRes({ data: [] }) }]);
+    const c = createKickClient({ clientId: CID, clientSecret: SECRET, fetchImpl: fn });
+    assert.equal(await c.getChannelBySlug('no-such-channel'), null);
+  });
+
+  it('upstream 5xx → null and warns (never-throws boundary)', async () => {
+    const warnings = [];
+    const { fn } = mockRouter([...TOKEN, { match: '/public/v1/channels', res: makeRes({ error: 'boom' }, { status: 503 }) }]);
+    const c = createKickClient({ clientId: CID, clientSecret: SECRET, fetchImpl: fn, warn: (m) => warnings.push(m) });
+    assert.equal(await c.getChannelBySlug('x'), null);
+    assert.ok(warnings.some((w) => /getChannelBySlug failed/i.test(w)));
+  });
+
+  it('no creds → null with ZERO fetch calls; blank slug → null', async () => {
+    const { fn, calls } = mockRouter([]);
+    const c = createKickClient({ clientId: undefined, clientSecret: undefined, fetchImpl: fn });
+    assert.equal(await c.getChannelBySlug('xqc'), null);
+    assert.equal(calls.length, 0, 'MUST NOT touch the network without creds');
+    const { fn: fn2, calls: calls2 } = mockRouter(TOKEN);
+    const c2 = createKickClient({ clientId: CID, clientSecret: SECRET, fetchImpl: fn2 });
+    assert.equal(await c2.getChannelBySlug('  '), null);
+    assert.equal(calls2.length, 0, 'blank slug must not hit the API');
+  });
+});
+
+describe('kick client — validateChannel (rooms.js { slug, exists, isLive, verifiable })', () => {
+  it('existing live channel → exists + isLive + verifiable, slug lowercased', async () => {
+    const { fn } = mockRouter([...TOKEN, { match: '/public/v1/channels', res: channelRes('xqc', { isLive: true, displayName: 'XQC' }) }]);
+    const c = createKickClient({ clientId: CID, clientSecret: SECRET, fetchImpl: fn });
+    const v = await c.validateChannel('XQC');
+    assert.deepEqual(v, { slug: 'xqc', exists: true, isLive: true, displayName: 'XQC', verifiable: true });
+  });
+
+  it('existing OFFLINE channel still validates (rooms attach does not require live-now)', async () => {
+    const { fn } = mockRouter([...TOKEN, { match: '/public/v1/channels', res: channelRes('sleepy', { isLive: false }) }]);
+    const c = createKickClient({ clientId: CID, clientSecret: SECRET, fetchImpl: fn });
+    const v = await c.validateChannel('sleepy');
+    assert.equal(v.exists, true);
+    assert.equal(v.isLive, false);
+    assert.equal(v.verifiable, true);
+  });
+
+  it('unknown channel → exists:false + verifiable:true (rooms.js must 400 this)', async () => {
+    const { fn } = mockRouter([...TOKEN, { match: '/public/v1/channels', res: makeRes({ data: [] }) }]);
+    const c = createKickClient({ clientId: CID, clientSecret: SECRET, fetchImpl: fn });
+    const v = await c.validateChannel('not-a-real-channel');
+    assert.equal(v.exists, false);
+    assert.equal(v.verifiable, true);
+  });
+
+  it('no creds → verifiable:false, exists:false, ZERO network (caller accepts-but-flags)', async () => {
+    const { fn, calls } = mockRouter([]);
+    const c = createKickClient({ clientId: undefined, clientSecret: undefined, fetchImpl: fn });
+    const v = await c.validateChannel('xqc');
+    assert.deepEqual(v, { slug: 'xqc', exists: false, isLive: false, verifiable: false });
+    assert.equal(calls.length, 0);
+  });
+
+  it('blank slug → empty contract without a lookup', async () => {
+    const { fn, calls } = mockRouter(TOKEN);
+    const c = createKickClient({ clientId: CID, clientSecret: SECRET, fetchImpl: fn });
+    const v = await c.validateChannel('   ');
+    assert.equal(v.slug, '');
+    assert.equal(v.exists, false);
+    assert.equal(calls.length, 0, 'blank slug must not hit the API');
   });
 });

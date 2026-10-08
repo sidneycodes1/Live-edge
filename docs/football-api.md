@@ -9,7 +9,7 @@ not amend the frozen spec — changes go through the verifier).
 ## Why a separate doc
 
 `docs/live-aggregation-spec.md` §3 defines the **generic multi-source live grid**
-envelope (`sources` = an object of `{ twitch, kick, youtube, floor }`). Football is
+envelope (`sources` = an object of `{ kick, youtube, floor }`). Football is
 NOT a live-video provider: it is match data (who plays, the minute, the score). It
 therefore gets its own, deliberately-narrower envelope and this companion doc rather
 than mutating the frozen §3 contract. §4 (honesty) still applies in full.

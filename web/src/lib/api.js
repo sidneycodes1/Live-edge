@@ -65,7 +65,7 @@ export const api = {
   meSetup: (body) => request('/api/me/setup', { method:'POST', body, auth:true }),
   listRooms: () => request('/api/rooms'),
   getRoom: (id) => request(`/api/rooms/${id}`),
-  listTwitchLive: (limit=12) => request(`/api/twitch/live?limit=${limit}`),
+  listKickLive: (limit=12) => request(`/api/kick/live?limit=${limit}`),
   // Multi-provider live grid (docs/live-aggregation-spec.md §3). Never 500s; the
   // response carries the never-empty ladder flags. Normalized in lib/live.js.
   getLive: (limit=24) => request(`/api/live?limit=${limit}`),
@@ -77,8 +77,8 @@ export const api = {
   // Keyless, quota-free search over the merged live grid + cached football feed
   // (server/src/routes/search.js). Returns { query, items, football, count }.
   search: (q, limit=24) => request(`/api/search?q=${encodeURIComponent(q)}&limit=${limit}`),
-  createRoom: (title, videoUrl, twitchChannel) => request('/api/rooms', { method:'POST', body:{ title, videoUrl, twitchChannel: twitchChannel || undefined }, auth:true }),
-  validateTwitchChannel: (login) => request(`/api/twitch/validate?login=${encodeURIComponent(login)}`),
+  createRoom: (title, videoUrl, kickChannel) => request('/api/rooms', { method:'POST', body:{ title, videoUrl, kickChannel: kickChannel || undefined }, auth:true }),
+  validateKickChannel: (slug) => request(`/api/kick/validate?slug=${encodeURIComponent(slug)}`),
   getMarket: (id) => request(`/api/markets/${id}`),
   getCatalog: () => request('/api/markets/catalog'),
   quoteMarket: (data) => request('/api/markets/quote', { method:'POST', body:data, auth:true }),

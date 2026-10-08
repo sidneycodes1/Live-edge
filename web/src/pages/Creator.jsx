@@ -6,7 +6,7 @@ import CreatorPanel from '../components/CreatorPanel.jsx';
 import { useApi } from '../hooks/useApi.js';
 import { api } from '../lib/api.js';
 import { useState } from 'react';
-import { isValidTwitchLogin } from '../lib/twitch.js';
+import { isValidKickSlug } from '../lib/kick.js';
 
 // Create as an OVERLAY body (owner decision, Oct 2026): rendered inside
 // <PanelOverlay/>'s <Modal>. It is prop-driven (no route params) and keeps its
@@ -36,13 +36,13 @@ export default function Creator({ roomId = null, prefillTitle = '', prefillChann
     const ch = roomChannel.trim();
     setCreating(true);
     try {
-      // Validate a supplied channel against Twitch before saving — don't accept garbage.
+      // Validate a supplied channel against Kick before saving — don't accept garbage.
       if (ch) {
-        if (!isValidTwitchLogin(ch)) { setCreateErr('That doesn’t look like a valid Twitch channel name.'); setCreating(false); return; }
+        if (!isValidKickSlug(ch)) { setCreateErr('That doesn’t look like a valid Kick channel name.'); setCreating(false); return; }
         try {
-          const v = await api.validateTwitchChannel(ch);
-          if (v.verifiable && !v.exists) { setCreateErr(`Twitch channel “${ch}” doesn’t exist.`); setCreating(false); return; }
-          if (!v.verifiable) setMsg('Twitch creds not configured — channel attached but unverified (real video/chat embeds still render).');
+          const v = await api.validateKickChannel(ch);
+          if (v.verifiable && !v.exists) { setCreateErr(`Kick channel “${ch}” doesn’t exist.`); setCreating(false); return; }
+          if (!v.verifiable) setMsg('Kick creds not configured — channel attached but unverified (real video embed still renders).');
           else setMsg(v.isLive ? `Attached ${ch} (live now).` : `Attached ${ch} (exists; offline right now).`);
         } catch {
           /* validation endpoint failed — proceed, server also validates on create */
@@ -104,7 +104,7 @@ export default function Creator({ roomId = null, prefillTitle = '', prefillChann
           <p className="text-xs text-white/50 mt-1 mb-4">Any signed-in account can create a room, then drop markets in it. Pick a room from Discover to manage an existing one.</p>
           <form onSubmit={handleCreateRoom} className="flex flex-col gap-2">
             <input value={roomTitle} onChange={(e) => setRoomTitle(e.target.value)} required minLength={3} maxLength={80} placeholder="Room title (e.g. Friday ranked grind)" className="flex-1 bg-black/30 border border-white/10 rounded px-3 py-2 text-sm" />
-            <input value={roomChannel} onChange={(e) => setRoomChannel(e.target.value)} maxLength={25} placeholder="Attach a live Twitch channel (optional) — e.g. lofigirl" className="flex-1 bg-black/30 border border-white/10 rounded px-3 py-2 text-sm" />
+            <input value={roomChannel} onChange={(e) => setRoomChannel(e.target.value)} maxLength={40} placeholder="Attach a live Kick channel (optional) — e.g. amouranth" className="flex-1 bg-black/30 border border-white/10 rounded px-3 py-2 text-sm" />
             <button type="submit" disabled={creating} className="bg-white text-black px-4 py-2 rounded-full text-sm font-bold disabled:opacity-50">{creating ? 'Creating…' : 'Create room & open cockpit'}</button>
           </form>
           {msg && <p className="text-xs text-yes mt-2">{msg}</p>}

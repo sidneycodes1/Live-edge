@@ -5,7 +5,7 @@
 // chip/rail only surfaces for a bucket that OBSERVED data maps into — we never
 // invent per-row buckets or show an empty "Football" section (§2 + §4 honesty).
 //
-// Inputs are SOURCE-NATIVE labels only: Twitch `game_name`, Kick `category.name`,
+// Inputs are SOURCE-NATIVE labels only: Kick `category.name`,
 // a room's `heroMarket.category`, or a floor config tag. We merely classify an
 // existing label into a display bucket; unknown labels stay uncategorized.
 

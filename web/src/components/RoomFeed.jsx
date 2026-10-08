@@ -3,13 +3,12 @@ import { detectEmbedFromUrl } from '../lib/embed.js';
 import { IconExternal } from './Icons.jsx';
 import HlsVideo from './HlsVideo.jsx';
 
-// The Live Room's video area, now provider-agnostic (docs §6). A room carries its
-// feed as either a bound Twitch channel (handled upstream in Room.jsx, untouched so
-// the existing Twitch e2e stays valid) or a `video_url`. We detect that URL's
-// provider and:
+// The Live Room's video area, provider-agnostic (docs §6). A room carries its
+// feed as either a bound Kick channel (handled upstream in Room.jsx) or a
+// `video_url`. We detect that URL's provider and:
 //   • YouTube / .mp4           → mount the VERIFIED embed (standard, proven).
-//   • Kick                      → NOT VERIFIED in-browser yet → keep the honest
-//     simulated feed and offer a real outbound "watch on Kick" link (gate, no pretense).
+//   • Kick                     → official player.kick.com iframe (VERIFIED per
+//     docs; RoomFeed keeps the honest gate for unproven hosts).
 //   • empty / unknown           → the animated simulated stage (never a dead box).
 // Everything degrades to VideoStage so the room always shows a live-looking surface.
 export default function RoomFeed({ videoUrl, parent }) {
@@ -37,7 +36,7 @@ export default function RoomFeed({ videoUrl, parent }) {
     );
   }
 
-  // Kick (unverified iframe) or external-only: keep the simulated feed + real link.
+  // Unverified provider iframe or external-only: keep the simulated feed + real link.
   return (
     <div className="space-y-2">
       <VideoStage videoUrl={null} />

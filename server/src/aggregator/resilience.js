@@ -14,7 +14,7 @@ import { ProviderError } from './errors.js';
 // the original attempt and its one retry each get their own budget.
 //
 // All of this is deliberately dependency-free (no p-retry/cockatiel): the repo's
-// only HTTP primitive is the global fetch already used by ../twitch/client.js, and
+// only HTTP primitive is the global fetch already used by the provider clients, and
 // keeping it hand-rolled means every behavior here is unit-testable with an
 // injected clock. Nothing in this file throws for "control flow" reasons that the
 // caller can't observe as a ProviderError code.

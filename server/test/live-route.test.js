@@ -23,33 +23,33 @@ describe('GET /api/live — §3 mapping', () => {
       getChannels: async (n) => {
         seenLimit = n;
         return {
-          items: [{ id: 'twitch:1', source: 'twitch', viewerCount: 9 }],
-          sources: { twitch: 1, kick: 0 },
-          degraded: [{ source: 'kick', reason: 'HTTP_ERROR' }],
+          items: [{ id: 'kick:1', source: 'kick', viewerCount: 9 }],
+          sources: { kick: 1, youtube: 0 },
+          degraded: [{ source: 'youtube', reason: 'HTTP_ERROR' }],
           usedStale: false,
           usedFloor: false,
           generatedAt: 123,
         };
       },
     };
-    const s = await start(stub, { twitch: true, kick: true, youtube: false, floor: false });
+    const s = await start(stub, { kick: true, youtube: true, floor: false });
     try {
       const res = await fetch(`${s.base}/api/live?limit=8`);
       const json = await res.json();
       assert.equal(res.status, 200);
       assert.equal(seenLimit, 8);
       assert.equal(json.count, 1);
-      assert.equal(json.items[0].source, 'twitch');
+      assert.equal(json.items[0].source, 'kick');
       assert.equal(json.servedFrom, 'live');
       // ISO string round-trips to the aggregator's numeric epoch (123ms).
       assert.equal(new Date(json.generatedAt).getTime(), 123);
-      // All four source keys always present, ladder order.
-      assert.deepEqual(Object.keys(json.sources), ['twitch', 'kick', 'youtube', 'floor']);
-      assert.deepEqual(json.sources.twitch, { enabled: true, ok: true, count: 1, degraded: false });
-      // kick was tried but degraded → ok=false, reason carries the ProviderError.code.
-      assert.deepEqual(json.sources.kick, { enabled: true, ok: false, count: 0, degraded: true, reason: 'HTTP_ERROR' });
-      // youtube disabled → not ok, not degraded (never tried).
-      assert.deepEqual(json.sources.youtube, { enabled: false, ok: false, count: 0, degraded: false });
+      // All three source keys always present, ladder order (twitch retired).
+      assert.deepEqual(Object.keys(json.sources), ['kick', 'youtube', 'floor']);
+      assert.deepEqual(json.sources.kick, { enabled: true, ok: true, count: 1, degraded: false });
+      // youtube was tried but degraded → ok=false, reason carries the ProviderError.code.
+      assert.deepEqual(json.sources.youtube, { enabled: true, ok: false, count: 0, degraded: true, reason: 'HTTP_ERROR' });
+      // floor disabled → not ok, not degraded (never tried).
+      assert.deepEqual(json.sources.floor, { enabled: false, ok: false, count: 0, degraded: false });
     } finally { await s.close(); }
   });
 
@@ -80,8 +80,8 @@ describe('GET /api/live — §3 mapping', () => {
   });
 
   it('maps usedStale→servedFrom=stale and usedFloor→servedFrom=floor', async () => {
-    const stale = { getChannels: async () => ({ items: [{ id: 'twitch:1', source: 'twitch' }], sources: {}, degraded: [], usedStale: true, usedFloor: false, generatedAt: 1 }) };
-    const ss = await start(stale, { twitch: true });
+    const stale = { getChannels: async () => ({ items: [{ id: 'kick:1', source: 'kick' }], sources: {}, degraded: [], usedStale: true, usedFloor: false, generatedAt: 1 }) };
+    const ss = await start(stale, { kick: true });
     try {
       const json = await (await fetch(`${ss.base}/api/live`)).json();
       assert.equal(json.servedFrom, 'stale');
@@ -98,7 +98,7 @@ describe('GET /api/live — §3 mapping', () => {
   it('NEVER 500s: an unexpected aggregator crash degrades to an honest-empty §3 response', async () => {
     const warns = [];
     const stub = { getChannels: async () => { throw new Error('internal'); } };
-    const s = await start(stub, { twitch: true }, (m) => warns.push(m));
+    const s = await start(stub, { kick: true }, (m) => warns.push(m));
     try {
       const res = await fetch(`${s.base}/api/live`);
       assert.equal(res.status, 200, 'live must never surface a 500 (§3)');
@@ -107,8 +107,8 @@ describe('GET /api/live — §3 mapping', () => {
       assert.equal(json.count, 0);
       assert.deepEqual(json.items, []);
       // The enabled source is honestly reported degraded rather than silently empty.
-      assert.equal(json.sources.twitch.degraded, true);
-      assert.equal(json.sources.twitch.reason, 'INTERNAL');
+      assert.equal(json.sources.kick.degraded, true);
+      assert.equal(json.sources.kick.reason, 'INTERNAL');
       assert.ok(warns.some((w) => /aggregator threw/i.test(w)), 'crash is logged, not swallowed');
     } finally { await s.close(); }
   });

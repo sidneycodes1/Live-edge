@@ -7,10 +7,10 @@
 // /watch/:source/:slug, football rail, VERIFIED YouTube embed) have landed. Per this
 // file's own instruction ("if Agent B chooses different testids, ping the verifier to
 // reconcile this file + the spec"), selectors were aligned to B's REAL testids/route
-// (rail-football, /watch/:source/:slug) and the Kick block was reconciled to spec §6:
-// the Kick embed is NOT VERIFIED, so we now assert the honest gate + the ABSENCE of a
-// fabricated player.kick.com iframe rather than requiring a live embed. No assertion
-// was weakened — Kick now checks the §4/§6 honesty invariant it previously contradicted.
+// (rail-football, /watch/:source/:slug). Kick is the PRIMARY real-stream provider
+// (Twitch retired, Oct 2026) and its player.kick.com embed is VERIFIED per official
+// docs, so this file now asserts the mounted Kick iframe + the honest chat LINK-OUT
+// (Kick has no chat-only embed) rather than an old "unverified gate" assumption.
 //
 // WHY NOT VERIFIED TODAY — the exact dependencies this suite waits on:
 //   1. /api/live HTTP route (spec §3 "OPEN, Agent A") — currently returns
@@ -20,12 +20,10 @@
 //   2. /api/config extension (spec §7 "OPEN, Agent A") — must expose
 //      features.{kickLive,youtubeLive,floorLive} + kick:{enabled} +
 //      youtube:{enabled} + floor:{enabled,hlsBase}. Stubbed here too.
-//   3. /kick/:slug web route + a Kick-backed VideoStage (Agent B). Currently
-//      a navigation to /kick/anything lands on NotFound.jsx. NO STUB CAN FIX
-//      THIS: React Router doesn't know the path. → test asserts a real
-//      render, will be RED until Agent B adds <Route path="/kick/:slug" ...>.
-//   4. /youtube/:videoId web route + a YouTube VideoStage (Agent B). Same as
-//      (3) — RED until the route exists.
+//   3. /watch/kick/:slug route + a Kick-backed FeedEmbed (Agent B). Renders the
+//      official player.kick.com iframe (VERIFIED). chat LINKS OUT to kick.com
+//      (no chat-only embed exists), never a fabricated frame.
+//   4. /watch/youtube/:videoId route + a YouTube VideoStage (Agent B).
 //   5. Football rail on landing (Agent B). Discover.jsx must render an
 //      "⚽ Live Football" section bound to /api/live (or the seed-room
 //      categories Agent C ships). Currently absent.
@@ -36,12 +34,11 @@
 // CONTRACT (testids Agent B needs to keep for this file to remain green):
 //   - Landing (Discover.jsx)
 //       data-testid="football-rail"        the ⚽ vertical root section
-//   - Kick room page (/kick/:slug)
-//       data-testid="kick-video-embed"     wrapper with data-slug +
+//   - Kick watch page (/watch/kick/:slug)
+//       data-testid="kick-video-embed"     wrapper with data-channel +
 //                                          data-player-src matching
 //                                          /^https:\/\/player\.kick\.com\/<slug>/
-//       data-testid="kick-chat-embed"      iframe with src containing
-//                                          "player.kick.com/<slug>/chat"
+//       a[href^="https://kick.com/"]       honest chat LINK-OUT (no chat frame)
 //   - YouTube room page (/youtube/:videoId)
 //       data-testid="youtube-video-embed"  wrapper with data-video-id +
 //                                          iframe src containing
@@ -94,19 +91,11 @@ const LIVE_FEED = {
       thumbnailUrl: 'https://i.ytimg.com/vi/abc123/mq.jpg', isLive: true,
       isMature: false, watchUrl: 'https://www.youtube.com/watch?v=abc123', language: null,
     },
-    {
-      id: 'twitch:afro', source: 'twitch',
-      title: 'lofi radio', channelName: 'Afro', channelSlug: 'afro',
-      category: 'Music', viewerCount: 1200, startedAt: '2026-10-01T10:00:00Z',
-      thumbnailUrl: 'https://static-cdn.jtvnw.net/previews-ttv/live_user_afro-320x180.jpg',
-      isLive: true, isMature: false, watchUrl: 'https://twitch.tv/afro', language: 'en',
-    },
   ],
-  count: 3,
+  count: 2,
   servedFrom: 'live',
   generatedAt: '2026-10-01T15:00:00Z',
   sources: {
-    twitch: { enabled: true, ok: true, count: 1, degraded: false },
     kick: { enabled: true, ok: true, count: 1, degraded: false },
     youtube: { enabled: true, ok: true, count: 1, degraded: false },
     floor: { enabled: false, ok: true, count: 0, degraded: false },
@@ -116,9 +105,8 @@ const LIVE_FEED = {
 // /api/config with the §7 flags the frontend needs to decide embed hosts and
 // to gate the Kick/YouTube rails. Kept minimal & honest.
 const CONFIG_BODY = {
-  features: { twitchLive: true, kickLive: true, youtubeLive: true, floorLive: false },
-  twitch: { enabled: true, parent: 'localhost' },
-  kick: { enabled: true },
+  features: { kickLive: true, youtubeLive: true, floorLive: false },
+  kick: { enabled: true, fallbackChannel: '' },
   youtube: { enabled: true },
   floor: { enabled: false, hlsBase: null },
 };
@@ -146,23 +134,26 @@ async function main() {
   rec('Landing renders the ⚽ Live Football rail (Agent B dependency)', footballOk);
   await page.screenshot({ path: `${SHOTS}/01-landing.png`, fullPage: true });
 
-  // ---- 2. Kick room gates HONESTLY (spec §6: Kick embed NOT VERIFIED in a real
-  //         browser yet). The shipped FeedEmbed + lib/embed.js deliberately do NOT
-  //         mount a player.kick.com iframe for an unproven embed; they show the
-  //         simulated fallback + a real outbound watch link, routed via B's generic
-  //         /watch/:source/:slug. We assert the honest gate AND that no fabricated
-  //         player is mounted — enforcing §4/§6 rather than the old embed assumption
-  //         (which would have forced B to fake an unverified player). Stricter, not
-  //         weaker; reconciled by the verifier per this file's own delegation note. ----
+  // ---- 2. Kick room mounts the OFFICIAL player (Kick is the VERIFIED primary
+  //         real-stream provider since the Twitch retirement, Oct 2026). FeedEmbed
+  //         + lib/embed.js now build the documented https://player.kick.com/<slug>
+  //         iframe (routed via the generic /watch/:source/:slug), and — because Kick
+  //         exposes NO chat-only embed — chat honestly LINKS OUT to kick.com rather
+  //         than fabricating a chat frame (§4). ----
   await page.goto(WEB + '/watch/kick/xqc-official', { waitUntil: 'domcontentloaded' });
-  const kickGate = page.getByText(/Kick playback isn.t verified/i);
-  const kickGatedOk = await kickGate.waitFor({ state: 'visible', timeout: 8000 }).then(() => true).catch(() => false);
-  rec('Kick room shows the honest "not verified" gate (no fabricated player)', kickGatedOk);
+  const kickVideo = page.getByTestId('kick-video-embed');
+  const kickVideoOk = await kickVideo.waitFor({ state: 'visible', timeout: 8000 }).then(() => true).catch(() => false);
+  rec('Kick room mounts the official player.kick.com embed (VERIFIED provider)', kickVideoOk);
+  if (kickVideoOk) {
+    const slug = await kickVideo.getAttribute('data-channel');
+    rec('Kick embed carries the requested channel slug', slug === 'xqc-official', `slug=${slug}`);
+    const frame = page.locator('iframe[src^="https://player.kick.com/xqc-official"]').first();
+    const frameOk = await frame.waitFor({ state: 'attached', timeout: 4000 }).then(() => true).catch(() => false);
+    rec('Kick iframe src is the documented player.kick.com URL (spec §6 VERIFIED row)', frameOk);
+  }
   const kickOutbound = page.locator('a[href^="https://kick.com/"]').first();
   const kickLinkOk = await kickOutbound.waitFor({ state: 'attached', timeout: 4000 }).then(() => true).catch(() => false);
-  rec('Kick room offers a real outbound kick.com watch link (spec §4 honesty)', kickLinkOk);
-  const kickFake = await page.locator('iframe[src*="player.kick.com"]').count();
-  rec('Kick room mounts NO player.kick.com iframe while unverified (§6 gate)', kickFake === 0, `fake-iframes=${kickFake}`);
+  rec('Kick chat links out to the real channel page (no fabricated chat box, §4)', kickLinkOk);
   await page.screenshot({ path: `${SHOTS}/02-kick-room.png`, fullPage: true });
 
   // ---- 3. YouTube room renders the standard embed (spec §6 VERIFIED URL) ----
@@ -184,7 +175,7 @@ async function main() {
   //         /api/rooms so we don't depend on seed data. ----
   const room = {
     id: 'e2e-live-room', title: 'Will the sample market resolve YES?',
-    video_url: null, twitch_channel: null, status: 'live', isSeed: false,
+    video_url: null, kick_channel: null, status: 'live', isSeed: false,
     owner: { displayName: 'E2ESeed' }, viewers: 1,
     markets: [{
       id: 'e2e-live-mkt', question: 'Will the sample market resolve YES?',
