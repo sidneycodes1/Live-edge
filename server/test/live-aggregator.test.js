@@ -245,3 +245,34 @@ describe('AggResult shape (spec §3: the internal return contract)', () => {
     assert.equal(Array.isArray(r.degraded), true);
   });
 });
+
+// English-only merge (Phase 2, Oct 2026): provably-non-English Kick rows are
+// dropped BEFORE the grid is served; the untagged curated fill still reaches the
+// ≥12 goal so filtering a few Kick rows never empties a section.
+describe('aggregator English-only filter (schema isEnglishStream at merge)', () => {
+  it('drops a non-English Kick row and keeps the English one + untagged curated fill', async () => {
+    const kickRows = [
+      ch('kick', 'en-1', 500, { language: 'en' }),
+      ch('kick', 'pt-1', 900, { language: 'pt' }),
+      ch('kick', 'no-lang', 300), // untagged → kept (not provably non-English)
+    ];
+    const curated = Array.from({ length: 12 }, (_, i) => ({
+      id: `yt-c${i}`, source: 'curated-youtube', category: 'News', title: `curated ${i}`,
+      channelName: `c${i}`, thumbnailUrl: `https://i.ytimg.com/vi/c${i}/hq.jpg`, isLive: true,
+    }));
+    const agg = createLiveAggregator({
+      kick: stubChannels('kick', kickRows),
+      youtube: stubChannels('youtube', []),
+      floor: floorOff,
+      curated: { getChannels: async () => curated },
+      enabled: { kick: true, youtube: true, floor: true },
+      ...quiet,
+    });
+    const r = await agg.getChannels(24);
+    const ids = r.items.map((x) => x.id);
+    assert.ok(ids.some((i) => i.includes('en-1')), 'English Kick row survives');
+    assert.ok(ids.some((i) => i.includes('no-lang')), 'untagged Kick row survives (cannot prove non-English)');
+    assert.ok(!ids.some((i) => i.includes('pt-1')), 'Portuguese Kick row is dropped');
+    assert.ok(r.items.filter((x) => x.source === 'curated-youtube').length >= 10, 'curated fill keeps the grid well populated');
+  });
+});

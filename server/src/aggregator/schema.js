@@ -51,6 +51,24 @@ export function bucketForCategory(category) {
 function str(v) {
   return v == null ? '' : String(v);
 }
+// ---------------------------------------------------------------------------
+// English-only filter (Phase 2, Oct 2026 — owner asked for English streams).
+// The HONEST rule mirrors the YouTube ended-stream prune: we only REMOVE what
+// we can PROVE is non-English. Kick tags every livestream with an ISO `language`
+// code, so a Kick row whose language is set and is NOT an `en`/`en-*` variant is
+// dropped. YouTube/curated/floor rows carry NO language tag (null) — we cannot
+// prove them non-English, so they pass; the curated 24/7 list is operator-
+// selected English channels and the YouTube queries are English operators, so
+// this keeps the grid honestly English while never inventing a language field
+// or silently dropping an untagged real stream that would break the ≥12 fill.
+// PURE, never throws.
+// ---------------------------------------------------------------------------
+export function isEnglishStream(item) {
+  const lang = String(item?.language == null ? '' : item.language).trim().toLowerCase();
+  if (!lang) return true; // untagged → not provably non-English, keep
+  return lang === 'en' || lang.startsWith('en-');
+}
+
 function int(v) {
   const n = Number(v);
   return Number.isFinite(n) && n >= 0 ? Math.floor(n) : 0;

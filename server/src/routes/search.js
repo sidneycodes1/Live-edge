@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { makeLiveChannel, bucketForCategory } from '../aggregator/schema.js';
+import { makeLiveChannel, bucketForCategory, isEnglishStream } from '../aggregator/schema.js';
 
 // ---------------------------------------------------------------------------
 // GET /api/search?q=<term> — keyless search with REAL depth (Phase 2, Oct 2026).
@@ -74,7 +74,8 @@ export function searchRouter({ aggregator, kick, youtube, warn = (msg) => consol
     // free; a Kick failure serves stale/[] and never throws.
     try {
       if (kick && typeof kick.getTopLiveChannels === 'function') {
-        items = dedupeById(items.concat(await kick.getTopLiveChannels(100)));
+        const deep = (await kick.getTopLiveChannels(100)).filter(isEnglishStream);
+        items = dedupeById(items.concat(deep));
       }
     } catch (e) {
       warn(`search: kick deep page unavailable → skipping it (${e && (e.code || e.message)})`);
@@ -98,7 +99,7 @@ export function searchRouter({ aggregator, kick, youtube, warn = (msg) => consol
     try {
       if (kick && typeof kick.getChannelBySlug === 'function' && looksLikeChannelSlug(q)) {
         const ch = await kick.getChannelBySlug(q);
-        if (ch && ch.isLive) {
+        if (ch && ch.isLive && isEnglishStream({ language: ch.language })) {
           const hit = makeLiveChannel({
             source: 'kick',
             nativeId: ch.broadcasterUserId || ch.slug,

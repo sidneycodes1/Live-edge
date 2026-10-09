@@ -8,7 +8,7 @@ import {
   BREAKER_COOLDOWN_MS,
   BULKHEAD_LIMIT,
 } from './resilience.js';
-import { LIVE_SOURCES } from './schema.js';
+import { LIVE_SOURCES, isEnglishStream } from './schema.js';
 
 // Landing-grid fill goal (Phase 2): curated 24/7 channels top the merged result up
 // to at least this many real cards when live providers come up short (e.g. the
@@ -143,7 +143,10 @@ export function createLiveAggregator({
 
     // Preserve priority order when merging (dedupe/sort runs after).
     const ordered = LIVE_SOURCES.map((src) => results.find((r) => r.name === src)).filter(Boolean);
-    const mergedRaw = ordered.flatMap((r) => r.value || []);
+    // English-only (Phase 2, Oct 2026): drop provably-non-English Kick rows
+    // before merge; untagged YouTube/curated/floor rows are never proven, so
+    // they pass and the ≥12 curated fill stays intact.
+    const mergedRaw = ordered.flatMap((r) => r.value || []).filter(isEnglishStream);
     const items = dedupeSorted(mergedRaw, limit);
 
     const sources = {};

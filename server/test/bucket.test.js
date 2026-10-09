@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { bucketForCategory, makeLiveChannel, LIVE_BUCKETS } from '../src/aggregator/schema.js';
+import { bucketForCategory, makeLiveChannel, LIVE_BUCKETS, isEnglishStream } from '../src/aggregator/schema.js';
 import { normalizeKickStream } from '../src/kick/client.js';
 
 // ---------------------------------------------------------------------------
@@ -83,5 +83,29 @@ describe('normalizeKickStream - Kick rows carry a derived bucket, category uncha
     const c = normalizeKickStream({ broadcaster_user_id: 'b3', slug: 's' });
     assert.equal(c.category, '');
     assert.equal(c.bucket, 'other');
+  });
+});
+
+// English-only filter (Phase 2, Oct 2026): drop provably-non-English Kick rows,
+// keep untagged rows (YouTube/curated/floor carry no language) — never invent a
+// field, never silently drop a real stream we cannot prove is non-English.
+describe('isEnglishStream — honest English-only rule', () => {
+  it('keeps English variants, drops provably-other languages', () => {
+    assert.equal(isEnglishStream({ language: 'en' }), true);
+    assert.equal(isEnglishStream({ language: 'en-GB' }), true);
+    assert.equal(isEnglishStream({ language: 'EN' }), true);
+    assert.equal(isEnglishStream({ language: 'pt' }), false);
+    assert.equal(isEnglishStream({ language: 'es' }), false);
+    assert.equal(isEnglishStream({ language: 'de-DE' }), false);
+  });
+  it('untagged rows pass (we only remove what we can PROVE non-English)', () => {
+    assert.equal(isEnglishStream({ language: null }), true);
+    assert.equal(isEnglishStream({ language: '' }), true);
+    assert.equal(isEnglishStream({}), true);
+    assert.equal(isEnglishStream(null), true);
+  });
+  it('a normalized Kick row respects its language tag', () => {
+    assert.equal(isEnglishStream(normalizeKickStream({ broadcaster_user_id: 'x', slug: 's', language: 'pt' })), false);
+    assert.equal(isEnglishStream(normalizeKickStream({ broadcaster_user_id: 'y', slug: 's', language: 'en' })), true);
   });
 });
