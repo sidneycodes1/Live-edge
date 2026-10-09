@@ -92,8 +92,11 @@ export const api = {
   getPortfolio: () => request('/api/portfolio', { auth:true }),
   getLedger: (limit=50, offset=0) => request(`/api/ledger?limit=${limit}&offset=${offset}`, { auth:true }),
   faucet: () => request('/api/faucet', { method:'POST', auth:true }),
-  claimWin: (marketId, signature) => request('/api/claims/win', { method:'POST', body:{ marketId, signature }, auth:true }),
-  claimFees: (marketId, signature) => request('/api/claims/creator-fees', { method:'POST', body:{ marketId, signature }, auth:true }),
+  // Signature is optional (Oct 2026 sim consent, mirrors submitOrder): the sim
+  // server treats the JWT session as the claimer's consent; build+sign stays
+  // available for the day a real client signer ships.
+  claimWin: (marketId, signature) => request('/api/claims/win', { method:'POST', body: signature ? { marketId, signature } : { marketId }, auth:true }),
+  claimFees: (marketId, signature) => request('/api/claims/creator-fees', { method:'POST', body: signature ? { marketId, signature } : { marketId }, auth:true }),
   buildClaimWin: (marketId) => request('/api/claims/win/build', { method:'POST', body:{ marketId }, auth:true }),
   buildClaimFees: (marketId) => request('/api/claims/creator-fees/build', { method:'POST', body:{ marketId }, auth:true }),
   chat: (roomId, body) => request('/api/chat', { method:'POST', body:{ roomId, body }, auth:true }),

@@ -318,28 +318,38 @@ export function createSimClient({ db, env }) {
       const { rows: uRows } = await db.query('select wallet from users where id=$1', [userId]);
       if (uRows.length === 0) throw new PantaError('UNAUTHORIZED', 'User not found', { status: 401 });
       const wallet = uRows[0].wallet;
-      const stored = claimNonces.get(`${userId}:${marketId}`) || claimNonces.get(`:${marketId}:${wallet}`);
-      if (!stored) throw new PantaError('INVALID_SIGNATURE', 'No claim build found for this market (call /win/build first)', { status: 400 });
-      const signPayload = { kind: 'claim_win', marketId, wallet, nonce: stored.nonce };
-      const canonical = canonicalStringify(signPayload);
-      const msgBytes = new TextEncoder().encode(canonical);
-      try {
-        const sigBytes = bs58.decode(signature);
-        const pubBytes = bs58.decode(wallet);
-        if (!nacl.sign.detached.verify(msgBytes, sigBytes, pubBytes)) {
-          throw new PantaError('INVALID_SIGNATURE', 'Invalid signature', { status: 400 });
+      // CONSENT PATHS (owner decision, Oct 2026 — mirrors submitBuy's SIM CONSENT):
+      // a SUPPLIED signature is still verified against the nonce actually issued
+      // at build time. With NO signature, the authenticated JWT session IS the
+      // claimer's consent; idempotency keys on a deterministic per-claim token
+      // (the claimed-flag guard above already blocks a re-credit).
+      let sigKey = signature;
+      if (signature) {
+        const stored = claimNonces.get(`${userId}:${marketId}`) || claimNonces.get(`:${marketId}:${wallet}`);
+        if (!stored) throw new PantaError('INVALID_SIGNATURE', 'No claim build found for this market (call /win/build first)', { status: 400 });
+        const signPayload = { kind: 'claim_win', marketId, wallet, nonce: stored.nonce };
+        const canonical = canonicalStringify(signPayload);
+        const msgBytes = new TextEncoder().encode(canonical);
+        try {
+          const sigBytes = bs58.decode(signature);
+          const pubBytes = bs58.decode(wallet);
+          if (!nacl.sign.detached.verify(msgBytes, sigBytes, pubBytes)) {
+            throw new PantaError('INVALID_SIGNATURE', 'Invalid signature', { status: 400 });
+          }
+        } catch {
+          throw new PantaError('INVALID_SIGNATURE', 'Invalid signature encoding', { status: 400 });
         }
-      } catch {
-        throw new PantaError('INVALID_SIGNATURE', 'Invalid signature encoding', { status: 400 });
+      } else {
+        sigKey = `sim:claim:${userId}:${marketId}`;
       }
       // idempotent via trades signature uniqueness
-      const { rows: existing } = await db.query('select * from trades where signature=$1', [signature]);
+      const { rows: existing } = await db.query('select * from trades where signature=$1', [sigKey]);
       if (existing.length > 0) return { amount: winningShares, idempotent: true };
       return db.tx(async ({ query }) => {
         await query(`update positions set claimed=true where user_id=$1 and market_id=$2`, [userId, marketId]);
         await query(`update balances set sim_usdc = sim_usdc + $1 where user_id=$2`, [winningShares, userId]);
         const tid = randomUUID();
-        await query(`insert into trades(id, user_id, market_id, kind, side, amount, shares, signature) values($1,$2,$3,'claim',$4,$5,$6,$7)`, [tid, userId, marketId, m.outcome, winningShares, winningShares, signature]);
+        await query(`insert into trades(id, user_id, market_id, kind, side, amount, shares, signature) values($1,$2,$3,'claim',$4,$5,$6,$7)`, [tid, userId, marketId, m.outcome, winningShares, winningShares, sigKey]);
         return { amount: winningShares, tradeId: tid };
       });
     },
@@ -369,23 +379,32 @@ export function createSimClient({ db, env }) {
       const { rows: uRows } = await db.query('select wallet from users where id=$1', [userId]);
       if (uRows.length === 0) throw new PantaError('UNAUTHORIZED', 'User not found', { status: 401 });
       const wallet = uRows[0].wallet;
-      const stored = creatorFeeNonces.get(`${userId}:${marketId}`) || creatorFeeNonces.get(`:${marketId}:${wallet}`) || creatorFeeNonces.get(`${marketId}`);
-      if (!stored) throw new PantaError('INVALID_SIGNATURE', 'No creator-fee build found for this market (call /creator-fees/build first)', { status: 400 });
-      // Rebuild with stored nonce AND stored wallet if build was issued without wallet (legacy), else current wallet
-      const effectiveWallet = stored.wallet || wallet;
-      const signPayload = { kind: 'claim_creator_fees', marketId, wallet: effectiveWallet, nonce: stored.nonce };
-      const canonical = canonicalStringify(signPayload);
-      const msgBytes = new TextEncoder().encode(canonical);
-      try {
-        const sigBytes = bs58.decode(signature);
-        const pubBytes = bs58.decode(wallet);
-        if (!nacl.sign.detached.verify(msgBytes, sigBytes, pubBytes)) {
-          throw new PantaError('INVALID_SIGNATURE', 'Invalid signature', { status: 400 });
+      // CONSENT PATHS (Oct 2026 sim consent, mirrors submitClaim): a supplied
+      // signature verifies against the build-time nonce; without one the JWT
+      // session IS the creator's consent (creator identity + graduated + the
+      // creator_fees_claimed flag are all still enforced around this call).
+      let sigKey = signature;
+      if (signature) {
+        const stored = creatorFeeNonces.get(`${userId}:${marketId}`) || creatorFeeNonces.get(`:${marketId}:${wallet}`) || creatorFeeNonces.get(`${marketId}`);
+        if (!stored) throw new PantaError('INVALID_SIGNATURE', 'No creator-fee build found for this market (call /creator-fees/build first)', { status: 400 });
+        // Rebuild with stored nonce AND stored wallet if build was issued without wallet (legacy), else current wallet
+        const effectiveWallet = stored.wallet || wallet;
+        const signPayload = { kind: 'claim_creator_fees', marketId, wallet: effectiveWallet, nonce: stored.nonce };
+        const canonical = canonicalStringify(signPayload);
+        const msgBytes = new TextEncoder().encode(canonical);
+        try {
+          const sigBytes = bs58.decode(signature);
+          const pubBytes = bs58.decode(wallet);
+          if (!nacl.sign.detached.verify(msgBytes, sigBytes, pubBytes)) {
+            throw new PantaError('INVALID_SIGNATURE', 'Invalid signature', { status: 400 });
+          }
+        } catch {
+          throw new PantaError('INVALID_SIGNATURE', 'Invalid signature encoding', { status: 400 });
         }
-      } catch {
-        throw new PantaError('INVALID_SIGNATURE', 'Invalid signature encoding', { status: 400 });
+      } else {
+        sigKey = `sim:fee:${userId}:${marketId}`;
       }
-      const { rows: existing } = await db.query('select * from trades where signature=$1', [signature]);
+      const { rows: existing } = await db.query('select * from trades where signature=$1', [sigKey]);
       if (existing.length > 0) return { amount: Number(m.creator_fees_accrued), idempotent: true };
       const amount = Number(m.creator_fees_accrued);
       if (amount <= 0) throw new PantaError('NOT_CLAIMABLE', 'No fees to claim', { status: 400 });
@@ -393,7 +412,7 @@ export function createSimClient({ db, env }) {
         await query(`update markets set creator_fees_claimed=true where id=$1`, [marketId]);
         await query(`update balances set sim_usdc = sim_usdc + $1 where user_id=$2`, [amount, userId]);
         const tid = randomUUID();
-        await query(`insert into trades(id, user_id, market_id, kind, amount, signature) values($1,$2,$3,'creator_fee_claim',$4,$5)`, [tid, userId, marketId, amount, signature]);
+        await query(`insert into trades(id, user_id, market_id, kind, amount, signature) values($1,$2,$3,'creator_fee_claim',$4,$5)`, [tid, userId, marketId, amount, sigKey]);
         return { amount, tradeId: tid };
       });
     },

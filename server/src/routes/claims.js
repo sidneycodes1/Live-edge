@@ -1,18 +1,20 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { validate } from '../middleware/validate.js';
-import bs58 from 'bs58';
 import { assertTermsAccepted } from '../lib/termsGate.js';
 
 export function claimsRouter({ db, panta, notify }) {
   const r = Router();
 
-  const schema = z.object({ marketId: z.string().uuid(), signature: z.string().min(5) });
+  // Signature is OPTIONAL (Oct 2026 sim consent, mirroring /orders/submit and
+  // /markets/register): the authenticated JWT session IS the claimer's consent.
+  // A supplied signature is still checked against its build-time nonce (and
+  // recorded), so a real client signer keeps working the day it flips on.
+  const schema = z.object({ marketId: z.string().uuid(), signature: z.string().min(5).optional() });
 
   r.post('/win', validate(schema), async (req, res, next) => {
     try {
       if (!req.user) return res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Unauthorized' } });
-      try { bs58.decode(req.body.signature); } catch { return res.status(400).json({ error: { code: 'VALIDATION_ERROR', message: 'Invalid signature' } }); }
       // Money only moves on the committed claim — enforce the Terms gate here.
       await assertTermsAccepted(db, req.user.id);
       const { marketId, signature } = req.body;
@@ -31,7 +33,6 @@ export function claimsRouter({ db, panta, notify }) {
   r.post('/creator-fees', validate(schema), async (req, res, next) => {
     try {
       if (!req.user) return res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Unauthorized' } });
-      try { bs58.decode(req.body.signature); } catch { return res.status(400).json({ error: { code: 'VALIDATION_ERROR', message: 'Invalid signature' } }); }
       // Money only moves on the committed claim — enforce the Terms gate here.
       await assertTermsAccepted(db, req.user.id);
       const { marketId, signature } = req.body;

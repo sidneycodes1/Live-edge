@@ -178,4 +178,65 @@ describe('claims', () => {
     assert.equal(r.res.status, 400);
     assert.equal(r.json.error.code, 'INVALID_SIGNATURE');
   });
+
+  // Oct 2026 SIM CONSENT (mirrors orders/submit + markets/register): with no
+  // client signer in the app, the JWT session IS the claimer's consent. The
+  // no-signature path must claim WITHOUT any /win/build step and pay exactly
+  // once (replay = idempotent 200, deterministic sim:claim key blocks a second
+  // trade even across process restarts that clear the in-memory nonce maps).
+  it('session-consent claim (no build, no signature) pays out once', async () => {
+    const { fetchJson } = await makeApp();
+    const A = genWallet();
+    const B = genWallet();
+    const UA = await auth(fetchJson, A);
+    const UB = await auth(fetchJson, B);
+    const marketId = await createMarket(fetchJson, UA, 'Session consent claim?');
+    await buy(fetchJson, UB, marketId, 'yes', 10);
+    await fetchJson(`/api/markets/${marketId}/resolve`, { method: 'POST', body: JSON.stringify({ outcome: 'yes', force: true }), headers: { Authorization: `Bearer ${UA.token}` } });
+    const r = await fetchJson('/api/claims/win', { method: 'POST', body: JSON.stringify({ marketId }), headers: { Authorization: `Bearer ${UB.token}` } });
+    assert.equal(r.res.status, 200);
+    assert.ok(Number(r.json.amount) > 0);
+    const balAfterFirst = Number((await fetchJson('/api/portfolio', { headers: { Authorization: `Bearer ${UB.token}` } })).json.balance);
+    const replay = await fetchJson('/api/claims/win', { method: 'POST', body: JSON.stringify({ marketId }), headers: { Authorization: `Bearer ${UB.token}` } });
+    assert.equal(replay.res.status, 200);
+    assert.equal(replay.json.idempotent, true);
+    const balAfterReplay = Number((await fetchJson('/api/portfolio', { headers: { Authorization: `Bearer ${UB.token}` } })).json.balance);
+    assert.equal(balAfterReplay, balAfterFirst);
+  });
+
+  it('loser still cannot claim via the session-consent path', async () => {
+    const { fetchJson } = await makeApp();
+    const A = genWallet();
+    const B = genWallet();
+    const UA = await auth(fetchJson, A);
+    const UB = await auth(fetchJson, B);
+    const marketId = await createMarket(fetchJson, UA, 'Session consent loser?');
+    await buy(fetchJson, UB, marketId, 'no', 10);
+    await fetchJson(`/api/markets/${marketId}/resolve`, { method: 'POST', body: JSON.stringify({ outcome: 'yes', force: true }), headers: { Authorization: `Bearer ${UA.token}` } });
+    const r = await fetchJson('/api/claims/win', { method: 'POST', body: JSON.stringify({ marketId }), headers: { Authorization: `Bearer ${UB.token}` } });
+    assert.equal(r.res.status, 400);
+    assert.equal(r.json.error.code, 'NOT_CLAIMABLE');
+  });
+
+  it('creator fee claim works with session consent alone (no signature)', async () => {
+    const { fetchJson, db } = await makeApp();
+    const A = genWallet();
+    const B = genWallet();
+    const UA = await auth(fetchJson, A);
+    const UB = await auth(fetchJson, B);
+    const marketId = await createMarket(fetchJson, UA, 'Session consent fees?');
+    for (let i = 0; i < 12; i++) {
+      await buy(fetchJson, UB, marketId, 'yes', 10);
+      if (i === 9) await db.query('update balances set sim_usdc = sim_usdc + 100 where user_id=$1', [UB.id]);
+    }
+    await fetchJson(`/api/markets/${marketId}/resolve`, { method: 'POST', body: JSON.stringify({ outcome: 'yes', force: true }), headers: { Authorization: `Bearer ${UA.token}` } });
+    const { rows } = await db.query('select graduated, creator_fees_accrued from markets where id=$1', [marketId]);
+    assert.equal(rows[0].graduated, true);
+    const r = await fetchJson('/api/claims/creator-fees', { method: 'POST', body: JSON.stringify({ marketId }), headers: { Authorization: `Bearer ${UA.token}` } });
+    assert.equal(r.res.status, 200);
+    assert.ok(Number(r.json.amount) > 0);
+    const replay = await fetchJson('/api/claims/creator-fees', { method: 'POST', body: JSON.stringify({ marketId }), headers: { Authorization: `Bearer ${UA.token}` } });
+    assert.equal(replay.res.status, 200);
+    assert.equal(replay.json.idempotent, true);
+  });
 });
