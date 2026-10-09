@@ -103,6 +103,10 @@ export default [
         atob: 'readonly',
         btoa: 'readonly',
         Response: 'readonly',
+        // Playwright page.evaluate callbacks (e2e-browser.mjs) run in the browser.
+        document: 'readonly',
+        window: 'readonly',
+        location: 'readonly',
       },
     },
   },
