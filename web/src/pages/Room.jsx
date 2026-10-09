@@ -173,7 +173,7 @@ export default function Room() {
                 <KickChatLinkOut channel={ch} />
               </div>
               <div className="flex-1 min-h-0 overflow-y-auto">
-                <ChatFeed messages={room.chat || []} sseEvents={events} />
+                <ChatFeed messages={room.chat || []} sseEvents={events} roomId={id} />
               </div>
             </div>
           </div>
@@ -211,7 +211,7 @@ export default function Room() {
               ))}
             </div>
             <div className={`${mobileTab === 'market' ? 'hidden' : 'block'} md:block`}>
-              <ChatFeed messages={room.chat || []} sseEvents={events} />
+              <ChatFeed messages={room.chat || []} sseEvents={events} roomId={id} />
             </div>
           </div>
           <div className={`${mobileTab === 'chat' ? 'hidden' : 'block'} md:block space-y-4`}>
@@ -253,7 +253,7 @@ export default function Room() {
             ))}
           </div>
           <div className={`${mobileTab === 'chat' ? 'block' : 'hidden'} md:block`}>
-            <ChatFeed messages={room.chat || []} sseEvents={events} />
+            <ChatFeed messages={room.chat || []} sseEvents={events} roomId={id} />
           </div>
         </div>
         <div className={`${mobileTab === 'market' ? 'block' : 'hidden'} md:block space-y-4`}>

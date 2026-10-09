@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useParams, useLocation, Link } from 'react-router-dom';
 import { api } from '../lib/api.js';
 import { normalizeLive } from '../lib/live.js';
-import { buildChatEmbed } from '../lib/embed.js';
+import ChatFeed from '../components/ChatFeed.jsx';
 import { useLiveConfig } from '../hooks/useLiveConfig.js';
 import FeedEmbed from '../components/FeedEmbed.jsx';
 import VideoStage from '../components/VideoStage.jsx';
@@ -17,9 +17,11 @@ import VideoStage from '../components/VideoStage.jsx';
 // and the room fell back to showing a raw "UC…" as the title with no player). A grid
 // lookup survives ONLY as a fallback for legacy channel-id URLs it can't interpret.
 //
-// CHAT (Task B): for a YouTube room with a known video id we mount the official
-// youtube.com/live_chat iframe. When there is no single video (a 24/7 channel embed)
-// or the provider has no embeddable chat, we say so plainly — never a fake box (§4).
+// CHAT: LiveEdge's own chat only. The provider-chat iframe path is retired (the
+// banned "Sign in to chat" box lives inside a cross-origin frame we cannot restyle),
+// so this column is always the LiveEdge ChatFeed + composer. Watch pages have no room
+// row yet, so posting is gated to the honest no-room state (see the section 5a note in
+// the component below). We never invent a roomId.
 
 const UC_RE = /^UC[\w-]{20,}$/;
 
@@ -102,68 +104,6 @@ function channelFromParams(source, slug, titleParam, st) {
   return null;
 }
 
-// The right-hand chat column. Mounts a real iframe when one exists, else an honest,
-// provider-specific note. Never renders a simulated comment box (§4).
-function ChatColumn({ ch, chat }) {
-  const src = chat && chat.src;
-  // Embedded YouTube live chats are known to stop auto-scrolling after a while —
-  // the frame looks frozen on a stale comment. Remount it every 90s so the chat
-  // re-joins the live session (a plain reload of the same URL, nothing invented).
-  const [gen, setGen] = useState(0);
-  useEffect(() => {
-    if (!src) return undefined;
-    const t = setInterval(() => setGen((g) => g + 1), 90000);
-    return () => clearInterval(t);
-  }, [src]);
-  if (src) {
-    return (
-      <div className="w-full h-full flex flex-col min-h-0" data-testid="chat-column-embed">
-        <iframe
-          key={`${src}#${gen}`}
-          title={`Live chat: ${ch.title || ch.channelSlug || 'stream'}`}
-          src={src}
-          data-testid="chat-embed"
-          data-provider={chat.provider}
-          className="flex-1 w-full min-h-0 bg-black/20"
-          style={{ colorScheme: 'dark' }}
-          allow="autoplay; clipboard-write; encrypted-media; picture-in-picture; full-screen"
-        />
-        {/* Honest caption: cross-origin frames can show provider error pages
-            (chat disabled/hold by the creator) we cannot detect or style. */}
-        <p className="shrink-0 px-3 py-1.5 text-[10px] leading-relaxed text-white/40 border-t border-white/10">
-          Real {chat.provider === 'youtube' ? 'YouTube' : chat.provider} live chat for this broadcast —
-          signed-in viewers can post. If the creator turned chat off, their notice shows here.
-        </p>
-      </div>
-    );
-  }
-  const note =
-    ch.source === 'curated-youtube'
-      ? 'This is a 24/7 channel stream — it isn’t tied to a single video, so live chat isn’t available here.'
-      : ch.source === 'kick'
-        ? 'Kick chat can’t be embedded in this view.'
-        : ch.source === 'floor'
-          ? 'This stream has no chat available here.'
-          : 'Live chat isn’t available for this stream.';
-  return (
-    <div className="w-full h-full grid place-items-center text-white/40 text-sm bg-black/20 px-5 text-center" data-testid="chat-note">
-      <div className="space-y-3 max-w-xs">
-        <p>{note}</p>
-        {ch.source === 'kick' && ch.channelSlug && (
-          <a
-            href={`https://kick.com/${encodeURIComponent(ch.channelSlug.toLowerCase())}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-block px-4 py-2 rounded-card bg-white text-black text-xs font-semibold cursor-pointer hover:bg-white/90 transition"
-          >
-            Open stream chat on Kick ↗
-          </a>
-        )}
-      </div>
-    </div>
-  );
-}
-
 export default function WatchRoom() {
   const { source, slug, title: titleParam } = useParams();
   const location = useLocation();
@@ -229,8 +169,13 @@ export default function WatchRoom() {
     };
 
   const displayTitle = ch.title || ch.channelName || 'Live stream';
-  const chat = buildChatEmbed(ch, parent);
   const hasViewers = ch.viewerCount != null && Number(ch.viewerCount) > 0;
+
+  // Section 5a: /watch/:source/:slug has NO LiveEdge room row, so there is no
+  // roomId to post into and no SSE stream to attach. Until the verifier ships a
+  // GET /api/rooms/ensure?channel=<source:slug> (or an agreed room reuse), roomId
+  // stays undefined and ChatComposer falls to its honest no-room state. When that
+  // endpoint lands, resolve a real roomId here and pass roomId + useSSE().events.
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-6 pb-20">
@@ -262,14 +207,14 @@ export default function WatchRoom() {
         </div>
         <div className="hidden md:block">
           <div className="h-[420px] md:h-[calc(100vh-8rem)] md:sticky md:top-4 rounded-card overflow-hidden border border-white/10">
-            <ChatColumn ch={ch} chat={chat} />
+            <ChatFeed messages={[]} sseEvents={[]} />
           </div>
         </div>
       </div>
 
       {/* Mobile chat (same honest panel, below the player) */}
       <div className="md:hidden mt-4 h-[360px] rounded-card overflow-hidden border border-white/10">
-        <ChatColumn ch={ch} chat={chat} />
+        <ChatFeed messages={[]} sseEvents={[]} />
       </div>
     </div>
   );
