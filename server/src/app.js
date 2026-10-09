@@ -204,7 +204,10 @@ export async function createApp({ env: rawEnv, db: existingDb, privyVerifier: in
   // Keyless, quota-free search over the merged live grid + cached football feed
   // (server/src/routes/search.js). Never 500s; empty query / no matches → honest
   // empty so the UI can show "no matches" rather than a broken spinner.
-  app.use('/api/search', searchRouter({ aggregator: liveAggregator }));
+  // `kick` is wired so a slug-shaped query resolves an EXACT live Kick channel
+  // (BUILD_CONTRACT §5 / Agent B): searchRouter degrades to the contains-filter
+  // only when `kick` is absent, so this line is what makes Kick-first search fire.
+  app.use('/api/search', searchRouter({ aggregator: liveAggregator, kick }));
 
   // catalog public
   // rooms public (list/detail)
