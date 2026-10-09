@@ -216,8 +216,26 @@ export function createYouTubeClient({
     return listInflight;
   }
 
+  // Public: never throws. ONE-OFF operator query (search fallback in
+  // /api/search, Phase 2 Oct 2026): asks YouTube for genuinely-live videos
+  // matching `q` and returns real LiveChannel[] ([] on no creds / any failure).
+  // Deliberately UNCACHED — a user query is never the grid's fixed operator
+  // query list, and a miss must not poison the rotation cache. Quota honesty:
+  // the route only fires this when the Kick deep page returned no hits.
+  async function searchLive(q, limit = 10) {
+    if (!hasCreds() || !String(q || '').trim()) return [];
+    try {
+      const items = await fetchQuery({ q: String(q).trim() }, clampInt(limit, 1, 25, 10));
+      return items;
+    } catch (e) {
+      warn(`YouTube searchLive("${q}") failed → serving empty (${e.code || e.name})`);
+      return [];
+    }
+  }
+
   return {
     hasCreds,
     getTopLiveChannels,
+    searchLive,
   };
 }

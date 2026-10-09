@@ -189,13 +189,11 @@ export async function createApp({ env: rawEnv, db: existingDb, privyVerifier: in
   // LiveChannel[] with a never-empty ladder. Never 500s — see routes/live.js.
   app.use('/api/live', liveRouter({ aggregator: liveAggregator, enabled }));
 
-  // Keyless, quota-free search over the merged live grid
-  // (server/src/routes/search.js). Never 500s; empty query / no matches → honest
-  // empty so the UI can show "no matches" rather than a broken spinner.
-  // `kick` is wired so a slug-shaped query resolves an EXACT live Kick channel
-  // (BUILD_CONTRACT §5 / Agent B): searchRouter degrades to the contains-filter
-  // only when `kick` is absent, so this line is what makes Kick-first search fire.
-  app.use('/api/search', searchRouter({ aggregator: liveAggregator, kick }));
+  // Keyless live search with REAL depth (server/src/routes/search.js): the full
+  // Kick page (100), the merged grid, an exact-slug Kick resolution, and a
+  // YouTube search fallback fired ONLY when nothing else matched. Never 500s;
+  // empty query / no matches → honest empty so the UI can show "no matches".
+  app.use('/api/search', searchRouter({ aggregator: liveAggregator, kick, youtube }));
 
   // catalog public
   // rooms public (list/detail)
