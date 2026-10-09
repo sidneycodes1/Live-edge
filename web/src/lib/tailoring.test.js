@@ -20,14 +20,13 @@ describe('matchesInterest (REAL fields only — category/source)', () => {
     expect(matchesInterest(card('n', { source: 'curated-youtube', category: 'News' }), 'trading')).toBe(true);
     expect(matchesInterest(card('m', { category: 'Politics' }), 'trading')).toBe(false);
   });
-  it('sports matches Football + Sports buckets', () => {
-    expect(matchesInterest(card('f', { source: 'football-api', category: 'Football' }), 'sports')).toBe(true);
+  it('sports matches Sports-bucketed stream cards (football labels map there)', () => {
+    expect(matchesInterest(card('f', { source: 'kick', category: 'Football' }), 'sports')).toBe(true);
     expect(matchesInterest(card('s', { source: 'kick', category: 'NFL' }), 'sports')).toBe(true);
     expect(matchesInterest(card('g', { source: 'kick', category: 'Gaming' }), 'sports')).toBe(false);
   });
-  it('streams matches real broadcast rows, never bare data rows', () => {
+  it('streams matches real broadcast rows only', () => {
     expect(matchesInterest(card('y', { source: 'youtube' }), 'streams')).toBe(true);
-    expect(matchesInterest(card('f', { source: 'football-api' }), 'streams')).toBe(false);
     expect(matchesInterest(card('x', { source: '' }), 'streams')).toBe(false);
   });
   it('null/garbage cards match nothing (never throws, never fabricates)', () => {
@@ -42,7 +41,7 @@ describe('tailorByInterests', () => {
     card('music', { source: 'curated-youtube', category: 'Music' }),
     card('news1', { source: 'curated-youtube', category: 'News' }),
     card('game', { source: 'kick', category: 'Gaming' }),
-    card('football', { source: 'football-api', category: 'Football' }),
+    card('sports1', { source: 'kick', category: 'Football' }),
   ];
 
   it('EMPTY interests preserve the current order exactly', () => {
@@ -52,17 +51,17 @@ describe('tailorByInterests', () => {
   });
 
   it('matched REAL cards float up (stable), the rest keeps its order', () => {
-    expect(ids(tailorByInterests(grid, ['sports']))).toEqual(['football', 'music', 'news1', 'game']);
-    expect(ids(tailorByInterests(grid, ['trading']))).toEqual(['news1', 'music', 'game', 'football']);
+    expect(ids(tailorByInterests(grid, ['sports']))).toEqual(['sports1', 'music', 'news1', 'game']);
+    expect(ids(tailorByInterests(grid, ['trading']))).toEqual(['news1', 'music', 'game', 'sports1']);
     // union of interests: matched-by-either keeps original relative order
-    expect(ids(tailorByInterests(grid, ['trading', 'sports']))).toEqual(['news1', 'football', 'music', 'game']);
+    expect(ids(tailorByInterests(grid, ['trading', 'sports']))).toEqual(['news1', 'sports1', 'music', 'game']);
   });
 
   it('PINS ALWAYS LEAD: the pinned prefix (leadCount) is never re-ranked', () => {
     const pinnedFirst = [card('pin1', { category: 'Music' }), card('pin2', { category: 'Ambience' }), ...grid];
     const out = tailorByInterests(pinnedFirst, ['sports'], { leadCount: 2 });
     expect(ids(out).slice(0, 2)).toEqual(['pin1', 'pin2']);
-    expect(out[2].id).toBe('football'); // first matched AFTER the pins
+    expect(out[2].id).toBe('sports1'); // first matched AFTER the pins
   });
 
   it('NO duplication and NO fabrication: output is a permutation of the input', () => {

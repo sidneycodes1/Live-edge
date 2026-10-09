@@ -312,21 +312,6 @@ describe('aggregator — curated post-merge fill (Phase 2)', () => {
     assert.ok(!('curated' in r.sources), 'no curated key when the client is absent');
   });
 
-  it('football items NEVER enter the general grid (unchanged phase rule)', async () => {
-    let footballTouched = false;
-    const agg = createLiveAggregator({
-      floor: { getGuaranteedChannel: () => [] },
-      football: { getLiveFixtures: async () => { footballTouched = true; return { items: [{ id: 'fb-1', source: 'football-api' }], stale: false }; } },
-      curated: { getChannels: async () => [curatedItem('c1')] },
-      enabled: { floor: true, football: true },
-      ...quiet,
-    });
-    const r = await agg.getChannels(24);
-    assert.equal(footballTouched, false, 'getChannels must not call the football data client');
-    assert.ok(!r.items.some((i) => i.source === 'football-api'));
-    assert.ok(!agg.providers.includes('football'), 'football is not a grid provider');
-  });
-
   it('§3 wire contract UNCHANGED: the HTTP `sources` object still has exactly the LIVE_SOURCES keys', async () => {
     // The aggregator records an internal `sources.curated`, but the route builds its
     // wire payload strictly from LIVE_SOURCES — so §3 consumers see no new key.

@@ -29,7 +29,6 @@ function liveItem(over = {}) {
 function fakeAggregator(items = [liveItem()]) {
   return {
     getChannels: async () => ({ items, generatedAt: T0 }),
-    getFootballMatches: async () => ({ items: [], status: 'disabled' }),
   };
 }
 
@@ -131,14 +130,11 @@ describe('marketEngine/tick', () => {
 
   it('BROADCAST RULE: candidates without a watchable stream never reach the model', async () => {
     const { db } = await makeApp();
-    // A data-only feed (no watchUrl/thumbnail) + a bare football fixture: neither
-    // is a live BROADCAST, so the pool is empty → skip 'no-live', model untouched.
+    // A data-only feed item (no watchUrl/thumbnail) is not a live BROADCAST,
+    // so the pool is empty → skip 'no-live', model untouched.
     const agg = {
       getChannels: async () => ({
-        items: [{ id: 'feed-x', title: 'Data-only feed', channelName: 'No Stream', viewers: 5, category: 'Football', status: 'live' }],
-      }),
-      getFootballMatches: async () => ({
-        items: [{ id: 'match-y', title: 'Score Only FC vs Watch Party FC', channelName: 'Live Football', viewers: 9, category: 'Football', status: 'live' }],
+        items: [{ id: 'feed-x', title: 'Data-only feed', channelName: 'No Stream', viewers: 5, category: 'Sports', status: 'live' }],
       }),
     };
     const g = fakeGemini({ markets: [] });
@@ -342,7 +338,6 @@ describe('marketEngine/retry ladder (a failed boot tick must NOT wait the 30-min
     let items = [];
     const aggregator = {
       getChannels: async () => ({ items, generatedAt: T0 }),
-      getFootballMatches: async () => ({ items: [], status: 'disabled' }),
     };
     const g = fakeGemini({ markets: [{ liveItemId: 'yt-vid1', question: 'A question that finally lands?' }] });
     const e = createMarketEngine({

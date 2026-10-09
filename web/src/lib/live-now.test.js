@@ -33,8 +33,8 @@ describe('pickPriorityOrder — rotating category priority', () => {
 });
 
 describe('bucketOf — honest category classification', () => {
-  it('routes a football-api fixture to Football', () => {
-    expect(bucketOf({ source: 'football-api', category: 'Football' })).toBe('Football');
+  it('routes a football-labelled stream into Sports (display taxonomy)', () => {
+    expect(bucketOf({ source: 'kick', category: 'Football' })).toBe('Sports');
   });
   it('keeps a curated 24/7 category as-is', () => {
     expect(bucketOf({ source: 'curated-youtube', category: 'News' })).toBe('News');
@@ -46,31 +46,28 @@ describe('bucketOf — honest category classification', () => {
 });
 
 describe('buildLiveNowCards — composed, seed-ordered mix', () => {
-  const football = [{ id: 'm1', source: 'football-api', category: 'Football' }];
   const playable = [
     { id: 'n1', source: 'curated-youtube', category: 'News' },
+    { id: 's1', source: 'kick', category: 'Sports' },
     { id: 'u1', source: 'youtube', category: 'Music' },
   ];
 
-  it('leads with Football at the base seed (Football ranks first)', () => {
-    const cards = buildLiveNowCards({ playable, football }, 0);
-    expect(cards.map((c) => c.id)).toEqual(['m1', 'n1', 'u1']);
+  it('leads with News at the base seed (News ranks first)', () => {
+    const cards = buildLiveNowCards({ playable }, 0);
+    expect(cards.map((c) => c.id)).toEqual(['n1', 's1', 'u1']);
   });
 
-  it('rotates so News leads when Football is not first in the priority', () => {
-    // News-first rotation puts both football (rank after News? no) — Football
-    // drops out of the lead slot and the News channel comes before Music.
-    const order = pickPriorityOrder(1); // News first
-    const cards = buildLiveNowCards({ playable, football }, 1);
-    expect(order[0]).toBe('News');
-    // News channel still precedes the Music channel under any rotation.
-    expect(cards.findIndex((c) => c.id === 'n1')).toBeLessThan(cards.findIndex((c) => c.id === 'u1'));
+  it('rotates so Ambience leads at the far end of the cycle', () => {
+    const order = pickPriorityOrder(3); // Ambience first
+    const cards = buildLiveNowCards({ playable: [...playable, { id: 'a1', source: 'youtube', category: 'Ambience' }] }, 3);
+    expect(order[0]).toBe('Ambience');
+    expect(cards[0].id).toBe('a1');
   });
 
   it('is a stable permutation of all inputs (nothing dropped or invented)', () => {
     for (const seed of [0, 1, 2, 3, 4, 5, 6]) {
-      const ids = buildLiveNowCards({ playable, football }, seed).map((c) => c.id).sort();
-      expect(ids).toEqual(['m1', 'n1', 'u1']);
+      const ids = buildLiveNowCards({ playable }, seed).map((c) => c.id).sort();
+      expect(ids).toEqual(['n1', 's1', 'u1']);
     }
   });
 });

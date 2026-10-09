@@ -12,7 +12,6 @@ import { createLiveClient } from './panta/liveClient.js';
 import { createKickClient } from './kick/client.js';
 import { createYouTubeClient } from './youtube/client.js';
 import { createFloorClient } from './floor/client.js';
-import { createFootballClient } from './football/client.js';
 import { createCuratedClient } from './curated/client.js';
 import { createGeminiClient } from './gemini/client.js';
 import { createMarketEngine } from './services/marketEngine.js';
@@ -97,16 +96,6 @@ export async function createApp({ env: rawEnv, db: existingDb, privyVerifier: in
     youtube: Boolean(env.YOUTUBE_API_KEY),
     floor: Boolean(env.FLOOR_FALLBACK_URL || env.LIVEPEER_API_KEY),
   };
-  // API-Football DATA feed (docs/football-api.md). Constructed always; it self-
-  // disables (throws DISABLED → honest empty) when the provider/key are absent,
-  // exactly like the video clients. loadEnv sets `footballApiEnabled`; the fallback
-  // keeps hand-built test envs (no loadEnv) booting unchanged.
-  const football = createFootballClient({
-    provider: env.FOOTBALL_API_PROVIDER,
-    apiKey: env.FOOTBALL_API_KEY,
-    baseUrl: env.FOOTBALL_API_BASE_URL,
-  });
-  const footballEnabled = env.footballApiEnabled ?? Boolean(env.FOOTBALL_API_PROVIDER === 'api-football' && env.FOOTBALL_API_KEY);
   // Curated always-live channels (Phase 2). Keyless + quota-free (channel RSS), so it
   // is ALWAYS constructed and available — no creds gate. It's a post-merge FILL inside
   // the aggregator (not a LIVE_SOURCES provider), so the grid still serves real live
@@ -118,11 +107,11 @@ export async function createApp({ env: rawEnv, db: existingDb, privyVerifier: in
   const curated = createCuratedClient({ concurrency: 4, staggerMs: 150, retryDelayMs: 1500 });
   // Gemini feature flag: drives whether the broadcast market engine rotates (§ TASK 2).
   const geminiEnabled = env.geminiEnabled ?? Boolean(env.GEMINI_API_KEY);
-  // A single enabled map feeds BOTH the aggregator and the route: the four grid
-  // sources plus the football data flag (`football` is ignored by the generic grid)
-  // and the gemini groundwork flag (consumed by a later phase, not the grid).
-  const enabled = { ...liveSources, football: footballEnabled, gemini: geminiEnabled };
-  const liveAggregator = createLiveAggregator({ kick, youtube, floor, football, curated, enabled });
+  // A single enabled map feeds BOTH the aggregator and the route: the three grid
+  // sources plus the gemini flag (consumed by the market engine, not the grid).
+  // (API-Football retired Oct 2026 — the football data vertical was removed whole.)
+  const enabled = { ...liveSources, gemini: geminiEnabled };
+  const liveAggregator = createLiveAggregator({ kick, youtube, floor, curated, enabled });
   // Broadcast-aligned market engine (Phase 2). Gemini client is inert without a key
   // (generateJson returns null, no call), so the engine is ALWAYS constructed but a
   // real rotation only runs when the feature is enabled. It never throws at boot and
@@ -198,10 +187,9 @@ export async function createApp({ env: rawEnv, db: existingDb, privyVerifier: in
 
   // Resilient multi-source live feed (public): merges Kick/YouTube/Floor into
   // LiveChannel[] with a never-empty ladder. Never 500s — see routes/live.js.
-  // `?category=football` additionally serves the API-Football DATA feed (docs/football-api.md).
   app.use('/api/live', liveRouter({ aggregator: liveAggregator, enabled }));
 
-  // Keyless, quota-free search over the merged live grid + cached football feed
+  // Keyless, quota-free search over the merged live grid
   // (server/src/routes/search.js). Never 500s; empty query / no matches → honest
   // empty so the UI can show "no matches" rather than a broken spinner.
   // `kick` is wired so a slug-shaped query resolves an EXACT live Kick channel
@@ -300,7 +288,6 @@ export async function createApp({ env: rawEnv, db: existingDb, privyVerifier: in
   app._kick = kick;
   app._liveAggregator = liveAggregator;
   app._liveSources = liveSources;
-  app._football = football;
   app._curated = curated;
   app._gemini = gemini;
   app._engine = marketEngine;

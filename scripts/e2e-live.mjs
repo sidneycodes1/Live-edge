@@ -1,13 +1,14 @@
 // -----------------------------------------------------------------------------
 // scripts/e2e-live.mjs — Playwright E2E for the multi-source live grid + the
-// football vertical + a bet-confirm regression check.
+// Sports landing section + a bet-confirm regression check.
 //
-// STATUS (integration, 2026-10-01): reconciled by the verifier onto the shipped
+// STATUS (integration, 2026-10-01; reconciled Oct 2026 after the API-Football
+// vertical was retired): reconciled by the verifier onto the shipped
 // frontend. Agent A (GET /api/live + /api/config §7) and Agent B (provider-agnostic
-// /watch/:source/:slug, football rail, VERIFIED YouTube embed) have landed. Per this
+// /watch/:source/:slug, landing sections, VERIFIED YouTube embed) have landed. Per this
 // file's own instruction ("if Agent B chooses different testids, ping the verifier to
 // reconcile this file + the spec"), selectors were aligned to B's REAL testids/route
-// (rail-football, /watch/:source/:slug). Kick is the PRIMARY real-stream provider
+// (section-sports, /watch/:source/:slug). Kick is the PRIMARY real-stream provider
 // (Twitch retired, Oct 2026) and its player.kick.com embed is VERIFIED per official
 // docs, so this file now asserts the mounted Kick iframe + the honest chat LINK-OUT
 // (Kick has no chat-only embed) rather than an old "unverified gate" assumption.
@@ -24,16 +25,17 @@
 //      official player.kick.com iframe (VERIFIED). chat LINKS OUT to kick.com
 //      (no chat-only embed exists), never a fabricated frame.
 //   4. /watch/youtube/:videoId route + a YouTube VideoStage (Agent B).
-//   5. Football rail on landing (Agent B). Discover.jsx must render an
-//      "⚽ Live Football" section bound to /api/live (or the seed-room
-//      categories Agent C ships). Currently absent.
+//   5. Landing category sections on Discover.jsx (Sports/News/IRL/Games, each
+//      data-testid="section-<key>"). The old "⚽ Live Football" rail was retired
+//      Oct 2026 together with the API-Football vertical — Sports is now fed by
+//      the Kick `sports` bucket like the other sections.
 //   6. Bet-still-confirms path exists TODAY (Room.jsx + orders flow is
 //      already shipped). We assert it here so a streaming refactor that
 //      silently breaks betting is caught at the same gate.
 //
 // CONTRACT (testids Agent B needs to keep for this file to remain green):
 //   - Landing (Discover.jsx)
-//       data-testid="football-rail"        the ⚽ vertical root section
+//       data-testid="section-sports"       the Sports landing section root
 //   - Kick watch page (/watch/kick/:slug)
 //       data-testid="kick-video-embed"     wrapper with data-channel +
 //                                          data-player-src matching
@@ -124,14 +126,14 @@ async function main() {
   await page.route('**/api/config*', (r) =>
     r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(CONFIG_BODY) }));
 
-  // ---- 1. Landing: football rail renders (spec §2 "landing rail order") ----
+  // ---- 1. Landing: Sports section renders (spec §2 "landing rail order") ----
   await page.goto(WEB + '/', { waitUntil: 'domcontentloaded' });
-  const footballRail = page.getByTestId('rail-football');
-  const footballOk = await footballRail
+  const sportsSection = page.getByTestId('section-sports');
+  const sportsOk = await sportsSection
     .waitFor({ state: 'visible', timeout: 8000 })
     .then(() => true)
     .catch(() => false);
-  rec('Landing renders the ⚽ Live Football rail (Agent B dependency)', footballOk);
+  rec('Landing renders the Sports section (bucket-fed since the football rip)', sportsOk);
   await page.screenshot({ path: `${SHOTS}/01-landing.png`, fullPage: true });
 
   // ---- 2. Kick room mounts the OFFICIAL player (Kick is the VERIFIED primary

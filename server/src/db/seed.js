@@ -10,9 +10,11 @@
 //  - HONEST shapes only: no `via.placeholder.com`, no fabricated stream URLs.
 //    `image_url`/`video_url` are null → the frontend renders its neutral "no
 //    preview"/animated-mock states (see LiveThumb.jsx / VideoStage.jsx).
-//  - category + real-vs-demo + watch_party are stored as queryable room facts
-//    (migration 007). Football rooms are watch-party: markets + chat, NO hosted
-//    stream. A room is `real` ONLY when a genuine channel is bound.
+//  - category + real-vs-demo are stored as queryable room facts (migration 007).
+//    A room is `real` ONLY when a genuine channel is bound.
+//  - The football watch-party room was removed (Oct 2026) with the whole
+//    API-Football vertical; the `watch_party` column still exists in the schema,
+//    it is simply never set true by the seed anymore.
 
 // --- fixed ids ---------------------------------------------------------------
 const USERS = {
@@ -20,13 +22,10 @@ const USERS = {
   viewer: '22222222-2222-4222-8222-222222222222',
 };
 const ROOMS = {
-  football: 'cafe0000-0000-4000-8000-000000000001',
   gaming: 'cafe0000-0000-4000-8000-000000000002',
   lifestyle: 'cafe0000-0000-4000-8000-000000000003',
 };
 const MARKETS = {
-  footballDraw: 'beef0000-0000-4000-8000-000000000011',
-  footballFirstGoal: 'beef0000-0000-4000-8000-000000000012',
   gamingMalenia: 'beef0000-0000-4000-8000-000000000013',
   gamingSpeedrun: 'beef0000-0000-4000-8000-000000000014',
   lifestyleSketch: 'beef0000-0000-4000-8000-000000000015',
@@ -64,19 +63,8 @@ export async function seed(db, { fallbackChannel } = {}) {
   await db.query(`insert into balances(user_id, sim_usdc) values($1, 100) on conflict do nothing`, [USERS.owner]);
   await db.query(`insert into balances(user_id, sim_usdc) values($1, 100) on conflict do nothing`, [USERS.viewer]);
 
-  // --- rooms: queryable category / real-vs-demo / watch-party facts ----------
+  // --- rooms: queryable category / real-vs-demo facts ---------------------
   const rooms = [
-    {
-      id: ROOMS.football,
-      owner: USERS.owner,
-      title: '⚽ Match Night Watch-Party: City vs Rovers',
-      // watch-party: bring-your-own legal feed, NO hosted stream → video_url null, no channel.
-      video_url: null,
-      kick_channel: null,
-      category: 'football',
-      source: 'demo',
-      watch_party: true,
-    },
     {
       id: ROOMS.gaming,
       owner: USERS.owner,
@@ -85,7 +73,6 @@ export async function seed(db, { fallbackChannel } = {}) {
       kick_channel: ch1,
       category: 'gaming',
       source: gamingSource,
-      watch_party: false,
     },
     {
       id: ROOMS.lifestyle,
@@ -95,35 +82,18 @@ export async function seed(db, { fallbackChannel } = {}) {
       kick_channel: null,
       category: 'lifestyle',
       source: 'demo',
-      watch_party: false,
     },
   ];
   for (const room of rooms) {
     await db.query(
-      `insert into rooms(id, owner_id, title, video_url, kick_channel, status, is_seed, category, source, watch_party)
-       values($1,$2,$3,$4,$5,'live',true,$6,$7,$8)`,
-      [room.id, room.owner, room.title, room.video_url, room.kick_channel, room.category, room.source, room.watch_party],
+      `insert into rooms(id, owner_id, title, video_url, kick_channel, status, is_seed, category, source)
+       values($1,$2,$3,$4,$5,'live',true,$6,$7)`,
+      [room.id, room.owner, room.title, room.video_url, room.kick_channel, room.category, room.source],
     );
   }
 
-  // --- markets: open across football + gaming + lifestyle --------------------
+  // --- markets: open across gaming + lifestyle ------------------------------
   const markets = [
-    {
-      id: MARKETS.footballDraw,
-      room: ROOMS.football,
-      creator: USERS.owner,
-      category: 'football',
-      q: 'Will the match end in a draw?',
-      rule: 'YES if the final score is tied after full time, else NO',
-    },
-    {
-      id: MARKETS.footballFirstGoal,
-      room: ROOMS.football,
-      creator: USERS.owner,
-      category: 'football',
-      q: 'Will there be a goal in the first 15 minutes?',
-      rule: 'YES if either side scores before 15:00, else NO',
-    },
     {
       id: MARKETS.gamingMalenia,
       room: ROOMS.gaming,
@@ -161,10 +131,6 @@ export async function seed(db, { fallbackChannel } = {}) {
     );
   }
 
-  await db.query(
-    `insert into chat_messages(room_id, user_id, kind, body, is_seed) values($1,$2,'chat',$3,true)`,
-    [ROOMS.football, USERS.viewer, 'brought my own feed, ready when you are ⚽'],
-  );
   await db.query(
     `insert into chat_messages(room_id, user_id, kind, body, is_seed) values($1,$2,'chat',$3,true)`,
     [ROOMS.gaming, USERS.viewer, "let's go!"],

@@ -4,11 +4,13 @@ import { makeLiveChannel, bucketForCategory } from '../aggregator/schema.js';
 // ---------------------------------------------------------------------------
 // GET /api/search?q=<term> — keyless, quota-free search over the SAME live data
 // the landing grid already serves. It fans out to the aggregator's merged grid
-// (real Kick/YouTube/Floor channels + the quota-free curated 24/7 fill)
-// and the cached API-Football fixtures, then does a plain case-insensitive
-// contains-match. It NEVER fabricates a result: an empty query or no matches
-// returns empty arrays. It never 500s — a provider/aggregator failure degrades
-// to an honest empty for that bucket so the search UI can say "no matches".
+// (real Kick/YouTube/Floor channels + the quota-free curated 24/7 fill), then
+// does a plain case-insensitive contains-match. It NEVER fabricates a result:
+// an empty query or no matches returns empty arrays. It never 500s — a
+// provider/aggregator failure degrades to an honest empty so the search UI can
+// say "no matches".
+//
+// (API-Football retired Oct 2026 — the cached fixture bucket is gone with it.)
 //
 // YouTube SEARCH is intentionally NOT called here: its quota is frequently
 // exhausted (429) and it is expensive; the curated RSS fill already surfaces the
@@ -22,11 +24,6 @@ function contains(hay, needle) {
 // A stream/live item matches on title, channel, owner, or category.
 function streamMatches(it, q) {
   return contains(it?.title, q) || contains(it?.channelName, q) || contains(it?.owner, q) || contains(it?.category, q);
-}
-
-// A football fixture matches on its title, league, country, or the Football tag.
-function footballMatches(it, q) {
-  return contains(it?.title, q) || contains(it?.league, q) || contains(it?.country, q) || contains(it?.category, q);
 }
 
 function clampInt(v, lo, hi, dflt) {
@@ -47,14 +44,13 @@ export function searchRouter({ aggregator, kick, warn = (msg) => console.warn(ms
   r.get('/', async (req, res) => {
     const q = String(req.query.q || '').trim().toLowerCase();
     const limit = clampInt(req.query.limit, 1, 50, 24);
-    const empty = { query: q, items: [], football: [], count: 0 };
+    const empty = { query: q, items: [], count: 0 };
     if (!q || typeof aggregator !== 'object' || aggregator == null) {
       res.json(empty);
       return;
     }
 
     let items = [];
-    let football = [];
 
     try {
       if (typeof aggregator.getChannels === 'function') {
@@ -63,15 +59,6 @@ export function searchRouter({ aggregator, kick, warn = (msg) => console.warn(ms
       }
     } catch (e) {
       warn(`search: live grid unavailable → skipping stream results (${e && (e.code || e.message)})`);
-    }
-
-    try {
-      if (typeof aggregator.getFootballMatches === 'function') {
-        const fb = await aggregator.getFootballMatches(50);
-        football = (fb.items || []).filter((it) => footballMatches(it, q)).slice(0, limit);
-      }
-    } catch (e) {
-      warn(`search: football feed unavailable → skipping match results (${e && (e.code || e.message)})`);
     }
 
     // Exact channel-slug resolution (BUILD_CONTRACT sec 5 / Agent B): when q looks like a
@@ -106,7 +93,7 @@ export function searchRouter({ aggregator, kick, warn = (msg) => console.warn(ms
       warn('search: kick slug lookup failed -> skipping exact hit (' + (e && (e.code || e.message)) + ')');
     }
 
-    res.json({ query: q, items, football, count: items.length + football.length });
+    res.json({ query: q, items, count: items.length });
   });
 
   return r;

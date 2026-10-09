@@ -43,9 +43,15 @@ describe('groupKickByBucket — bucket → landing section', () => {
     expect(g.irl).toEqual([]);
   });
 
+  it('routes a Kick row with the sports bucket into the Sports section', () => {
+    const g = groupKickByBucket([kick('b', 'sports')]);
+    expect(g.sports.map((c) => c.id)).toEqual(['b']);
+    expect(g.other).toEqual([]);
+  });
+
   it('is tolerant of missing/unknown buckets (route to other, never crash)', () => {
-    const g = groupKickByBucket([kick('a', undefined), kick('b', 'sports'), kick('c', 'wat'), null]);
-    expect(g.other.map((c) => c.id).sort()).toEqual(['a', 'b', 'c']);
+    const g = groupKickByBucket([kick('a', undefined), kick('c', 'wat'), null]);
+    expect(g.other.map((c) => c.id).sort()).toEqual(['a', 'c']);
     expect(g.news).toEqual([]);
   });
 });
@@ -134,7 +140,7 @@ describe('empty state — honest, never backfilled', () => {
     expect(emptyStateLabel('news')).toBe('No live News streams on Kick right now.');
     expect(emptyStateLabel('irl')).toBe('No live IRL streams on Kick right now.');
     expect(emptyStateLabel('games')).toBe('No live Games streams on Kick right now.');
-    expect(emptyStateLabel('sports')).toBe('No live football matches right now.');
+    expect(emptyStateLabel('sports')).toBe('No live Sports streams on Kick right now.');
   });
 });
 

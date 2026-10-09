@@ -5,7 +5,6 @@ import BottomTabs from './components/BottomTabs.jsx';
 import Discover from './pages/Discover.jsx';
 import Room from './pages/Room.jsx';
 import WatchRoom from './pages/WatchRoom.jsx';
-import MatchView from './pages/MatchView.jsx';
 import Welcome from './pages/Welcome.jsx';
 import Legal from './pages/Legal.jsx';
 import About from './pages/About.jsx';
@@ -129,7 +128,6 @@ function Shell() {
             <Route path="/room/:id" element={<Room />} />
             <Route path="/watch/:source/:slug" element={<WatchRoom />} />
             <Route path="/watch/:source/:slug/:title" element={<WatchRoom />} />
-            <Route path="/match/:fixtureId" element={<MatchView />} />
             <Route path="/creator/:roomId" element={<CreatorBridge />} />
             <Route path="/creator" element={<CreatorBridge />} />
             <Route path="/portfolio" element={<PortfolioBridge />} />

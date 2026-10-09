@@ -10,8 +10,7 @@ import { visibleItems, canExpand, isEmptySection, emptyStateLabel } from '../lib
 // rows actually fetched, never padded. An empty bucket renders an HONEST empty
 // state: no backfill from other providers/buckets, no invented cards (§1).
 //
-// `renderCard` lets the Sports section plug in the football score card while
-// News/IRL/Games use the placeholder LiveTile (default).
+// `renderCard` lets a section override the default LiveTile if ever needed.
 // ---------------------------------------------------------------------------
 
 export default function CategorySection({

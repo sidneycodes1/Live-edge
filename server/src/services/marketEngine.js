@@ -7,7 +7,7 @@ import { sanitizeText } from './sanitize.js';
 // THE USER'S CORE DEMAND: prediction markets must be BORN FROM WHAT IS LIVE RIGHT
 // NOW — never an empty grid, and rotated ~every 30 minutes so tomorrow's app is not
 // today's. Every rotation:
-//   1. snapshot the CURRENT live grid (aggregator cache) + football fixtures,
+//   1. snapshot the CURRENT live grid (aggregator cache),
 //   2. ask Gemini for 3–5 short yes/no questions, EACH tied to a specific live item,
 //   3. persist them as `source='sim-engine'` markets whose end_time is now + 30 min,
 //      stamped with the stream's videoId / channelSlug / thumbnail so the web can show
@@ -56,9 +56,8 @@ function utcDay(nowMs) {
   return new Date(nowMs).toISOString().slice(0, 10); // YYYY-MM-DD
 }
 
-// Map a heterogeneous snapshot item (LiveChannel | curated item | football fixture)
-// to the small "candidate" the prompt + insert need. Never fabricates: fields we don't
-// have (thumbnail/videoId for football, etc.) stay null.
+// Map a snapshot item (LiveChannel | curated item) to the small "candidate" the
+// prompt + insert need. Never fabricates: fields we don't have stay null.
 export function candidateFromItem(item, kind) {
   if (!item || item.id == null) return null;
   const liveItemId = String(item.id);
@@ -69,11 +68,11 @@ export function candidateFromItem(item, kind) {
   else if (typeof item.videoId === 'string') videoId = item.videoId;
   return {
     liveItemId,
-    kind, // 'live' | 'football'
+    kind, // 'live'
     videoId,
     channelSlug: item.channelSlug || item.owner || null,
     title: sanitizeText(item.title),
-    channelName: sanitizeText(item.channelName || item.owner || item.league),
+    channelName: sanitizeText(item.channelName || item.owner),
     category: sanitizeText(item.category),
     thumbnailUrl: item.thumbnailUrl || item.imageUrl || null,
     watchUrl: item.watchUrl || item.videoUrl || item.liveEmbedUrl || null,
@@ -116,7 +115,7 @@ function buildPrompt(candidates) {
     '  - Each item MUST set liveItemId to EXACTLY one id from the list (copy it verbatim).',
     '  - question: a single yes/no question, 8-140 characters, ending in "?".',
     '  - resolutionRule: one plain sentence stating how YES is decided.',
-    '  - category: the stream category shown, or the sport for matches.',
+    '  - category: the stream category shown.',
     '  - Do not repeat a question. Do not reference streams not in the list.',
     'Return JSON only: { "markets": [ { "liveItemId", "question", "resolutionRule", "category" } ] }',
     '',
@@ -202,10 +201,9 @@ export function createMarketEngine(options = {}) {
     return Number(rows[0]?.c || 0);
   }
 
-  // Live grid (via aggregator's cache/ladder) + football fixtures, deduped by id.
+  // Live grid (via aggregator's cache/ladder), deduped by id.
   // BROADCAST RULE (user): a bet is born from a live BROADCAST — a candidate must
-  // carry a real watchable stream (watchUrl + thumbnail). Football fixtures without
-  // an attached broadcast are EXCLUDED here; their bets live in the match view.
+  // carry a real watchable stream (watchUrl + thumbnail).
   function isBroadcastCandidate(c) {
     return Boolean(c && c.watchUrl && c.thumbnailUrl);
   }
@@ -225,17 +223,6 @@ export function createMarketEngine(options = {}) {
         for (const it of agg.items || []) push(candidateFromItem(it, 'live'));
       } catch (e) {
         warn(`marketEngine: live snapshot failed (${e.code || e.name})`);
-      }
-    }
-    if (typeof aggregator?.getFootballMatches === 'function') {
-      try {
-        const fb = await aggregator.getFootballMatches(cfg.snapshotLimit);
-        // Only fixtures that ALREADY carry a real broadcast (videoUrl) pass the
-        // isBroadcastCandidate gate below — data-only fixtures are dropped.
-        for (const it of fb.items || []) push(candidateFromItem(it, 'football'));
-      } catch (e) {
-        // Football disabled/empty is normal — never fatal to the engine.
-        if (e.code !== 'DISABLED') warn(`marketEngine: football snapshot failed (${e.code || e.name})`);
       }
     }
     return out;

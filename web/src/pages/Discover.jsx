@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api.js';
-import { normalizeLive, normalizeChannel, normalizeMatch, normalizeFootballFeed } from '../lib/live.js';
+import { normalizeLive, normalizeChannel } from '../lib/live.js';
 import { marketThumb } from '../lib/live-now.js';
 import { mergePinnedFirst, MAX_PINS } from '../lib/pins.js';
 import { tailorByInterests } from '../lib/tailoring.js';
@@ -15,7 +15,6 @@ import {
 } from '../lib/landing.js';
 import MarketCard from '../components/MarketCard.jsx';
 import CategorySection from '../components/CategorySection.jsx';
-import LiveCard from '../components/LiveCard.jsx';
 import KickVideo from '../components/KickVideo.jsx';
 import { liveCardHref, liveCardState } from '../components/LiveCard.jsx';
 import Rail from '../components/Rail.jsx';
@@ -51,15 +50,15 @@ function fmtViewers(n) {
 }
 
 // Kick-first category landing (docs/BUILD_CONTRACT-browse-ui-chat.md §4/§5):
-// a hero featured Kick box + four sections — Sports = the real API-Football
-// match feed; News / IRL / Games = Kick rows filtered by their server-derived
-// `bucket`. Every tile is the honest placeholder (Kick exposes no thumbnails),
+// a hero featured Kick box + four sections — all four (Sports / News / IRL /
+// Games) are Kick rows filtered by their server-derived `bucket`. (The
+// API-Football data feed that used to back Sports was retired Oct 2026.)
+// Every tile is the honest placeholder (Kick exposes no thumbnails),
 // every empty bucket shows an honest empty state, and nothing is ever
 // backfilled from another provider.
 export default function Discover() {
   const [rooms, setRooms] = useState(null);
   const [live, setLive] = useState(null);
-  const [football, setFootball] = useState(null);
   const [liveLoading, setLiveLoading] = useState(true);
   const [loading, setLoading] = useState(true);
   const [waking, setWaking] = useState(false);
@@ -125,7 +124,6 @@ export default function Discover() {
     Promise.allSettled([
       api.listRooms().then((r) => { if (!cancelled) setRooms(r); }),
       api.getLive(48).then((r) => { if (!cancelled) setLive(normalizeLive(r)); }),
-      api.getLiveFootball(9).then((r) => { if (!cancelled) setFootball(normalizeFootballFeed(r)); }),
     ]).then(() => {
       if (cancelled) return;
       clearTimeout(t);
@@ -158,11 +156,10 @@ export default function Discover() {
         if (cancelled) return;
         setSearchView({
           items: (r.items || []).map(normalizeChannel).filter(Boolean),
-          football: (r.football || []).map(normalizeMatch).filter(Boolean),
           count: r.count || 0,
         });
       })
-      .catch(() => { if (!cancelled) setSearchView({ items: [], football: [], count: 0 }); })
+      .catch(() => { if (!cancelled) setSearchView({ items: [], count: 0 }); })
       .finally(() => { if (!cancelled) setSearchLoading(false); });
     return () => { cancelled = true; };
   }, [q]);
@@ -192,7 +189,6 @@ export default function Discover() {
         leadCount: Math.min(pins.length, MAX_PINS),
       });
   const buckets = groupKickByBucket(laidKick);
-  const footballItems = q ? (searchView?.football || []) : (football?.items || []);
   // Hero = the top Kick row by REAL viewerCount (all-null counts → first row,
   // and its panel simply renders no number — never a fake one).
   const hero = pickTopKickChannel(laidKick);
@@ -305,12 +301,11 @@ export default function Discover() {
         <CategorySection
           title="Sports"
           sectionKey="sports"
-          items={footballItems}
+          items={buckets.sports}
           loading={sectionsLoading}
           testid="section-sports"
           pinnedIds={pinnedIds}
           onTogglePin={handlePin}
-          renderCard={(m) => <LiveCard channel={m} pinned={pinnedIds?.has(String(m.id))} onTogglePin={handlePin} />}
         />
         <CategorySection
           title="News"

@@ -13,8 +13,9 @@
 export const COLLAPSED_COUNT = 3;
 export const EXPANDED_COUNT = 9;
 
-// The four landing sections, in render order (§4 table). Sports is fed by the
-// real API-Football match feed; the other three by Kick rows' `bucket`.
+// The four landing sections, in render order (§4 table). All four are fed by
+// Kick rows' `bucket` (the API-Football match feed that used to back Sports
+// was retired Oct 2026).
 export const LANDING_SECTIONS = [
   { key: 'sports', title: 'Sports' },
   { key: 'news', title: 'News' },
@@ -22,7 +23,7 @@ export const LANDING_SECTIONS = [
   { key: 'games', title: 'Games' },
 ];
 
-const KICK_BUCKET_KEYS = ['news', 'irl', 'games'];
+const KICK_BUCKET_KEYS = ['sports', 'news', 'irl', 'games'];
 
 // Group a normalized LiveChannel list into landing buckets. ONLY Kick rows join
 // the bucket sections (§4 — YouTube/floor rows are not landing sources). The
@@ -57,7 +58,6 @@ export function isEmptySection(items = []) {
 // The honest empty-state sentence per section (§1: empty is allowed and must
 // be shown as empty — never backfilled from another provider or bucket).
 export function emptyStateLabel(sectionKey) {
-  if (sectionKey === 'sports') return 'No live football matches right now.';
   const s = LANDING_SECTIONS.find((x) => x.key === sectionKey);
   const title = s ? s.title : 'this';
   return `No live ${title} streams on Kick right now.`;

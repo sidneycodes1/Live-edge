@@ -3,19 +3,14 @@ import { extractYouTubeVideoId, extractYouTubeChannelId } from '../lib/embed.js'
 import { IconPin } from './Icons.jsx';
 
 // ---------------------------------------------------------------------------
-// The two — and ONLY two — honest card kinds for the "Live now" grid
-// (docs/live-aggregation-spec.md §4 honesty):
+// The playable card for the "Live now" grid (docs/live-aggregation-spec.md §4
+// honesty): a real broadcast — its OWN thumbnail, a LIVE badge, title, channel
+// and a category chip. A viewer count is shown ONLY when the provider actually
+// exposes one (curated 24/7 rows carry none → we render nothing, never a
+// fabricated 0). Clicking opens the in-app watch/embed view.
 //
-//   1. Playable card  — a real broadcast: its OWN thumbnail, a LIVE badge, title,
-//      channel and a category chip. A viewer count is shown ONLY when the provider
-//      actually exposes one (curated 24/7 rows carry none → we render nothing,
-//      never a fabricated 0). Clicking opens the in-app watch/embed view.
-//   2. Football score card — a DATA fixture (source 'football-api'). There is no
-//      broadcast art for a match, so the card is a clean data tile (the score IS
-//      the visual). No image area, no viewer count. Clicking opens the deep-linkable
-//      match detail view (/match/:fixtureId) — never a dead link.
-//
-// No "no preview" tiles, no equalizers, no placeholder art anywhere.
+// (The football score-card kind was retired Oct 2026 with the API-Football
+// vertical.) No "no preview" tiles, no equalizers, no placeholder art anywhere.
 // ---------------------------------------------------------------------------
 
 function fmtViewers(n) {
@@ -38,11 +33,9 @@ function titleSlug(t) {
 // Where a card links. YouTube is keyed by the VIDEO id (the aggregator's
 // `channelSlug` is the UC CHANNEL id — using it produced rooms that could not be
 // re-found in the rotating grid). Curated 24/7 rows are keyed by their UC channel
-// id (they embed by channel, live_stream?channel=UC…). Football fixtures open the
-// match detail route.
+// id (they embed by channel, live_stream?channel=UC…).
 export function liveCardHref(ch) {
   if (!ch) return null;
-  if (ch.source === 'football-api') return `/match/${encodeURIComponent(ch.id || '')}`;
   if (ch.source === 'youtube') {
     const vid = extractYouTubeVideoId(ch);
     if (vid) {
@@ -70,7 +63,7 @@ export function liveCardHref(ch) {
 // room DIRECTLY from the URL + this payload — never depending on finding the item
 // again in the rotating /api/live grid. Only real fields; nothing invented.
 export function liveCardState(ch) {
-  if (!ch || ch.source === 'football-api') return undefined;
+  if (!ch) return undefined;
   return {
     source: ch.source,
     title: ch.title || '',
@@ -84,16 +77,6 @@ export function liveCardState(ch) {
     videoUrl: ch.videoUrl || undefined,
     viewerCount: ch.viewerCount == null ? null : ch.viewerCount,
   };
-}
-
-// A live-period label for a fixture, or null. minute may be a number, 'FT', or
-// null. When there is no minute we render NOTHING (never a fake "0").
-function matchClock(m) {
-  const st = m.status;
-  if (st === 'HT') return { label: 'HT', live: true };
-  if (st === 'FT' || m.minute === 'FT') return { label: 'FT', live: false };
-  if (Number.isFinite(m.minute)) return { label: `LIVE ${m.minute}'`, live: st === '1H' || st === '2H' };
-  return null;
 }
 
 // Pin toggle — "I'm watching / playing with this stream": it leads the Live now
@@ -177,43 +160,6 @@ function PlayableCard({ channel, pinned, onTogglePin }) {
   );
 }
 
-function FootballScoreCard({ channel, match, pinned, onTogglePin }) {
-  const clock = matchClock(match);
-  const leagueLine = [match.league, match.country].filter(Boolean).join(' \u2022 ');
-  const hasScore = match.score && (match.score.home != null || match.score.away != null);
-  return (
-    <div className="relative">
-      <PinButton pinned={pinned} onTogglePin={onTogglePin} channel={channel} className="absolute bottom-0 right-0" />
-      <Link
-      to={liveCardHref(match) || '/'}
-      state={{ match }}
-      data-testid="card-match"
-      data-source="football-api"
-      className="block bg-surface rounded-card border border-white/10 overflow-hidden hover:border-white/25 transition cursor-pointer"
-    >
-      <div className="p-3">
-        <div className="flex items-start justify-between gap-2 min-h-[18px]">
-          <span className="text-[10px] uppercase tracking-wide text-white/45 truncate">{leagueLine || 'Football'}</span>
-          {clock && (
-            <span className="shrink-0 inline-flex items-center gap-1 bg-red-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded">
-              {clock.live && <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />}
-              {clock.label}
-            </span>
-          )}
-        </div>
-        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 py-5">
-          <span className="text-right font-heading font-bold text-sm leading-tight line-clamp-2">{match.home}</span>
-          <span className="num text-2xl font-bold px-1 whitespace-nowrap">{hasScore ? `${match.score.home} \u2013 ${match.score.away}` : 'vs'}</span>
-          <span className="text-left font-heading font-bold text-sm leading-tight line-clamp-2">{match.away}</span>
-        </div>
-        <p className={`text-[11px] text-white/45 truncate ${onTogglePin ? 'pr-8' : ''}`}>{match.title}</p>
-      </div>
-      </Link>
-    </div>
-  );
-}
-
 export default function LiveCard({ channel, pinned, onTogglePin }) {
-  if (channel.source === 'football-api') return <FootballScoreCard channel={channel} match={channel} pinned={pinned} onTogglePin={onTogglePin} />;
   return <PlayableCard channel={channel} pinned={pinned} onTogglePin={onTogglePin} />;
 }

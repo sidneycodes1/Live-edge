@@ -54,7 +54,7 @@ function extractText(json) {
 }
 
 // Convenience predicate so consumers/`app.js` can gate on cred presence WITHOUT
-// importing the whole client (mirrors the kick/football `*Enabled` booleans).
+// importing the whole client (mirrors the kick `*Enabled` boolean).
 export function geminiEnabled(apiKey = process.env.GEMINI_API_KEY) {
   return Boolean(apiKey);
 }

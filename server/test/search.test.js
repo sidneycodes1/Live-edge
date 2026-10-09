@@ -10,10 +10,9 @@ import { searchRouter } from '../src/routes/search.js';
 // absent from the browse list; a non-live/unknown slug is NEVER a hit; the
 // existing contains-filter still runs; a multi-word query does not hit the API.
 // ---------------------------------------------------------------------------
-async function start({ kick, items = [], football = [] }) {
+async function start({ kick, items = [] }) {
   const aggregator = {
     getChannels: async () => ({ items }),
-    getFootballMatches: async () => ({ items: football }),
   };
   const app = express();
   app.use('/api/search', searchRouter({ aggregator, kick }));

@@ -35,10 +35,9 @@ export function roomsRouter({ db, hub, kick }) {
           kick_channel: room.kick_channel || null,
           status: room.status,
           isSeed: room.is_seed,
-          // Queryable room facts (migration 007). Surfaced so the UI can detect a
-          // football watch-party room (bring-your-own-feed) vs a hosted-video room.
+          // Queryable room fact (migration 007). (watch_party was retired with the
+          // football vertical, Oct 2026 — the DB column stays, it is no longer read.)
           category: room.category || null,
-          watch_party: room.watch_party === true,
           owner: { displayName: room.owner_name, wallet: room.owner_wallet },
           viewers,
           heroMarket: hero
@@ -102,11 +101,8 @@ export function roomsRouter({ db, hub, kick }) {
         kick_channel: room.kick_channel || null,
         status: room.status,
         isSeed: room.is_seed,
-        // Queryable room facts (migration 007) — see list route. The watch-party
-        // layout keys off `watch_party`; without it the room falls back to the
-        // generic video layout and never shows the bring-your-own-feed box.
+        // Queryable room fact (migration 007) — see list route.
         category: room.category || null,
-        watch_party: room.watch_party === true,
         owner: { displayName: room.owner_name },
         viewers,
         markets: markets.map((m) => ({

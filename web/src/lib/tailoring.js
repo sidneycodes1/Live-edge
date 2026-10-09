@@ -15,21 +15,19 @@ export const INTEREST_VALUES = ['trading', 'sports', 'streams'];
 // Which REAL fields can satisfy an interest — nothing else is consulted:
 //   trading → the card's category classifies into the News bucket
 //             (curated news channels; "Trading & News" is the UI label).
-//   sports  → Football/Sports buckets (real category or football-api source).
-//   streams → any REAL broadcast row (a source that isn't the football data
-//             feed — the same distinction Discover's isPlayable makes).
+//   sports  → the Sports bucket (real category; football-labelled streams map
+//             there too since the API-Football vertical was retired).
+//   streams → any REAL broadcast row (a row that carries a source).
 // An unknown/blank category simply matches nothing; we never invent a label.
 export function matchesInterest(card, interest) {
   if (!card || typeof card !== 'object') return false;
   switch (interest) {
     case 'trading':
       return bucketOf(card) === 'News';
-    case 'sports': {
-      const b = bucketOf(card);
-      return b === 'Football' || b === 'Sports';
-    }
+    case 'sports':
+      return bucketOf(card) === 'Sports';
     case 'streams':
-      return Boolean(card.source) && card.source !== 'football-api';
+      return Boolean(card.source);
     default:
       return false;
   }
