@@ -18,6 +18,36 @@
 // lists the original four — this line is the amendment of record.
 export const LIVE_SOURCES = ['kick', 'youtube', 'floor'];
 
+// bucket is a UI ROUTING KEY only (docs/BUILD_CONTRACT-browse-ui-chat.md sec 2a/3): it
+// groups a live channel into one landing section and NEVER replaces the source-native
+// category. The set is closed - any value outside it clamps to 'other', so an invented
+// bucket can never reach the wire (sec 1 honesty).
+export const LIVE_BUCKETS = ['news', 'sports', 'irl', 'games', 'other'];
+
+// Deterministic Kick category -> bucket keyword table (sec 3). Applied to the LOWERCASED
+// source-native category; FIRST MATCH WINS in the order news -> games -> sports -> irl,
+// else 'other'. This is a fixed table, not a per-channel guess.
+const BUCKET_KEYWORDS = [
+  ['news', ['news', 'journalis', 'talkshow', 'politics', 'sporting news']],
+  ['games', ['gaming', 'game', 'valorant', 'fortnite', 'minecraft', 'gta', 'apex', 'cs2',
+    'counter-strike', 'league', 'rocket league', 'forza', 'ea fc', 'efootball', 'arc raiders', 'call of duty']],
+  ['sports', ['sports', 'football', 'soccer', 'basketball', 'nba', 'ufc', 'boxing', 'cricket',
+    'tennis', 'golf', 'hockey', 'racing']],
+  ['irl', ['irl', 'just chatting', 'chatting', 'travel', 'outdoor', 'food', 'music', 'art',
+    'creative', 'asmr', 'talk']],
+];
+
+// PURE: maps any raw category string to one of LIVE_BUCKETS. Never throws; a null/empty
+// category is 'other'. Kick rows only - YouTube/floor rows stay 'other'.
+export function bucketForCategory(category) {
+  const c = String(category == null ? '' : category).toLowerCase();
+  if (!c) return 'other';
+  for (const [bucket, keywords] of BUCKET_KEYWORDS) {
+    if (keywords.some((k) => c.includes(k))) return bucket;
+  }
+  return 'other';
+}
+
 function str(v) {
   return v == null ? '' : String(v);
 }
@@ -50,6 +80,7 @@ export function makeLiveChannel({
   isMature = false,
   watchUrl,
   language,
+  bucket = 'other',
 } = {}) {
   const src = LIVE_SOURCES.includes(source) ? source : '';
   return {
@@ -66,5 +97,6 @@ export function makeLiveChannel({
     isMature: Boolean(isMature),
     watchUrl: watchUrl == null ? null : str(watchUrl),
     language: language == null ? null : str(language),
+    bucket: LIVE_BUCKETS.includes(bucket) ? bucket : 'other',
   };
 }
