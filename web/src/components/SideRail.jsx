@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { api } from '../lib/api.js';
 import { normalizeLive } from '../lib/live.js';
 import { buildRailEntries } from '../lib/rail.js';
+import { tileGradient, channelInitial } from '../lib/landing.js';
 import { liveCardHref } from './LiveCard.jsx';
 import { useAuth } from '../hooks/useAuth.js';
 import { usePanelModal } from '../hooks/usePanelModal.jsx';
@@ -70,8 +71,8 @@ export default function SideRail() {
         {channels.map((ch) => (
           <li key={ch.key}>
             <Link to={ch.to} className="flex items-center gap-2.5 px-2 py-1.5 rounded hover:bg-white/5">
-              <span className="w-8 h-8 shrink-0 rounded-full bg-gradient-to-br from-live/40 to-yes/30 border border-white/10 grid place-items-center text-xs font-bold text-white/80">
-                {(ch.name || '?').slice(0, 1).toUpperCase()}
+              <span className="w-8 h-8 shrink-0 rounded-full border border-white/10 grid place-items-center text-xs font-bold text-white/85" style={{ backgroundImage: tileGradient(ch.name) }}>
+                {channelInitial(ch.name) || '?'}
               </span>
               {!collapsed && (
                 <span className="min-w-0">
