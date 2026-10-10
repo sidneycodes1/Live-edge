@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   groupKickByBucket, orderLandingRows, visibleItems, canExpand, isEmptySection, emptyStateLabel,
-  slugHash, tileGradient, channelInitial, pickTopKickChannel, ladderLabel,
+  slugHash, tileGradient, channelInitial, pickTopKickChannel, ladderLabel, hoverPreviewSrc,
   COLLAPSED_COUNT, EXPANDED_COUNT,
 } from './landing.js';
 import { normalizeChannel } from './live.js';
@@ -213,5 +213,31 @@ describe('ladderLabel — stale/floor stay labeled (§1)', () => {
     expect(ladderLabel('floor')).toMatch(/fallback floor/i);
     expect(ladderLabel('live')).toBeNull();
     expect(ladderLabel('empty')).toBeNull();
+  });
+});
+
+describe('hoverPreviewSrc — s5 preview eligibility (never a fabricated frame)', () => {
+  it('returns the real muted Kick embed for a Kick tile', () => {
+    const src = hoverPreviewSrc({ source: 'kick', channelSlug: 'xqc' });
+    expect(src).toContain('player.kick.com/xqc');
+    expect(src).toContain('muted=true');
+    expect(src).toContain('autoplay=true');
+  });
+
+  it('returns a real YouTube embed for a YouTube tile keyed by VIDEO id', () => {
+    const src = hoverPreviewSrc({
+      source: 'youtube',
+      channelSlug: 'UCabc',
+      watchUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+    });
+    expect(src).toContain('youtube.com/embed/dQw4w9WgXcQ');
+    expect(src).toContain('mute=1');
+  });
+
+  it('gives NOTHING for an unverified floor row or a row with no embeddable target', () => {
+    expect(hoverPreviewSrc({ source: 'floor', watchUrl: 'https://livepeer/x.m3u8' })).toBe('');
+    expect(hoverPreviewSrc({ source: 'kick' })).toBe(''); // no slug → no src
+    expect(hoverPreviewSrc(null)).toBe('');
+    expect(hoverPreviewSrc({ source: 'youtube' })).toBe(''); // no id → no src
   });
 });

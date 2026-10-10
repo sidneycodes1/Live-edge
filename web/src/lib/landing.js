@@ -10,6 +10,7 @@
 // ---------------------------------------------------------------------------
 import { tailorByInterests } from './tailoring.js';
 import { mergePinnedFirst, MAX_PINS } from './pins.js';
+import { buildVideoEmbed, isEmbedVerified } from './embed.js';
 
 // A section shows 3 cards collapsed; "Show more" reveals up to 9 (3×3). §4.
 export const COLLAPSED_COUNT = 3;
@@ -145,4 +146,22 @@ export function ladderLabel(servedFrom) {
   if (servedFrom === 'stale') return 'Streams below are a recent snapshot — the live check just failed.';
   if (servedFrom === 'floor') return 'Streams below come from our fallback floor — the providers are not responding.';
   return null;
+}
+
+// ---------------------------------------------------------------------------
+// s5 hover-preview eligibility — PURE so the "which tiles get a live preview"
+// rule is provable without a DOM (web/src/lib/landing.test.js).
+//
+// A tile previews the REAL stream (muted autoplay iframe) only when the row is
+// a provider whose embed is VERIFIED (Kick / YouTube — web/src/lib/embed.js)
+// AND buildVideoEmbed returns a genuine iframe src for it. Floor (unverified
+// HLS) and any row with no embeddable target get NOTHING — we never mount a
+// player we can't stand behind, and we never fabricate a preview frame.
+// Returns the exact embed src string, or '' when the tile must stay a
+// placeholder gradient.
+// ---------------------------------------------------------------------------
+export function hoverPreviewSrc(channel) {
+  if (!channel || !isEmbedVerified(channel.source)) return '';
+  const embed = buildVideoEmbed(channel);
+  return embed && embed.kind === 'iframe' && embed.verified ? embed.src : '';
 }
