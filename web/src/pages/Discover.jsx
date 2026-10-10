@@ -5,6 +5,7 @@ import { normalizeLive, normalizeChannel } from '../lib/live.js';
 import { marketThumb } from '../lib/live-now.js';
 import { mergePinnedFirst, MAX_PINS } from '../lib/pins.js';
 import { tailorByInterests } from '../lib/tailoring.js';
+import { buildPersonalizedBets } from '../lib/rails.js';
 import { consumeTunedNote } from '../lib/welcome.js';
 import { usePins } from '../hooks/usePins.js';
 import { useAuth } from '../hooks/useAuth.js';
@@ -238,7 +239,13 @@ export default function Discover() {
           .filter(Boolean).join(' ').toLowerCase();
         return hay.includes(q);
       });
-  const trending = [...searched].filter((r) => r.heroMarket).sort((a, b) => (b.heroMarket.volume || 0) - (a.heroMarket.volume || 0)).slice(0, 10);
+  // The main bets rail is now the PERSONALIZED selection (s6): up to 4 bets
+  // drawn from the signed-in user's interests + 3 mixed for discovery, ONE per
+  // distinct live stream, no repeats, never padded past the real supply. A
+  // logged-out user gets the diverse discovery mix. Only real open bets qualify
+  // (buildPersonalizedBets filters market-less / closed rooms and never invents).
+  const personalized = buildPersonalizedBets(searched, user?.interests || []);
+  const hasInterests = (user?.interests || []).length > 0;
   // "Closing soon" must only contain markets that ACTUALLY close soon: the same
   // countdownPill predicate the cards use (honesty clamp, open status), so a
   // card can never claim a slot in this rail without a ticking pill of its own.
@@ -246,7 +253,9 @@ export default function Discover() {
     .filter((r) => r.heroMarket && countdownPill(r.heroMarket))
     .sort((a, b) => new Date(a.heroMarket.end_time) - new Date(b.heroMarket.end_time))
     .slice(0, 10);
-  const featured = trending.find((r) => r.heroMarket.status === 'open') || null;
+  // buildPersonalizedBets only returns OPEN-hero rooms, so the first pick is
+  // always a real, bettable market — no secondary status filter needed here.
+  const featured = personalized[0] || null;
   const featuredThumb = featured ? marketThumb(featured) : null;
 
   if (loading) {
@@ -406,8 +415,14 @@ export default function Discover() {
         </Link>
       )}
 
-      {/* ④ TRENDING BETS */}
-      <Rail title="Trending bets" icon={<IconTrending className="w-5 h-5" />} rooms={trending} testid="rail-trending" />
+      {/* ④ BETS RAIL — personalized when signed-in with interests, else the
+          honest diverse discovery mix (s6: one per live stream, never padded). */}
+      <Rail
+        title={hasInterests ? 'Bets for you' : 'Trending bets'}
+        icon={<IconTrending className="w-5 h-5" />}
+        rooms={personalized}
+        testid="rail-trending"
+      />
 
       {/* ⑤ CLOSING SOON */}
       <Rail title="Closing soon" icon={<IconClock className="w-5 h-5" />} rooms={closing} testid="rail-closing" />
