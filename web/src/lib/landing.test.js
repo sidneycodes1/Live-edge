@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   groupKickByBucket, orderLandingRows, visibleItems, canExpand, isEmptySection, emptyStateLabel,
   slugHash, tileGradient, channelInitial, pickTopKickChannel, ladderLabel, hoverPreviewSrc,
+  heroMarketForStream,
   COLLAPSED_COUNT, EXPANDED_COUNT,
 } from './landing.js';
 import { normalizeChannel } from './live.js';
@@ -239,5 +240,42 @@ describe('hoverPreviewSrc — s5 preview eligibility (never a fabricated frame)'
     expect(hoverPreviewSrc({ source: 'kick' })).toBe(''); // no slug → no src
     expect(hoverPreviewSrc(null)).toBe('');
     expect(hoverPreviewSrc({ source: 'youtube' })).toBe(''); // no id → no src
+  });
+});
+
+describe('heroMarketForStream — s7 only a REAL bet bound to the hero stream', () => {
+  const hero = { channelSlug: 'xqc' };
+  const room = (id, { channel = 'xqc', status = 'open', volume = 0 } = {}) => ({
+    id, kick_channel: channel, heroMarket: { id: `${id}-m`, status, volume, question: `q-${id}` },
+  });
+
+  it('returns the room genuinely bound (case/space-insensitive) with an OPEN market', () => {
+    const found = heroMarketForStream([room('r1', { channel: ' XQC ' })], hero);
+    expect(found.id).toBe('r1');
+  });
+
+  it('returns NOTHING when no room is bound to this exact stream (never borrow one)', () => {
+    expect(heroMarketForStream([room('r1', { channel: 'kai' })], hero)).toBeNull();
+  });
+
+  it('excludes a bound room whose market is not open (nothing unbettable on the hero)', () => {
+    expect(heroMarketForStream([room('r1', { status: 'closed' })], hero)).toBeNull();
+    expect(heroMarketForStream([room('r1', { status: 'resolved' })], hero)).toBeNull();
+    expect(heroMarketForStream([{ id: 'nohero', kick_channel: 'xqc' }], hero)).toBeNull();
+  });
+
+  it('breaks a multi-bind tie on real volume (loudest honest bet leads)', () => {
+    const found = heroMarketForStream(
+      [room('quiet', { volume: 5 }), room('loud', { volume: 400 })],
+      hero,
+    );
+    expect(found.id).toBe('loud');
+  });
+
+  it('is total and honest on empty/garbage input and a slug-less hero (never throws)', () => {
+    expect(heroMarketForStream([], hero)).toBeNull();
+    expect(heroMarketForStream(null, hero)).toBeNull();
+    expect(heroMarketForStream([room('r1')], null)).toBeNull();
+    expect(heroMarketForStream([room('r1')], { channelSlug: '  ' })).toBeNull();
   });
 });

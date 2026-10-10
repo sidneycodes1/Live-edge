@@ -13,7 +13,7 @@ import { useAuthModal } from '../hooks/useAuthModal.jsx';
 import { countdownPill } from '../lib/countdown.js';
 import {
   groupKickByBucket, pickTopKickChannel, ladderLabel, tileGradient, channelInitial,
-  orderLandingRows,
+  orderLandingRows, heroMarketForStream,
 } from '../lib/landing.js';
 import MarketCard from '../components/MarketCard.jsx';
 import CategorySection from '../components/CategorySection.jsx';
@@ -223,6 +223,10 @@ export default function Discover() {
   // Hero = the top Kick row by REAL viewerCount (all-null counts → first row,
   // and its panel simply renders no number — never a fake one).
   const hero = pickTopKickChannel(laidKick);
+  // s7: the hero may carry ONE real prediction — only a bet genuinely bound to
+  // THIS exact live stream (room.kick_channel === the hero's Kick slug, market
+  // open). No such real bet ⇒ no market shown (we never invent or borrow one).
+  const heroRoom = hero ? heroMarketForStream(all, hero) : null;
   // Never-empty ladder honesty (§1): a stale/floor grid keeps its label.
   const ladder = q ? null : ladderLabel(live?.servedFrom);
   // Keep the seed referenced where it still matters: the section order itself
@@ -320,6 +324,28 @@ export default function Discover() {
                     <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded bg-white/10 text-white/70">{hero.bucket}</span>
                   )}
                 </div>
+              )}
+              {/* s7 — the honest hero prediction: a REAL open bet bound to this
+                  exact stream. Absent when nothing genuine rides this channel. */}
+              {heroRoom && (
+                <Link
+                  to={`/room/${heroRoom.id}`}
+                  data-testid="hero-market"
+                  className="rounded-lg border border-live/30 bg-live/5 p-3 hover:border-live/60 transition cursor-pointer"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold uppercase tracking-wide text-live">Live prediction</span>
+                    <MarketSourceChip
+                      priceSource={heroRoom.heroMarket.price_source}
+                      observedAt={heroRoom.heroMarket.price_observed_at}
+                      className="ml-auto"
+                    />
+                  </div>
+                  <p className="font-heading font-bold text-sm leading-snug mt-1 line-clamp-2">{heroRoom.heroMarket.question}</p>
+                  <div className="mt-2">
+                    <OddsBar yesPrice={heroRoom.heroMarket.yesPrice} noPrice={heroRoom.heroMarket.noPrice} />
+                  </div>
+                </Link>
               )}
               <Link
                 to={liveCardHref(hero) || '/'}

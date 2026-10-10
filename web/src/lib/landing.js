@@ -165,3 +165,36 @@ export function hoverPreviewSrc(channel) {
   const embed = buildVideoEmbed(channel);
   return embed && embed.kind === 'iframe' && embed.verified ? embed.src : '';
 }
+
+// ---------------------------------------------------------------------------
+// s7 hero prediction gate — PURE so the "only a REAL bet may sit on the hero"
+// rule is provable without a DOM (web/src/lib/landing.test.js).
+//
+// The owner asked (read-back #3) for a simple YES/NO market ON the featured
+// stream. Honesty invariant (Panta Door 1): we may only surface a market whose
+// outcome is a real one — we NEVER auto-invent a question and pretend it will
+// settle. So the hero carries a bet ONLY when a real room is genuinely bound to
+// THIS exact live stream (room.kick_channel === the hero's Kick slug, both
+// normalized) AND that room's hero market is OPEN (bettable now). No such room
+// ⇒ the hero shows NO market (the panel simply omits it) — we never borrow an
+// unrelated bet to fill the slot. A channel binds at most one room by design;
+// if several ever match, the loudest (highest real volume) honest one leads.
+// ---------------------------------------------------------------------------
+export function heroMarketForStream(rooms, hero) {
+  const slug = String(hero?.channelSlug || '').trim().toLowerCase();
+  if (!slug) return null;
+  const list = Array.isArray(rooms) ? rooms : [];
+  let best = null;
+  let bestVolume = -Infinity;
+  for (const room of list) {
+    const bound = String(room?.kick_channel || '').trim().toLowerCase();
+    if (!bound || bound !== slug) continue;
+    if (!room.heroMarket || room.heroMarket.status !== 'open') continue;
+    const volume = Number(room.heroMarket.volume) || 0;
+    if (volume > bestVolume) {
+      best = room;
+      bestVolume = volume;
+    }
+  }
+  return best;
+}
