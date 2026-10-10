@@ -8,6 +8,8 @@
 // placeholder-tile gradient is a deterministic function of the channel slug
 // (decorative UI, never presented as provider media).
 // ---------------------------------------------------------------------------
+import { tailorByInterests } from './tailoring.js';
+import { mergePinnedFirst, MAX_PINS } from './pins.js';
 
 // A section shows 3 cards collapsed; "Show more" reveals up to 9 (3×3). §4.
 export const COLLAPSED_COUNT = 3;
@@ -25,19 +27,40 @@ export const LANDING_SECTIONS = [
 
 const KICK_BUCKET_KEYS = ['sports', 'news', 'irl', 'games'];
 
-// Group a normalized LiveChannel list into landing buckets. ONLY Kick rows join
-// the bucket sections (§4 — YouTube/floor rows are not landing sources). The
-// `bucket` field comes from the server (§2a); a row without one (or with an
-// unknown value) is tolerant-routed to 'other' — same default normalizeChannel
-// applies — and 'other' has no landing section, so it simply isn't shown.
+// Group a normalized LiveChannel list into landing buckets. Kick rows route by
+// their server-derived `bucket` (§4 — the `bucket` field comes from the server;
+// a row without one, or with an unknown value, is tolerant-routed to 'other'
+// and 'other' has no landing section, so it simply isn't shown). s4 amendment:
+// YouTube-fallback rows (fallback:true, from GET /api/live/sections) join the
+// section the SERVER assigned them to — the web never re-derives a bucket.
 export function groupKickByBucket(channels = []) {
   const out = { sports: [], news: [], irl: [], games: [], other: [] };
   for (const c of Array.isArray(channels) ? channels : []) {
-    if (!c || c.source !== 'kick') continue;
-    const key = KICK_BUCKET_KEYS.includes(c.bucket) ? c.bucket : 'other';
-    out[key].push(c);
+    if (!c) continue;
+    if (c.source === 'kick') {
+      const key = KICK_BUCKET_KEYS.includes(c.bucket) ? c.bucket : 'other';
+      out[key].push(c);
+    } else if (c.fallback === true && KICK_BUCKET_KEYS.includes(c.bucket)) {
+      // Source-labelled YouTube fill for an empty section — stays in its section.
+      out[c.bucket].push(c);
+    }
   }
   return out;
+}
+
+// Order law for one landing section (shared by the client-bucketed search view
+// and the server-bucketed default view): PINS FIRST → then interest tailoring
+// (re-orders only, never filters, never fabricates). Only pins that ACTUALLY
+// live in this section's rows lead it — an out-of-section pin must never be
+// injected here as a snapshot (that would cross-fill buckets, §1 honesty).
+// leadCount=0 keeps tailoring stable when no pin matches.
+export function orderLandingRows(rows, pins, interests) {
+  const list = Array.isArray(rows) ? rows : [];
+  const ids = new Set(list.map((c) => String(c?.id)));
+  const sectionPins = (Array.isArray(pins) ? pins : []).filter((p) => p && ids.has(String(p.stream_id)));
+  return tailorByInterests(mergePinnedFirst(list, sectionPins), interests, {
+    leadCount: Math.min(sectionPins.length, MAX_PINS),
+  });
 }
 
 // Collapsed → first 3; expanded → first 9. Pure slice, nothing invented.
@@ -56,11 +79,13 @@ export function isEmptySection(items = []) {
 }
 
 // The honest empty-state sentence per section (§1: empty is allowed and must
-// be shown as empty — never backfilled from another provider or bucket).
+// be shown as empty — never backfilled from another bucket). s4 changed the
+// YouTube BACKFILL rule (the server now fills an empty section with labelled
+// YouTube rows); when even that produced nothing the sentence stays honest.
 export function emptyStateLabel(sectionKey) {
   const s = LANDING_SECTIONS.find((x) => x.key === sectionKey);
   const title = s ? s.title : 'this';
-  return `No live ${title} streams on Kick right now.`;
+  return `No live ${title} streams on Kick or the YouTube fallback right now.`;
 }
 
 // ---------------------------------------------------------------------------

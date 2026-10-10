@@ -39,6 +39,7 @@ import { notificationsRouter } from './routes/notifications.js';
 import { pinsRouter } from './routes/pins.js';
 import { kickRouter } from './routes/kick.js';
 import { liveRouter } from './routes/live.js';
+import { sectionsRouter } from './routes/sections.js';
 import { searchRouter } from './routes/search.js';
 import { ledgerRouter } from './routes/ledger.js';
 import { createNotifier } from './services/notify.js';
@@ -188,6 +189,13 @@ export async function createApp({ env: rawEnv, db: existingDb, privyVerifier: in
   // Resilient multi-source live feed (public): merges Kick/YouTube/Floor into
   // LiveChannel[] with a never-empty ladder. Never 500s — see routes/live.js.
   app.use('/api/live', liveRouter({ aggregator: liveAggregator, enabled }));
+
+  // Landing sections with the s4 empty-section fallback (server/src/routes/
+  // sections.js): Kick rows fill the four buckets; a bucket with ZERO Kick rows
+  // gets source-labelled YouTube live rows (never on the happy path, cached per
+  // query). Mounted AFTER /api/live — liveRouter has no '/sections' route, so
+  // this sub-path falls through here. Never 500s.
+  app.use('/api/live/sections', sectionsRouter({ aggregator: liveAggregator, youtube, enabled }));
 
   // Keyless live search with REAL depth (server/src/routes/search.js): the full
   // Kick page (100), the merged grid, an exact-slug Kick resolution, and a

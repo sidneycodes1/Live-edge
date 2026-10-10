@@ -67,6 +67,13 @@ export default function LiveTile({ channel, pinned, onTogglePin }) {
           <h3 className="font-heading font-bold text-sm leading-snug line-clamp-2">{channel.title || 'Live stream'}</h3>
           <div className="flex items-center gap-2 mt-1.5 text-xs min-w-0">
             <span className="truncate text-white/70">{channel.channelName || channel.channelSlug || channel.owner}</span>
+            {/* s4 source label: fallback rows are NEVER presented as Kick tiles. */}
+            {channel.sourceLabel && (
+              <span className="shrink-0 text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-white/10 text-white/60"
+                data-testid="live-tile-source">
+                via {channel.sourceLabel}
+              </span>
+            )}
             {channel.category && (
               <span className="ml-auto shrink-0 text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-live/20 text-live">
                 {channel.category}

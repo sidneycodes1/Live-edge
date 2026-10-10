@@ -12,6 +12,7 @@ import { useAuthModal } from '../hooks/useAuthModal.jsx';
 import { countdownPill } from '../lib/countdown.js';
 import {
   groupKickByBucket, pickTopKickChannel, ladderLabel, tileGradient, channelInitial,
+  orderLandingRows,
 } from '../lib/landing.js';
 import MarketCard from '../components/MarketCard.jsx';
 import CategorySection from '../components/CategorySection.jsx';
@@ -49,16 +50,25 @@ function fmtViewers(n) {
   return String(v);
 }
 
-// Kick-first category landing (docs/BUILD_CONTRACT-browse-ui-chat.md §4/§5):
-// a hero featured Kick box + four sections — all four (Sports / News / IRL /
-// Games) are Kick rows filtered by their server-derived `bucket`. (The
-// API-Football data feed that used to back Sports was retired Oct 2026.)
-// Every tile is the honest placeholder (Kick exposes no thumbnails),
-// every empty bucket shows an honest empty state, and nothing is ever
-// backfilled from another provider.
+// s4 honesty line shown above any section the server filled via the YouTube
+// fallback — the rows are real, but they are NOT Kick and must never read as
+// such (each tile also carries its own "via YouTube" chip).
+const FALLBACK_NOTE = 'No live Kick streams here right now — showing real live streams from YouTube.';
+
+// Kick-first category landing (docs/BUILD_CONTRACT-browse-ui-chat.md §4/§5) +
+// the s4 empty-section fallback: a hero featured Kick box + four sections.
+// The DEFAULT view comes pre-bucketed from GET /api/live/sections — Kick rows
+// fill each bucket, and a bucket with ZERO Kick rows carries real YouTube live
+// rows labelled "via YouTube" (server routes/sections.js; web never re-derives
+// a bucket). An ACTIVE SEARCH still narrows the flat Kick grid client-side.
+// Every tile is the honest placeholder (Kick exposes no thumbnails), every
+// empty section shows an honest empty state, and nothing is backfilled from
+// another bucket.
 export default function Discover() {
   const [rooms, setRooms] = useState(null);
   const [live, setLive] = useState(null);
+  // Server-bucketed landing sections ({ items, fallbackUsed, servedFrom }).
+  const [sections, setSections] = useState(null);
   const [liveLoading, setLiveLoading] = useState(true);
   const [loading, setLoading] = useState(true);
   const [waking, setWaking] = useState(false);
@@ -124,6 +134,16 @@ export default function Discover() {
     Promise.allSettled([
       api.listRooms().then((r) => { if (!cancelled) setRooms(r); }),
       api.getLive(48).then((r) => { if (!cancelled) setLive(normalizeLive(r)); }),
+      // s4: the four landing sections, bucketed + YouTube-filled SERVER-side
+      // (never 500s; a failed fallback simply arrives as an empty bucket).
+      api.getLiveSections(9).then((r) => {
+        if (cancelled) return;
+        setSections({
+          items: Object.fromEntries(Object.entries(r?.items || {}).map(([k, v]) => [k, (v || []).map(normalizeChannel).filter(Boolean)])),
+          fallbackUsed: r?.fallbackUsed || {},
+          servedFrom: r?.servedFrom || 'empty',
+        });
+      }).catch(() => { if (!cancelled) setSections(null); }),
     ]).then(() => {
       if (cancelled) return;
       clearTimeout(t);
@@ -175,20 +195,30 @@ export default function Discover() {
 
   const all = rooms || [];
 
-  // The landing rows. Kick rows only (the bucket sections never show other
-  // providers — §4 source table). Order law (unchanged from the old rail):
-  // PINS FIRST (mergePinnedFirst) → then interest-tailored REAL rows
-  // (tailorByInterests only re-orders, never filters, never fabricates) →
-  // THEN the bucket split, so a pinned row leads the section it belongs to.
-  // A search shows exactly what was searched for (no pins/tailoring).
-  const channelSource = q ? (searchView?.items || []) : (live?.items || []);
-  const kickRows = channelSource.filter((c) => c.source === 'kick');
-  const laidKick = q
-    ? kickRows
-    : tailorByInterests(mergePinnedFirst(kickRows, pins), user?.interests || [], {
-        leadCount: Math.min(pins.length, MAX_PINS),
-      });
-  const buckets = groupKickByBucket(laidKick);
+  // The landing rows. A search narrows the flat Kick grid client-side (exact
+  // query, no pins/tailoring). Otherwise the server-bucketed s4 sections drive
+  // the grids (until they arrive, the flat Kick grid fills the buckets with NO
+  // cross-provider backfill — the skeleton-adjacent bridge is kick-only). The
+  // per-section order law is unchanged: PINS FIRST → interest tailoring —
+  // both only re-order real rows, never filter, never fabricate.
+  let buckets;
+  let laidKick = [];
+  if (q) {
+    laidKick = (searchView?.items || []).filter((c) => c.source === 'kick');
+    buckets = groupKickByBucket(laidKick);
+  } else if (sections) {
+    const interests = user?.interests || [];
+    buckets = Object.fromEntries(
+      ['sports', 'news', 'irl', 'games'].map((k) => [k, orderLandingRows(sections.items?.[k] || [], pins, interests)]),
+    );
+    laidKick = buckets.sports; // hero = the top SPORTS row (server orders by real viewers)
+  } else {
+    const kickRows = (live?.items || []).filter((c) => c.source === 'kick');
+    laidKick = tailorByInterests(mergePinnedFirst(kickRows, pins), user?.interests || [], {
+      leadCount: pins.length,
+    });
+    buckets = groupKickByBucket(laidKick);
+  }
   // Hero = the top Kick row by REAL viewerCount (all-null counts → first row,
   // and its panel simply renders no number — never a fake one).
   const hero = pickTopKickChannel(laidKick);
@@ -297,7 +327,9 @@ export default function Discover() {
         {/* Honest ladder rung (stale/floor never presented as fresh, §1). */}
         {ladder && <p className="text-xs text-white/55 mt-4" data-testid="live-ladder-note">{ladder}</p>}
 
-        {/* ② CATEGORY SECTIONS — the four landing buckets (§4), 3-col grids */}
+        {/* ② CATEGORY SECTIONS — the four landing buckets (§4), 3-col grids.
+            s4: when the server filled a section via the YouTube fallback, the
+            section says so honestly above the grid. */}
         <CategorySection
           title="Sports"
           sectionKey="sports"
@@ -306,6 +338,7 @@ export default function Discover() {
           testid="section-sports"
           pinnedIds={pinnedIds}
           onTogglePin={handlePin}
+          fallbackNote={!q && sections?.fallbackUsed?.sports ? FALLBACK_NOTE : null}
         />
         <CategorySection
           title="News"
@@ -314,6 +347,7 @@ export default function Discover() {
           loading={sectionsLoading}
           pinnedIds={pinnedIds}
           onTogglePin={handlePin}
+          fallbackNote={!q && sections?.fallbackUsed?.news ? FALLBACK_NOTE : null}
         />
         <CategorySection
           title="IRL"
@@ -322,6 +356,7 @@ export default function Discover() {
           loading={sectionsLoading}
           pinnedIds={pinnedIds}
           onTogglePin={handlePin}
+          fallbackNote={!q && sections?.fallbackUsed?.irl ? FALLBACK_NOTE : null}
         />
         <CategorySection
           title="Games"
@@ -330,6 +365,7 @@ export default function Discover() {
           loading={sectionsLoading}
           pinnedIds={pinnedIds}
           onTogglePin={handlePin}
+          fallbackNote={!q && sections?.fallbackUsed?.games ? FALLBACK_NOTE : null}
         />
       </div>
 

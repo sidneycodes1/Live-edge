@@ -69,6 +69,10 @@ export const api = {
   // Multi-provider live grid (docs/live-aggregation-spec.md §3). Never 500s; the
   // response carries the never-empty ladder flags. Normalized in lib/live.js.
   getLive: (limit=24) => request(`/api/live?limit=${limit}`),
+  // Landing sections with the s4 empty-section fallback (server routes/
+  // sections.js): { items:{sports,news,irl,games}, fallbackUsed, servedFrom }.
+  // A bucket with zero Kick rows carries YouTube rows labelled sourceLabel.
+  getLiveSections: (limit=6) => request(`/api/live/sections?limit=${limit}`),
   // (API-Football data feed retired Oct 2026 — no /api/live?category=football.)
   // Keyless, quota-free search over the merged live grid
   // (server/src/routes/search.js). Returns { query, items, count }.

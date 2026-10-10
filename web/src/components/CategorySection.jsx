@@ -22,6 +22,7 @@ export default function CategorySection({
   pinnedIds,
   onTogglePin,
   renderCard,
+  fallbackNote,
 }) {
   const [expanded, setExpanded] = useState(false);
   const sid = testid || `section-${sectionKey}`;
@@ -34,6 +35,14 @@ export default function CategorySection({
       <h2 className="font-heading font-bold text-lg text-white/85 flex items-center gap-2">
         <span>{title}</span>
       </h2>
+
+      {/* s4: the section was empty on Kick and the server backfilled it with
+          labelled YouTube rows — say so plainly, above the grid. */}
+      {!loading && fallbackNote && (
+        <p className="text-xs text-white/55 mt-1.5" data-testid={`${sid}-fallback-note`}>
+          {fallbackNote}
+        </p>
+      )}
 
       {loading ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-3 min-w-0" data-testid={`${sid}-loading`}>

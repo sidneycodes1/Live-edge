@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  groupKickByBucket, visibleItems, canExpand, isEmptySection, emptyStateLabel,
+  groupKickByBucket, orderLandingRows, visibleItems, canExpand, isEmptySection, emptyStateLabel,
   slugHash, tileGradient, channelInitial, pickTopKickChannel, ladderLabel,
   COLLAPSED_COUNT, EXPANDED_COUNT,
 } from './landing.js';
@@ -32,7 +32,7 @@ describe('groupKickByBucket — bucket → landing section', () => {
     expect(g.games.map((c) => c.id)).toEqual(['p', 'q']);
   });
 
-  it('excludes non-Kick rows — no YouTube/floor backfill into buckets', () => {
+  it('excludes plain YouTube/floor rows — only s4 LABELLED fallback rows may join', () => {
     const g = groupKickByBucket([
       kick('k', 'news'),
       { id: 'y', source: 'youtube', bucket: 'news' },
@@ -41,6 +41,19 @@ describe('groupKickByBucket — bucket → landing section', () => {
     expect(g.news).toHaveLength(1);
     expect(g.news[0].id).toBe('k');
     expect(g.irl).toEqual([]);
+  });
+
+  it('admits s4 fallback rows (fallback:true) into their server-assigned section', () => {
+    const g = groupKickByBucket([
+      kick('k', 'news'),
+      { id: 'y1', source: 'youtube', bucket: 'sports', fallback: true, sourceLabel: 'YouTube' },
+      { id: 'y2', source: 'youtube', bucket: 'games', fallback: true, sourceLabel: 'YouTube' },
+      // A fallback row without a section bucket goes nowhere (§4 clamp).
+      { id: 'y3', source: 'youtube', bucket: 'other', fallback: true },
+    ]);
+    expect(g.sports.map((c) => c.id)).toEqual(['y1']);
+    expect(g.games.map((c) => c.id)).toEqual(['y2']);
+    expect(g.other).toEqual([]);
   });
 
   it('routes a Kick row with the sports bucket into the Sports section', () => {
@@ -136,11 +149,36 @@ describe('empty state — honest, never backfilled', () => {
     expect(isEmptySection([kick('1', 'news')])).toBe(false);
   });
 
-  it('each section has its own honest sentence', () => {
-    expect(emptyStateLabel('news')).toBe('No live News streams on Kick right now.');
-    expect(emptyStateLabel('irl')).toBe('No live IRL streams on Kick right now.');
-    expect(emptyStateLabel('games')).toBe('No live Games streams on Kick right now.');
-    expect(emptyStateLabel('sports')).toBe('No live Sports streams on Kick right now.');
+  it('each section has its own honest sentence (s4: after Kick AND the YouTube fallback)', () => {
+    expect(emptyStateLabel('news')).toBe('No live News streams on Kick or the YouTube fallback right now.');
+    expect(emptyStateLabel('irl')).toBe('No live IRL streams on Kick or the YouTube fallback right now.');
+    expect(emptyStateLabel('games')).toBe('No live Games streams on Kick or the YouTube fallback right now.');
+    expect(emptyStateLabel('sports')).toBe('No live Sports streams on Kick or the YouTube fallback right now.');
+  });
+});
+
+describe('orderLandingRows — per-section order law (pins first, no cross-fill)', () => {
+  const rows = [kick('a', 'games'), kick('b', 'games', 50), kick('c', 'games')];
+
+  it('leads with a pin that IS in the section and keeps the rest intact', () => {
+    const pins = [{ stream_id: 'b', title: 'b', source: 'kick', channel_slug: 'ch-b' }];
+    const out = orderLandingRows(rows, pins, []);
+    expect(out.map((c) => c.id)).toEqual(['b', 'a', 'c']);
+    expect(out).toHaveLength(3);
+  });
+
+  it('NEVER injects an out-of-section pin as a snapshot (bucket cross-fill is §1 lying)', () => {
+    const pins = [{ stream_id: 'zz', title: 'elsewhere', source: 'kick', channel_slug: 'ch-zz' }];
+    const out = orderLandingRows(rows, pins, []);
+    expect(out.map((c) => c.id)).toEqual(['a', 'b', 'c']);
+    expect(out).toHaveLength(3);
+  });
+
+  it('tailors by interest without adding or dropping rows', () => {
+    const input = [kick('n', 'games'), kick('g', 'games', 1, { category: 'VALORANT' })];
+    const out = orderLandingRows(input, [], ['streams']);
+    expect(out).toHaveLength(2);
+    expect(new Set(out)).toEqual(new Set(input));
   });
 });
 

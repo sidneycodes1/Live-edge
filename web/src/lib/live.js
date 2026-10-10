@@ -57,6 +57,10 @@ export function normalizeChannel(raw) {
     liveEmbedUrl: raw.liveEmbedUrl == null ? '' : str(raw.liveEmbedUrl),
     owner: raw.owner == null ? '' : str(raw.owner),
     status: raw.status == null ? '' : str(raw.status),
+    // s4 empty-section fallback labels (server/src/routes/sections.js): only
+    // YouTube-fallback rows carry these — the tile badges them "via YouTube".
+    fallback: raw.fallback === true,
+    sourceLabel: raw.sourceLabel == null ? '' : str(raw.sourceLabel),
   };
 }
 
