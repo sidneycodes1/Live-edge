@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api.js';
-import { normalizeLive, normalizeChannel } from '../lib/live.js';
+import { normalizeLive, normalizeChannel, normalizeSections } from '../lib/live.js';
 import { marketThumb } from '../lib/live-now.js';
 import { mergePinnedFirst, MAX_PINS } from '../lib/pins.js';
 import { tailorByInterests } from '../lib/tailoring.js';
@@ -13,7 +13,7 @@ import { useAuthModal } from '../hooks/useAuthModal.jsx';
 import { countdownPill } from '../lib/countdown.js';
 import {
   groupKickByBucket, pickTopKickChannel, ladderLabel, tileGradient, channelInitial,
-  orderLandingRows, heroMarketForStream,
+  orderLandingRows, heroMarketForStream, hasLandingRows,
 } from '../lib/landing.js';
 import MarketCard from '../components/MarketCard.jsx';
 import CategorySection from '../components/CategorySection.jsx';
@@ -138,12 +138,7 @@ export default function Discover() {
       // s4: the four landing sections, bucketed + YouTube-filled SERVER-side
       // (never 500s; a failed fallback simply arrives as an empty bucket).
       api.getLiveSections(9).then((r) => {
-        if (cancelled) return;
-        setSections({
-          items: Object.fromEntries(Object.entries(r?.items || {}).map(([k, v]) => [k, (v || []).map(normalizeChannel).filter(Boolean)])),
-          fallbackUsed: r?.fallbackUsed || {},
-          servedFrom: r?.servedFrom || 'empty',
-        });
+        if (!cancelled) setSections(normalizeSections(r));
       }).catch(() => { if (!cancelled) setSections(null); }),
     ]).then(() => {
       if (cancelled) return;
@@ -166,6 +161,35 @@ export default function Discover() {
     const id = setInterval(tick, 5000);
     return () => { active = false; clearInterval(id); };
   }, [loading]);
+
+  // Cold-start self-heal (the root cause of the all-empty landing). Sections +
+  // the grid are fetched exactly ONCE on mount, and the fetch layer only retries
+  // on a network error / 5xx — a SUCCESSFUL-but-EMPTY response is accepted as
+  // final. The aggregator's first call after boot can return [] before the Kick
+  // token is warm, so that empty first paint latches every bucket to its empty
+  // state until a manual reload (the 5s interval above re-polls only rooms,
+  // never sections). While the landing is genuinely empty and we're not
+  // searching, re-poll it on a BOUNDED interval until real rows arrive, then
+  // stop. Bounded (max attempts, visible-tab only) so a truly-empty period can't
+  // hammer the YouTube fallback quota — the endpoint already caches fallback per
+  // query and only searches empty buckets; this adds a hard cap on top.
+  const landingEmpty = !q && !hasLandingRows({ sections, live });
+  const landingEmptyRef = useRef(landingEmpty);
+  landingEmptyRef.current = landingEmpty;
+  useEffect(() => {
+    if (loading || q || !landingEmptyRef.current) return undefined;
+    let attempts = 0;
+    const MAX_ATTEMPTS = 10;
+    const id = setInterval(() => {
+      if (document.visibilityState !== 'visible') return;
+      if (!landingEmptyRef.current || ++attempts > MAX_ATTEMPTS) { clearInterval(id); return; }
+      Promise.allSettled([
+        api.getLive(48).then((r) => setLive(normalizeLive(r))),
+        api.getLiveSections(9).then((r) => setSections(normalizeSections(r))),
+      ]);
+    }, 6000);
+    return () => clearInterval(id);
+  }, [loading, q]);
 
   // Query-driven search. Empty query clears the view (back to the default grid).
   useEffect(() => {

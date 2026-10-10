@@ -2,10 +2,10 @@ import { describe, it, expect } from 'vitest';
 import {
   groupKickByBucket, orderLandingRows, visibleItems, canExpand, isEmptySection, emptyStateLabel,
   slugHash, tileGradient, channelInitial, pickTopKickChannel, ladderLabel, hoverPreviewSrc,
-  heroMarketForStream,
+  heroMarketForStream, hasLandingRows,
   COLLAPSED_COUNT, EXPANDED_COUNT,
 } from './landing.js';
-import { normalizeChannel } from './live.js';
+import { normalizeChannel, normalizeSections } from './live.js';
 
 // The bucket→section routing of the Kick-first landing (contract §4), the
 // placeholder-tile gradient (deterministic, no randomness), the collapse
@@ -277,5 +277,61 @@ describe('heroMarketForStream — s7 only a REAL bet bound to the hero stream', 
     expect(heroMarketForStream(null, hero)).toBeNull();
     expect(heroMarketForStream([room('r1')], null)).toBeNull();
     expect(heroMarketForStream([room('r1')], { channelSlug: '  ' })).toBeNull();
+  });
+});
+
+describe('normalizeSections — raw /api/live/sections → render-ready view', () => {
+  it('normalizes each bucket through normalizeChannel and drops nulls', () => {
+    const raw = {
+      items: { sports: [kick('1', 'sports')], news: [null, { bogus: true }], irl: [], games: [kick('9', 'games')] },
+      fallbackUsed: { sports: false, news: true },
+      servedFrom: 'live',
+    };
+    const v = normalizeSections(raw);
+    expect(v.items.sports.map((c) => c.id)).toEqual(['1']);
+    // A garbage row fails normalizeChannel's source set but survives as a
+    // defaulted channel (source '' ), NOT dropped — the tile just won't badge it.
+    expect(v.items.news).toHaveLength(1);
+    expect(v.items.news[0].source).toBe('');
+    expect(v.items.irl).toEqual([]);
+    expect(v.items.games.map((c) => c.id)).toEqual(['9']);
+    expect(v.fallbackUsed).toEqual({ sports: false, news: true });
+    expect(v.servedFrom).toBe('live');
+  });
+
+  it('is total on a missing/partial payload (every field defaulted, never throws)', () => {
+    const empty = normalizeSections(undefined);
+    expect(empty.items).toEqual({});
+    expect(empty.fallbackUsed).toEqual({});
+    expect(empty.servedFrom).toBe('empty');
+  });
+});
+
+describe('hasLandingRows — cold-start emptiness decision (mirrors render precedence)', () => {
+  const sec = (over = {}) => ({ items: { sports: [], news: [], irl: [], games: [], ...over }, fallbackUsed: {}, servedFrom: 'live' });
+
+  it('false when sections present but every bucket is empty (the latch bug)', () => {
+    // Even with Kick rows sitting in the flat grid, a present-but-empty sections
+    // object drives the view (grid is ignored in that branch) → genuinely empty.
+    expect(hasLandingRows({ sections: sec(), live: { items: [kick('1', 'irl')] } })).toBe(false);
+  });
+
+  it('true when any section bucket carries rows', () => {
+    expect(hasLandingRows({ sections: sec({ irl: [kick('2', 'irl')] }), live: null })).toBe(true);
+    expect(hasLandingRows({ sections: sec({ games: [kick('3', 'games')] }), live: null })).toBe(true);
+  });
+
+  it('falls back to the flat grid ONLY when sections are null', () => {
+    expect(hasLandingRows({ sections: null, live: { items: [kick('4', 'irl')] } })).toBe(true);
+    expect(hasLandingRows({ sections: null, live: { items: [] } })).toBe(false);
+    // Non-Kick rows alone don't count (the bridge is kick-only).
+    expect(hasLandingRows({ sections: null, live: { items: [{ id: 'y', source: 'youtube' }] } })).toBe(false);
+  });
+
+  it('is total on empty/garbage input (never throws)', () => {
+    expect(hasLandingRows()).toBe(false);
+    expect(hasLandingRows({})).toBe(false);
+    expect(hasLandingRows({ sections: { items: null }, live: null })).toBe(false);
+    expect(hasLandingRows({ sections: { items: { irl: 'not-an-array' } } })).toBe(false);
   });
 });

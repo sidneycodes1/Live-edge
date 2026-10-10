@@ -198,3 +198,28 @@ export function heroMarketForStream(rooms, hero) {
   }
   return best;
 }
+
+// ---------------------------------------------------------------------------
+// Cold-start self-heal predicate — PURE so the "is the landing genuinely empty?"
+// decision (web/src/pages/Discover.jsx) is provable without a DOM.
+//
+// The default landing view is driven by the server-bucketed `sections`; only
+// while those haven't arrived does it bridge to the flat Kick `live` grid (see
+// Discover's render precedence). So "has anything to show" must mirror THAT
+// precedence, not just OR the two together:
+//   • sections present (non-null) → rows exist iff at least one bucket carries
+//     rows. (A present-but-empty sections object means the server answered with
+//     nothing — the grid is NOT consulted in this branch, so it must not count.)
+//   • sections null (fetch failed / not yet arrived) → rows exist iff the flat
+//     grid carries at least one real Kick row.
+// Used to decide whether to keep re-polling after a first paint that came back
+// empty; returns false only when there is genuinely nothing to render.
+// ---------------------------------------------------------------------------
+export function hasLandingRows({ sections, live } = {}) {
+  if (sections && typeof sections === 'object') {
+    const items = sections.items && typeof sections.items === 'object' ? sections.items : {};
+    return KICK_BUCKET_KEYS.some((k) => Array.isArray(items[k]) && items[k].length > 0);
+  }
+  const grid = Array.isArray(live?.items) ? live.items : [];
+  return grid.some((c) => c && c.source === 'kick');
+}

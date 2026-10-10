@@ -104,3 +104,23 @@ export function normalizeLive(raw) {
 export function isFreshLive(view) {
   return view?.servedFrom === 'live' && view.count > 0;
 }
+
+// Turn the raw GET /api/live/sections payload into the render-ready landing view:
+// every bucket normalized through normalizeChannel (nulls dropped, a missing
+// bucket → []), plus the honest per-section fallback flags and the served-from
+// rung. Pure + defensive so a partial/degraded response can never render
+// `undefined` or invent a row (§4 honesty). Shared by the mount fetch and the
+// cold-start self-heal in Discover so both normalize identically.
+export function normalizeSections(raw) {
+  const items = raw?.items && typeof raw.items === 'object' ? raw.items : {};
+  return {
+    items: Object.fromEntries(
+      Object.entries(items).map(([k, v]) => [
+        k,
+        (Array.isArray(v) ? v : []).map(normalizeChannel).filter(Boolean),
+      ]),
+    ),
+    fallbackUsed: raw?.fallbackUsed && typeof raw.fallbackUsed === 'object' ? raw.fallbackUsed : {},
+    servedFrom: raw?.servedFrom || 'empty',
+  };
+}
