@@ -25,26 +25,57 @@ export function portfolioRouter({ db, _panta }) {
         [userId],
       );
 
+      // s8 in-play value + settle/loss: the honest COST BASIS per market is the
+      // sum of that user's 'buy' trade amounts (what they actually paid). We read
+      // it straight off the existing trades tape — no parallel accounting, no
+      // invented stake. A missing row (seeded position with no recorded buy)
+      // honestly contributes $0 invested, so P/L is never overstated.
+      const { rows: investedRows } = await db.query(
+        `select market_id, sum(amount) as invested from trades
+         where user_id=$1 and kind='buy' group by market_id`,
+        [userId],
+      );
+      const investedByMarket = new Map(investedRows.map((r) => [String(r.market_id), Number(r.invested) || 0]));
+
       const positions = posRows.map((p) => {
         const status = p.status;
+        const yesShares = Number(p.yes_shares);
+        const noShares = Number(p.no_shares);
         let claimable = false;
         let claimAmount = 0;
         if (status === 'resolved' && !p.claimed) {
-          const winning = p.outcome === 'yes' ? Number(p.yes_shares) : Number(p.no_shares);
+          const winning = p.outcome === 'yes' ? yesShares : noShares;
           if (winning > 0) {
             claimable = true;
             claimAmount = winning;
           }
         }
-        const currentValue = Number(p.yes_shares) * Number(p.yes_price) + Number(p.no_shares) * Number(p.no_price);
+        const invested = investedByMarket.get(String(p.market_id)) ?? 0;
+        // Mark-to-market at the CURRENT price. For an OPEN bet this is the live
+        // in-play value the owner asked to see "tick up". For a RESOLVED bet the
+        // real number is the settlement payout below (a sim resolve leaves the
+        // LMSR price mid-board, so currentValue is NOT the payoff there).
+        const currentValue = yesShares * Number(p.yes_price) + noShares * Number(p.no_price);
+        // Honest unrealized P/L for the still-running position only.
+        const unrealizedPnl = status === 'open' ? currentValue - invested : null;
+        // Settle/loss record: the true payoff of a resolved outcome — the winning
+        // side's shares pay $1 each, the losing side pays nothing (→ a loss).
+        let settlement = null;
+        if (status === 'resolved' && (p.outcome === 'yes' || p.outcome === 'no')) {
+          const payout = p.outcome === 'yes' ? yesShares : noShares;
+          settlement = { outcome: p.outcome, won: payout > 0, payout, realizedPnl: payout - invested };
+        }
         return {
           market: { id: p.market_id, question: p.question, status: p.status, outcome: p.outcome, image_url: p.image_url },
-          yesShares: Number(p.yes_shares),
-          noShares: Number(p.no_shares),
+          yesShares,
+          noShares,
           claimed: p.claimed,
           claimable,
           claimAmount,
           currentValue,
+          invested,
+          unrealizedPnl,
+          settlement,
         };
       });
 

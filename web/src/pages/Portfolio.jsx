@@ -7,7 +7,7 @@ import { useToast } from '../hooks/useToast.js';
 import { api } from '../lib/api.js';
 import { EMBEDDED_SIGNING_VERIFIED } from '../lib/privy.js';
 import PositionRow from '../components/PositionRow.jsx';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 // Portfolio as an OVERLAY body (owner decision, Oct 2026): rendered inside
 // <PanelOverlay/>'s <Modal>, so it no longer owns a full-screen page shell — the
@@ -26,6 +26,19 @@ export default function Portfolio() {
   // always lines up with the header/portfolio number above.
   const { data: ledger } = useApi(() => (user ? api.getLedger(20) : Promise.resolve({ items: [] })), [user, data?.balance]);
   const [msg, setMsg] = useState('');
+
+  // s8 in-play value: while the portfolio overlay is open, re-poll the wallet so a
+  // running bet's mark-to-market value and P/L visibly track the live market price
+  // (the "evolving price" the owner asked for). Pauses when the tab is hidden and
+  // stops entirely when this overlay unmounts — it never burns requests in a
+  // background tab, and it only re-reads REAL prices (nothing is simulated here).
+  useEffect(() => {
+    if (!user) return undefined;
+    const id = setInterval(() => {
+      if (document.visibilityState === 'visible') Promise.resolve(refresh()).catch(() => {});
+    }, 5000);
+    return () => clearInterval(id);
+  }, [user, refresh]);
 
   // Amendment 2 launch gate: claims are wallet-SIGNED actions, and until the
   // Phase-0 spike flips EMBEDDED_SIGNING_VERIFIED there is no signing path for

@@ -91,4 +91,53 @@ describe('portfolio expiry', () => {
     assert.equal(row.market.status, 'resolved');
     assert.equal(row.claimable, true);
   });
+
+  // --- s8: in-play value + settle/loss read off REAL trades + resolution ------
+  it('s8: an OPEN position exposes the real cost basis and unrealized P/L (no settlement yet)', async () => {
+    const { fetchJson } = await makeApp();
+    const UA = await auth(fetchJson, genWallet());
+    const UB = await auth(fetchJson, genWallet());
+    const marketId = await createMarket(fetchJson, UA, 'Open in-play value?');
+    await buy(fetchJson, UB, marketId, 'yes', 10);
+
+    const row = (await portfolio(fetchJson, UB)).positions.find((p) => p.market.id === marketId);
+    assert.equal(row.invested, 10, 'cost basis = the buy amount actually paid');
+    assert.ok(Number.isFinite(row.currentValue), 'mark-to-market value is a number');
+    assert.ok(Math.abs(row.unrealizedPnl - (row.currentValue - 10)) < 1e-9, 'unrealized P/L = value − cost');
+    assert.equal(row.settlement, null, 'an open bet has no settlement');
+  });
+
+  it('s8: a resolved WIN reports the payout (winning shares), not the stale price', async () => {
+    const { fetchJson } = await makeApp();
+    const UA = await auth(fetchJson, genWallet());
+    const UB = await auth(fetchJson, genWallet());
+    const marketId = await createMarket(fetchJson, UA, 'Settles yes?');
+    await buy(fetchJson, UB, marketId, 'yes', 10);
+    await fetchJson(`/api/markets/${marketId}/resolve`, { method: 'POST', body: JSON.stringify({ outcome: 'yes', force: true }), headers: { Authorization: `Bearer ${UA.token}` } });
+
+    const row = (await portfolio(fetchJson, UB)).positions.find((p) => p.market.id === marketId);
+    assert.equal(row.unrealizedPnl, null, 'resolved bets have no unrealized P/L');
+    assert.equal(row.settlement.outcome, 'yes');
+    assert.equal(row.settlement.won, true);
+    assert.equal(row.settlement.payout, row.yesShares, 'payout is the winning side shares');
+    assert.ok(row.settlement.payout > 0);
+    assert.ok(Math.abs(row.settlement.realizedPnl - (row.settlement.payout - 10)) < 1e-9);
+  });
+
+  it('s8: a resolved LOSS reports a $0 payout and a negative realized P/L', async () => {
+    const { fetchJson } = await makeApp();
+    const UA = await auth(fetchJson, genWallet());
+    const UB = await auth(fetchJson, genWallet());
+    const marketId = await createMarket(fetchJson, UA, 'Settles no against me?');
+    await buy(fetchJson, UB, marketId, 'yes', 10);
+    await fetchJson(`/api/markets/${marketId}/resolve`, { method: 'POST', body: JSON.stringify({ outcome: 'no', force: true }), headers: { Authorization: `Bearer ${UA.token}` } });
+
+    const row = (await portfolio(fetchJson, UB)).positions.find((p) => p.market.id === marketId);
+    assert.equal(row.settlement.outcome, 'no');
+    assert.equal(row.settlement.won, false, 'held only YES, YES lost');
+    assert.equal(row.settlement.payout, 0, 'losing side pays nothing');
+    assert.equal(row.settlement.realizedPnl, -10, 'the whole stake is the honest loss');
+    assert.equal(row.claimable, false);
+  });
 });
+
