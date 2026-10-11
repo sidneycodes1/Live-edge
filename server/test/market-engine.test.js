@@ -110,14 +110,29 @@ describe('marketEngine/tick', () => {
     assert.equal(g.calls, 0);
   });
 
-  it('ROTATION: stops creating when >=3 sim-engine markets are open (no gemini call)', async () => {
+  it('ROTATION: stops creating when >= maxOpenEngineMarkets are open (no gemini call)', async () => {
     const { db } = await makeApp();
-    for (let i = 0; i < 3; i += 1) await seedMarket(db, { question: `Existing open engine market number ${i}?` });
+    for (let i = 0; i < ENGINE_DEFAULTS.maxOpenEngineMarkets; i += 1) await seedMarket(db, { question: `Existing open engine market number ${i}?` });
     const g = fakeGemini({ markets: [] });
     const res = await newEngine(db, g, fakeAggregator()).tick();
     assert.equal(res.skipped, 'rotation-full');
-    assert.equal(res.openCount, 3);
+    assert.equal(res.openCount, ENGINE_DEFAULTS.maxOpenEngineMarkets);
     assert.equal(g.calls, 0);
+  });
+
+  it('CONTINUITY: a fresh batch is left OPEN after a tick (rails never empty)', async () => {
+    const { db } = await makeApp();
+    await ensureUser(db);
+    const g = fakeGemini({
+      markets: [
+        { liveItemId: 'yt-vid1', question: 'Will this live stream still be running in ten minutes?', category: 'News' },
+        { liveItemId: 'yt-vid1', question: 'Does this broadcast stay up until the next rotation window?', category: 'News' },
+      ],
+    });
+    const res = await newEngine(db, g, fakeAggregator()).tick();
+    assert.ok(res.created >= 1, 'tick created at least one market');
+    const { rows } = await db.query(`select count(*)::int c from markets where source='sim-engine' and status='open'`);
+    assert.ok(Number(rows[0].c) > 0, 'openCount > 0 immediately after rotation');
   });
 
   it('NO-LIVE: empty snapshot → keeps last batch, no gemini call, never wipes', async () => {
@@ -237,9 +252,9 @@ describe('marketEngine/tick', () => {
     assert.equal(after.rows[0].c, before.rows[0].c, 'existing markets untouched on a gemini failure');
   });
 
-  it('force:true bypasses the >=3-open gate (still respects dedup + budget)', async () => {
+  it('force:true bypasses the open-gate (still respects dedup + budget)', async () => {
     const { db } = await makeApp();
-    for (let i = 0; i < 3; i += 1) await seedMarket(db, { question: `Open engine filler ${i}?` });
+    for (let i = 0; i < ENGINE_DEFAULTS.maxOpenEngineMarkets; i += 1) await seedMarket(db, { question: `Open engine filler ${i}?` });
     const g = fakeGemini({ markets: [{ liveItemId: 'yt-vid1', question: 'A brand-new forced engine question?' }] });
     const res = await newEngine(db, g, fakeAggregator([liveItem()])).tick({ force: true });
     assert.equal(res.created, 1);

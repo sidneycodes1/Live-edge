@@ -65,7 +65,7 @@ export async function resetDb() {
   if (!sharedDb) throw new Error('DB not initialized - call setupTestEnv first');
   // Single TRUNCATE across all tables with RESTART IDENTITY CASCADE for cheap reset
   await sharedDb.query(
-    'TRUNCATE TABLE users, auth_nonces, rooms, markets, orders, trades, balances, positions, chat_messages, notifications, mint_events, fee_events, engine_budget, live_pins, panta_markets, panta_sync_state RESTART IDENTITY CASCADE',
+    'TRUNCATE TABLE users, auth_nonces, rooms, markets, orders, trades, balances, positions, chat_messages, notifications, mint_events, fee_events, engine_budget, llm_budget, live_pins, panta_markets, panta_sync_state RESTART IDENTITY CASCADE',
   );
 }
 

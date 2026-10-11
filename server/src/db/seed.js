@@ -25,20 +25,9 @@ const ROOMS = {
   gaming: 'cafe0000-0000-4000-8000-000000000002',
   lifestyle: 'cafe0000-0000-4000-8000-000000000003',
 };
-const MARKETS = {
-  gamingMalenia: 'beef0000-0000-4000-8000-000000000013',
-  gamingSpeedrun: 'beef0000-0000-4000-8000-000000000014',
-  lifestyleSketch: 'beef0000-0000-4000-8000-000000000015',
-};
 
-// --- fixed time horizon (absolute, deterministic) ----------------------------
-const START = '2024-01-01T00:00:00.000Z'; // market opened (fixed past)
-const END = '2099-12-31T00:00:00.000Z'; // fixed far future → stays 'open' at read time
-const RESOLVE = '2099-12-31T01:00:00.000Z'; // after end, fixed
-
-// Every market resolves on the existing sim/hybrid (demo settlement) path — we do
-// not fabricate an oracle. This descriptor is honest text, not a URL that could 404.
-const SIM_SOURCE = ['sim (demo settlement — honest label, no real oracle yet)'];
+// No markets are seeded (owner decision, Oct 2026) — every bet is engine-born from a
+// live broadcast, so there is no fixed market id / time horizon / demo source here.
 
 export async function seed(db, { fallbackChannel } = {}) {
   const { rows: existing } = await db.query('select count(*) as c from rooms');
@@ -92,44 +81,14 @@ export async function seed(db, { fallbackChannel } = {}) {
     );
   }
 
-  // --- markets: open across gaming + lifestyle ------------------------------
-  const markets = [
-    {
-      id: MARKETS.gamingMalenia,
-      room: ROOMS.gaming,
-      creator: USERS.owner,
-      category: 'gaming',
-      q: 'Will he beat Malenia first try?',
-      rule: 'YES if the boss is defeated on the first attempt, else NO',
-    },
-    {
-      id: MARKETS.gamingSpeedrun,
-      room: ROOMS.gaming,
-      creator: USERS.owner,
-      category: 'gaming',
-      q: 'Will the run finish under 30 minutes?',
-      rule: 'YES if the run timer is under 30:00, else NO',
-    },
-    {
-      id: MARKETS.lifestyleSketch,
-      room: ROOMS.lifestyle,
-      creator: USERS.viewer,
-      category: 'lifestyle',
-      q: 'Will the sketch be finished before the stream ends?',
-      rule: 'YES if the drawing is completed and posted, else NO',
-    },
-  ];
-  for (const m of markets) {
-    await db.query(
-      `insert into markets(id, room_id, creator_id, source, question, resolution_rule, sources_of_truth, category, image_url, start_time, end_time, resolution_time, yes_price, no_price, volume, status, is_seed)
-       values($1,$2,$3,'sim',$4,$5,$6,$7,$8,$9,$10,$11,0.5,0.5,0,'open',true)`,
-      [m.id, m.room, m.creator, m.q, m.rule, SIM_SOURCE, m.category, null, START, END, RESOLVE],
-    );
-    await db.query(
-      `insert into chat_messages(room_id, user_id, kind, body, is_seed) values($1,$2,'system',$3,true)`,
-      [m.room, m.creator, `New market just dropped: ${m.q}`],
-    );
-  }
+  // --- markets: NONE seeded (owner decision, Oct 2026) ----------------------
+  // The demo bet questions ("Will he beat Malenia first try?", etc.) are retired:
+  // every bet the app shows must be BORN FROM A LIVE BROADCAST via the market
+  // engine (source='sim-engine'), never a static seed row. A fresh DB therefore
+  // starts with rooms + users but ZERO markets, and the engine fills the rails with
+  // real, rotating, live-tied bets. (Existing seed rows in an already-seeded DB are
+  // hidden from the rooms list by the is_seed filter in routes/rooms.js — never
+  // deleted, so any historical trades/ledger stay queryable.)
 
   await db.query(
     `insert into chat_messages(room_id, user_id, kind, body, is_seed) values($1,$2,'chat',$3,true)`,

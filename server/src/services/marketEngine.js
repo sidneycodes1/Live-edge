@@ -34,12 +34,19 @@ import { sanitizeText } from './sanitize.js';
 // ---------------------------------------------------------------------------
 
 export const ENGINE_DEFAULTS = {
-  rotationMs: 30 * 60 * 1000, // ~every 30 minutes
+  // CONTINUITY (owner fix, Oct 2026): rotate FASTER than a bet's lifetime so a fresh
+  // batch is ALWAYS created while the previous one is still open — the rails never sit
+  // empty between rotations. Previously rotationMs == marketTtlMs (both 30m) and the
+  // interval was anchored to boot, so the tick at boot+30m saw the old batch STILL
+  // open (by seconds) → skipped 'rotation-full' → they closed moments later → the next
+  // tick was another 30m away → a recurring empty window. Now: a new batch every 15m,
+  // each lives 45m → ~3 staggered batches overlap → openCount never collapses to 0.
+  rotationMs: 15 * 60 * 1000, // ~every 15 minutes (a new batch)
   retryMs: 3 * 60 * 1000, // fast-retry base after a transient failure
-  marketTtlMs: 30 * 60 * 1000, // end_time = now + 30 min
-  budgetPerDay: 40, // max Gemini calls/day
-  maxOpenEngineMarkets: 3, // stop creating when >=3 sim-engine markets open
-  marketsMin: 3, // per batch (from Gemini)
+  marketTtlMs: 45 * 60 * 1000, // end_time = now + 45 min (outlives 3 rotation slots)
+  budgetPerDay: 200, // aggregate attempts/day ceiling across ALL LLM providers
+  maxOpenEngineMarkets: 9, // allow the ~3 overlapping batches; cap runaway stacking
+  marketsMin: 3, // per batch (from the LLM)
   marketsMax: 5,
   snapshotLimit: 24, // live items offered to the model
 };
@@ -147,8 +154,9 @@ export function createMarketEngine(options = {}) {
   } = options;
 
   const cfg = { ...ENGINE_DEFAULTS, ...defaults };
-  // Allow an env override for the daily budget without touching any other behavior.
-  const budgetPerDay = Number(env.GEMINI_BUDGET_PER_DAY) || cfg.budgetPerDay;
+  // Aggregate attempts/day ceiling across the whole LLM chain (a runaway guard,
+  // distinct from each provider's own per-day cap enforced in services/llm/chain.js).
+  const budgetPerDay = Number(env.LLM_BUDGET_PER_DAY) || cfg.budgetPerDay;
 
   const state = {
     running: false,

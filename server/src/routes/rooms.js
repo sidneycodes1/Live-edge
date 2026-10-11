@@ -23,6 +23,12 @@ export function roomsRouter({ db, hub, kick }) {
           [room.id],
         );
         const hero = markets[0] || null;
+        // SEED ROOMS are hidden from the list (owner decision, Oct 2026): the static
+        // demo bet questions are retired — every bet shown must be BORN FROM A LIVE
+        // BROADCAST. This is a read-path filter, NOT a delete, so any historical
+        // trades/ledger rows on a seeded room stay queryable forever (the FKs on
+        // orders/trades -> markets have no cascade, so deleting rows is unsafe).
+        if (room.is_seed) continue;
         // Engine rooms exist only while their broadcast-born bet is OPEN. Once the
         // 30-min market closes, hide the room from the list (read-path filter, NOT
         // a delete — any trades/ledger rows stay queryable forever).

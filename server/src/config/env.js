@@ -67,6 +67,23 @@ const schema = z.object({
   GEMINI_API_KEY: z.string().optional(),
   GEMINI_MODEL: z.string().default('gemini-3.8-flash'),
   GEMINI_BUDGET_PER_DAY: z.unknown().optional(),
+  // Cloudflare Workers AI - the durable FREE fallback in the LLM failover chain
+  // (Gemini -> Cloudflare -> OpenRouter). Enabled ONLY when BOTH a token and an
+  // account id are present. Secrets: never logged/echoed, never in a tracked file.
+  // The model must be one of the JSON-Mode-capable text-generation models.
+  CLOUDFLARE_API_TOKEN: z.string().optional(),
+  CLOUDFLARE_ACCOUNT_ID: z.string().optional(),
+  CLOUDFLARE_AI_MODEL: z.string().default('@cf/meta/llama-3.3-70b-instruct-fp8-fast'),
+  CLOUDFLARE_BUDGET_PER_DAY: z.unknown().optional(),
+  // OpenRouter - the last-resort EMERGENCY provider (free tier is ~50 req/day, so it
+  // is intentionally ordered last). Enabled ONLY when a key is present. Secret.
+  OPENROUTER_API_KEY: z.string().optional(),
+  OPENROUTER_MODEL: z.string().default('meta-llama/llama-3.3-70b-instruct:free'),
+  OPENROUTER_BUDGET_PER_DAY: z.unknown().optional(),
+  // Aggregate attempts/day ceiling for the market engine across ALL providers (a
+  // runaway guard, distinct from each provider's own cap). Lenient like the others:
+  // a bad value degrades to the engine default with a warning, never a boot crash.
+  LLM_BUDGET_PER_DAY: z.unknown().optional(),
   // Privy auth (docs/PRIVY_AUTH_SPEC.md). OPTIONAL + STRICT, same degrade policy as
   // every other provider: absent creds DISABLE Privy session auth (the route answers
   // 503) rather than crashing boot. Both are secrets — never logged/echoed, never in
@@ -146,12 +163,21 @@ export function loadEnv(raw = process.env) {
     }
   }
   const liveSources = { kick: kickEnabled, youtube: youtubeEnabled, floor: floorEnabled };
-  // Gemini feature flag (Phase 2 groundwork). Derived from the key's presence ONLY;
-  // no creds → feature disabled with a startup notice, never a crash. No other Gemini
-  // behavior is wired this phase (market generation is next).
+  // LLM failover chain for the broadcast market engine: Gemini (primary) ->
+  // Cloudflare Workers AI (durable free fallback) -> OpenRouter (emergency). Each is
+  // enabled from its creds ONLY; an absent provider is simply skipped by the chain.
+  // The engine ROTATES only when at least one provider is enabled (llmEnabled); with
+  // none, it is DISABLE-SAFE (keeps the last batch, never crashes, never fabricates).
   const geminiEnabled = Boolean(env.GEMINI_API_KEY);
-  if (!geminiEnabled) {
-    warnings.push('GEMINI_API_KEY missing → Gemini features disabled (no crash; model would use GEMINI_MODEL if enabled)');
+  const cloudflareEnabled = Boolean(env.CLOUDFLARE_API_TOKEN && env.CLOUDFLARE_ACCOUNT_ID);
+  const openrouterEnabled = Boolean(env.OPENROUTER_API_KEY);
+  const llmEnabled = geminiEnabled || cloudflareEnabled || openrouterEnabled;
+  // Loud-but-non-fatal, per-provider: an operator should know which rungs are silent.
+  // Gemini is the PRIMARY, so its absence is always called out (the chain still falls
+  // through to Cloudflare/OpenRouter when those are configured).
+  if (!geminiEnabled) warnings.push('GEMINI_API_KEY missing → Gemini disabled in the LLM chain (falls through to Cloudflare/OpenRouter when configured)');
+  if (!llmEnabled) {
+    warnings.push('No LLM provider key (GEMINI/CLOUDFLARE/OPENROUTER) → market engine rotation disabled (no crash; existing markets kept)');
   }
   // Privy session auth (docs/PRIVY_AUTH_SPEC.md). Enabled ONLY when both creds are
   // present; otherwise disabled with a startup notice (never a crash). Guests are
@@ -190,6 +216,9 @@ export function loadEnv(raw = process.env) {
     youtubeQueries,
     floorFallback,
     geminiEnabled,
+    cloudflareEnabled,
+    openrouterEnabled,
+    llmEnabled,
     privyEnabled,
     pantaRealtimeEnabled,
     simBetWindowMin,

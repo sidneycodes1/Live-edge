@@ -14,6 +14,9 @@ import { createYouTubeClient } from './youtube/client.js';
 import { createFloorClient } from './floor/client.js';
 import { createCuratedClient } from './curated/client.js';
 import { createGeminiClient } from './gemini/client.js';
+import { createMarketLLM } from './services/llm/chain.js';
+import { createCloudflareClient } from './services/llm/cloudflare.js';
+import { createOpenRouterClient } from './services/llm/openrouter.js';
 import { createMarketEngine } from './services/marketEngine.js';
 import { createPantaSync } from './services/pantaSync.js';
 import { createAiSpectator } from './services/aiChat.js';
@@ -106,19 +109,36 @@ export async function createApp({ env: rawEnv, db: existingDb, privyVerifier: in
   // concurrency + stagger + one retry; partial refreshes cache only 60s so a
   // throttle blip at boot cannot lock the grid short-filled for 10 minutes.
   const curated = createCuratedClient({ concurrency: 4, staggerMs: 150, retryDelayMs: 1500 });
-  // Gemini feature flag: drives whether the broadcast market engine rotates (§ TASK 2).
-  const geminiEnabled = env.geminiEnabled ?? Boolean(env.GEMINI_API_KEY);
+  // LLM feature flag: drives whether the broadcast market engine rotates (§ TASK 2).
+  // It is the union of the failover chain's providers — the engine rotates if ANY of
+  // Gemini / Cloudflare / OpenRouter is configured, so one outage never goes dark.
+  const llmEnabled = env.llmEnabled ?? Boolean(env.GEMINI_API_KEY || (env.CLOUDFLARE_API_TOKEN && env.CLOUDFLARE_ACCOUNT_ID) || env.OPENROUTER_API_KEY);
   // A single enabled map feeds BOTH the aggregator and the route: the three grid
-  // sources plus the gemini flag (consumed by the market engine, not the grid).
+  // sources plus the gemini flag (consumed by the market engine, not the grid). The
+  // `gemini` key is kept as the engine-enabled signal for /api/config parity.
   // (API-Football retired Oct 2026 — the football data vertical was removed whole.)
-  const enabled = { ...liveSources, gemini: geminiEnabled };
+  const enabled = { ...liveSources, gemini: llmEnabled };
   const liveAggregator = createLiveAggregator({ kick, youtube, floor, curated, enabled });
-  // Broadcast-aligned market engine (Phase 2). Gemini client is inert without a key
-  // (generateJson returns null, no call), so the engine is ALWAYS constructed but a
-  // real rotation only runs when the feature is enabled. It never throws at boot and
-  // never wipes existing markets — a Gemini outage just keeps the last batch served.
+  // Broadcast-aligned market engine, now backed by an LLM FAILOVER CHAIN instead of
+  // Gemini alone: Gemini (primary) → Cloudflare Workers AI (durable free fallback) →
+  // OpenRouter (emergency). The chain exposes the SAME isEnabled()/generateJson()
+  // contract the engine already consumes, so the engine is unchanged. Each client is
+  // DISABLE-SAFE (inert without creds); the whole chain is inert with no keys, so the
+  // engine is ALWAYS constructed but only rotates when llmEnabled. It never throws at
+  // boot and never wipes markets — if ALL providers fail a tick, the last batch stays.
   const gemini = createGeminiClient({ apiKey: env.GEMINI_API_KEY, model: env.GEMINI_MODEL });
-  const marketEngine = createMarketEngine({ db, gemini, aggregator: liveAggregator, env });
+  const cloudflare = createCloudflareClient({ apiToken: env.CLOUDFLARE_API_TOKEN, accountId: env.CLOUDFLARE_ACCOUNT_ID, model: env.CLOUDFLARE_AI_MODEL });
+  const openrouter = createOpenRouterClient({ apiKey: env.OPENROUTER_API_KEY, model: env.OPENROUTER_MODEL });
+  const marketLLM = createMarketLLM({
+    db,
+    providers: [
+      { name: 'gemini', client: gemini, budgetPerDay: Number(env.GEMINI_BUDGET_PER_DAY) || 40 },
+      { name: 'cloudflare', client: cloudflare, budgetPerDay: Number(env.CLOUDFLARE_BUDGET_PER_DAY) || 200 },
+      { name: 'openrouter', client: openrouter, budgetPerDay: Number(env.OPENROUTER_BUDGET_PER_DAY) || 50 },
+    ],
+  });
+  // The engine's "gemini" dependency is now the chain (same interface, more reliable).
+  const marketEngine = createMarketEngine({ db, gemini: marketLLM, aggregator: liveAggregator, env });
   const hub = createHub();
   const notify = createNotifier(db, hub);
   const priceCache = createPriceCache({ ttlMs: 10000 });
@@ -272,7 +292,7 @@ export async function createApp({ env: rawEnv, db: existingDb, privyVerifier: in
   // key would just skip every tick). It kicks once immediately so a fresh boot already
   // has live-born markets, then rotates. The interval is unref'd so it never keeps the
   // process alive, and app teardown (testApp + graceful shutdown) stops it explicitly.
-  if (geminiEnabled) marketEngine.start();
+  if (llmEnabled) marketEngine.start();
 
   // Panta real-time sync: start the single process-wide poller ONLY when explicitly
   // enabled with a server-only key, and never under test (suites drive tick() with a
@@ -296,6 +316,7 @@ export async function createApp({ env: rawEnv, db: existingDb, privyVerifier: in
   app._liveSources = liveSources;
   app._curated = curated;
   app._gemini = gemini;
+  app._llm = marketLLM;
   app._engine = marketEngine;
   app._pantaSync = pantaSync;
   app._pantaRealtimeEnabled = pantaRealtimeEnabled;
