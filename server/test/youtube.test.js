@@ -403,3 +403,52 @@ describe('youtube client — Tier-B multi-query (queries replaces query)', () =>
     assert.ok(warnings.some((w) => /quota|429|failed/i.test(w)));
   });
 });
+
+// P1 (Oct 2026): single-video liveness probe the market engine uses to retire a bet
+// the moment its bound broadcast ends. Contract: true=live / false=PROVEN over /
+// null=UNKNOWN (never over-closes). videos.list = 1 quota unit, never throws.
+describe('youtube client — isVideoLive single-video probe', () => {
+  it('false when liveStreamingDetails.actualEndTime is set (PROVEN over)', async () => {
+    const { fn } = mockRouter([
+      { match: '/youtube/v3/videos', res: makeRes({ items: [{ id: 'v1', snippet: { liveBroadcastContent: 'completed' }, liveStreamingDetails: { actualEndTime: '2026-10-04T11:00:00Z' } }] }) },
+    ]);
+    const c = createYouTubeClient({ apiKey: KEY, fetchImpl: fn });
+    assert.equal(await c.isVideoLive('v1'), false);
+  });
+
+  it('true when liveBroadcastContent==="live" with no end time', async () => {
+    const { fn } = mockRouter([
+      { match: '/youtube/v3/videos', res: makeRes({ items: [{ id: 'v1', snippet: { liveBroadcastContent: 'live' }, liveStreamingDetails: { actualStartTime: '2026-10-04T10:00:00Z' } }] }) },
+    ]);
+    const c = createYouTubeClient({ apiKey: KEY, fetchImpl: fn });
+    assert.equal(await c.isVideoLive('v1'), true);
+  });
+
+  it('null when the video is not found (UNKNOWN → the caller KEEPS the bet)', async () => {
+    const { fn } = mockRouter([{ match: '/youtube/v3/videos', res: makeRes({ items: [] }) }]);
+    const c = createYouTubeClient({ apiKey: KEY, fetchImpl: fn });
+    assert.equal(await c.isVideoLive('nope'), null);
+  });
+
+  it('null on a 5xx, never throws, and the key is not leaked in the warning', async () => {
+    const warnings = [];
+    const { fn } = mockRouter([{ match: '/youtube/v3/videos', res: makeRes({ error: { message: 'boom' } }, { status: 500 }) }]);
+    const c = createYouTubeClient({ apiKey: KEY, fetchImpl: fn, warn: (m) => warnings.push(m) });
+    assert.equal(await c.isVideoLive('v1'), null);
+    for (const w of warnings) assert.ok(!w.includes(KEY), `warning must not leak API key: ${w}`);
+  });
+
+  it('no API key → null immediately, ZERO fetch calls', async () => {
+    const { fn, calls } = mockRouter([]);
+    const c = createYouTubeClient({ apiKey: undefined, fetchImpl: fn });
+    assert.equal(await c.isVideoLive('v1'), null);
+    assert.equal(calls.length, 0);
+  });
+
+  it('blank id → null with no network', async () => {
+    const { fn, calls } = mockRouter([]);
+    const c = createYouTubeClient({ apiKey: KEY, fetchImpl: fn });
+    assert.equal(await c.isVideoLive('   '), null);
+    assert.equal(calls.length, 0);
+  });
+});

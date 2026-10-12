@@ -127,10 +127,11 @@ export function createSimClient({ db, env }) {
       if (bal < amount) throw new PantaError('INSUFFICIENT_FUNDS', 'Insufficient funds', { status: 400 });
       const qy = Number(m.q_yes);
       const qn = Number(m.q_no);
+      const prior = Number(m.prior_yes);
       const fee = bpsFee(amount, FEE_BPS);
       const net = round6(amount - fee);
-      const shares = sharesForSpend(qy, qn, side, net, B);
-      const currentPrice = side === 'yes' ? priceYes(qy, qn, B) : priceNo(qy, qn, B);
+      const shares = sharesForSpend(qy, qn, side, net, B, prior);
+      const currentPrice = side === 'yes' ? priceYes(qy, qn, B, prior) : priceNo(qy, qn, B, prior);
       const orderId = randomUUID();
       const expiresAt = new Date(Date.now() + 90 * 1000).toISOString();
       orderQuotes.set(orderId, { marketId, side, amount, fee, shares, quoted_price: currentPrice, expiresAt, userId });
@@ -153,7 +154,7 @@ export function createSimClient({ db, env }) {
         if (new Date(r.expires_at) <= now()) throw new PantaError('QUOTE_EXPIRED', 'Quote expired', { status: 410 });
         const { rows: mRows } = await db.query('select * from markets where id=$1', [r.market_id]);
         const m = mRows[0];
-        const currentPrice = r.side === 'yes' ? priceYes(Number(m.q_yes), Number(m.q_no), B) : priceNo(Number(m.q_yes), Number(m.q_no), B);
+        const currentPrice = r.side === 'yes' ? priceYes(Number(m.q_yes), Number(m.q_no), B, Number(m.prior_yes)) : priceNo(Number(m.q_yes), Number(m.q_no), B, Number(m.prior_yes));
         if (Math.abs(currentPrice - Number(r.quoted_price)) * 10000 > r.max_slippage_bps) {
           throw new PantaError('QUOTE_STALE', 'Price moved', { status: 409 });
         }
@@ -165,7 +166,7 @@ export function createSimClient({ db, env }) {
       // check stale
       const { rows: mRows } = await db.query('select * from markets where id=$1', [q.marketId]);
       const m = mRows[0];
-      const currentPrice = q.side === 'yes' ? priceYes(Number(m.q_yes), Number(m.q_no), B) : priceNo(Number(m.q_yes), Number(m.q_no), B);
+      const currentPrice = q.side === 'yes' ? priceYes(Number(m.q_yes), Number(m.q_no), B, Number(m.prior_yes)) : priceNo(Number(m.q_yes), Number(m.q_no), B, Number(m.prior_yes));
       if (Math.abs(currentPrice - q.quoted_price) * 10000 > 100) {
         throw new PantaError('QUOTE_STALE', 'Price moved', { status: 409 });
       }
@@ -210,7 +211,8 @@ export function createSimClient({ db, env }) {
         if (m.status !== 'open') throw new PantaError('MARKET_CLOSED', 'Market closed', { status: 400 });
         const qy = Number(m.q_yes);
         const qn = Number(m.q_no);
-        const currentPrice = order.side === 'yes' ? priceYes(qy, qn, B) : priceNo(qy, qn, B);
+        const prior = Number(m.prior_yes);
+        const currentPrice = order.side === 'yes' ? priceYes(qy, qn, B, prior) : priceNo(qy, qn, B, prior);
         if (Math.abs(currentPrice - Number(order.quoted_price)) * 10000 > Number(order.max_slippage_bps)) {
           throw new PantaError('QUOTE_STALE', 'Price moved', { status: 409 });
         }
@@ -226,8 +228,8 @@ export function createSimClient({ db, env }) {
         // recompute q update via cost math: we already have shares; increment qSide
         if (order.side === 'yes') newQy = round6(qy + shares);
         else newQn = round6(qn + shares);
-        const newYesPrice = round6(priceYes(newQy, newQn, B));
-        const newNoPrice = round6(priceNo(newQy, newQn, B));
+        const newYesPrice = round6(priceYes(newQy, newQn, B, prior));
+        const newNoPrice = round6(priceNo(newQy, newQn, B, prior));
         // Displayed-price provenance (ToU §5 honesty): our LMSR curve may only DRIVE
         // the shown price of a market that is genuinely ours to move. On an imported
         // Panta market a fake bet must NEVER masquerade as a real Panta quote — so we

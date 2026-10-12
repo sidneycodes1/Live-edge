@@ -6,11 +6,13 @@ import { tileGradient, channelInitial, hoverPreviewSrc } from '../lib/landing.js
 // ---------------------------------------------------------------------------
 // LiveTile — the landing tile for a real live stream (contract §5/Agent C).
 //
-// Kick's API exposes NO per-stream thumbnail, so the RESTING visual is a
-// placeholder: a deterministic gradient derived from a hash of the channel slug
-// (same channel → same gradient every visit), the channel's REAL initial, a
-// LIVE badge (only when the row says isLive) and the REAL viewerCount — when
-// viewerCount is null we render nothing, never a fake 0. No invented art.
+// The resting visual is the row's REAL provider thumbnail when it has one
+// (YouTube/curated expose an i.ytimg.com image). Kick exposes NO per-stream
+// thumbnail, so those rows fall back to a deterministic gradient derived from a
+// hash of the channel slug (same channel → same gradient every visit) plus the
+// channel's REAL initial. Either way a LIVE badge shows only when the row says
+// isLive, and the REAL viewerCount shows only when present — when it is null we
+// render nothing, never a fake 0. No invented art, ever.
 //
 // s5 hover-preview (owner ask: "want the live stream for all tiles"): hovering
 // (or keyboard-focusing) the tile mounts the REAL muted autoplay embed over the
@@ -77,21 +79,37 @@ export default function LiveTile({ channel, pinned, onTogglePin }) {
         onBlur={stopPreview}
         className="group block bg-surface rounded-card border border-white/10 overflow-hidden hover:border-white/25 transition cursor-pointer"
       >
-        {/* Placeholder area: deterministic gradient + channel initial. NOT an image. */}
-        <div
-          className="relative aspect-video overflow-hidden"
-          style={{ backgroundImage: tileGradient(channel.channelSlug) }}
-          data-testid="live-tile-gradient"
-        >
-          {initial && (
-            <span
-              aria-hidden="true"
-              className="absolute inset-0 grid place-items-center font-heading font-bold text-6xl text-white/85 drop-shadow-lg select-none"
+        {/* Media: a REAL provider thumbnail when the row carries one (YouTube/curated
+            expose i.ytimg.com art), else the honest deterministic gradient + the
+            channel's REAL initial (Kick exposes no per-stream thumbnail). The
+            gradient is decorative UI derived from the slug, never invented art. */}
+        <div className="relative aspect-video overflow-hidden bg-surface" data-testid="live-tile-media">
+          {channel.thumbnailUrl ? (
+            <img
+              src={channel.thumbnailUrl}
+              alt=""
+              loading="lazy"
+              className="absolute inset-0 w-full h-full object-cover"
+              onError={(e) => { e.currentTarget.style.display = 'none'; }}
+              data-testid="live-tile-thumb"
+            />
+          ) : (
+            <div
+              className="absolute inset-0"
+              style={{ backgroundImage: tileGradient(channel.channelSlug) }}
+              data-testid="live-tile-gradient"
             >
-              {initial}
-            </span>
+              {initial && (
+                <span
+                  aria-hidden="true"
+                  className="absolute inset-0 grid place-items-center font-heading font-bold text-6xl text-white/85 drop-shadow-lg select-none"
+                >
+                  {initial}
+                </span>
+              )}
+            </div>
           )}
-          {/* s5: the REAL stream, mounted over the gradient on hover/focus only.
+          {/* s5: the REAL stream, mounted over the media on hover/focus only.
               pointer-events-none keeps the tile a single link + pin target. */}
           {preview && previewSrc && (
             <iframe
@@ -112,6 +130,14 @@ export default function LiveTile({ channel, pinned, onTogglePin }) {
           {hasViewers && (
             <span className="absolute bottom-2 right-2 z-10 bg-black/70 text-white text-[10px] font-semibold px-1.5 py-0.5 rounded num">
               {fmtViewers(channel.viewerCount)}
+            </span>
+          )}
+          {/* P3: the server popped a genuinely-live football broadcast to the top of
+              Sports — badge it honestly. Only ever set from the real row, never here. */}
+          {channel.pinnedFootball && (
+            <span className="absolute bottom-2 left-2 z-10 inline-flex items-center gap-1 bg-live/90 text-black text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wide"
+              data-testid="live-tile-football">
+              Live football
             </span>
           )}
         </div>

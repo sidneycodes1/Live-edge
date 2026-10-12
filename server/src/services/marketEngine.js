@@ -100,6 +100,9 @@ const RESPONSE_SCHEMA = {
           question: { type: 'STRING' },
           resolutionRule: { type: 'STRING' },
           category: { type: 'STRING' },
+          // The model's honest opening line: P(YES) right now. Optional — a missing
+          // value degrades to a flat 0.5 (the historical open), never a crash.
+          openingProbability: { type: 'NUMBER' },
         },
         required: ['liveItemId', 'question'],
       },
@@ -123,8 +126,11 @@ function buildPrompt(candidates) {
     '  - question: a single yes/no question, 8-140 characters, ending in "?".',
     '  - resolutionRule: one plain sentence stating how YES is decided.',
     '  - category: the stream category shown.',
+    '  - openingProbability: your honest estimate, between 0.05 and 0.95, that the',
+    '    answer is YES right now. This becomes the market OPENING line, so vary it with',
+    '    your read of the stream — do NOT default everything to 0.5.',
     '  - Do not repeat a question. Do not reference streams not in the list.',
-    'Return JSON only: { "markets": [ { "liveItemId", "question", "resolutionRule", "category" } ] }',
+    'Return JSON only: { "markets": [ { "liveItemId", "question", "resolutionRule", "category", "openingProbability" } ] }',
     '',
     `LIVE STREAMS (${n}):`,
     ...lines,
@@ -138,11 +144,26 @@ function normalizeQuestion(raw) {
   return q.length > 140 ? q.slice(0, 140).trim() : q;
 }
 
+// Clamp the model's opening line into the markets.prior_yes CHECK (open interval) and
+// keep the LMSR log-odds finite. A missing / non-numeric value degrades to 0.5 — the
+// exact historical flat open — so an uncooperative model can never break a market.
+function clampPrior(raw) {
+  const p = Number(raw);
+  if (!Number.isFinite(p)) return 0.5;
+  return Math.min(0.95, Math.max(0.05, p));
+}
+
+// Round a displayed price to 6 decimals so 1-prior never stores float noise
+// (e.g. 1-0.95 -> 0.05000000000000004). Matches the LMSR helper's precision.
+const roundPrice = (n) => Math.round(n * 1e6) / 1e6;
+
 export function createMarketEngine(options = {}) {
   const {
     db,
     gemini,
     aggregator,
+    kick,
+    youtube,
     env = {},
     defaults = {},
     now = () => Date.now(),
@@ -209,6 +230,39 @@ export function createMarketEngine(options = {}) {
     return Number(rows[0]?.c || 0);
   }
 
+  // P1 (owner fix, Oct 2026): a bet must be about a broadcast that is LIVE RIGHT NOW,
+  // not one that already ended. The live GRID already prunes ended streams, but a
+  // market born 20 minutes ago keeps its 45-minute timer even after its source stream
+  // goes dark — so the landing showed bets on finished broadcasts. Every rotation we
+  // re-prove each OPEN sim-engine market's OWN source and close the ones PROVABLY over
+  // (YouTube actualEndTime / Kick is_live=false). Conservative: an unknown (no creds,
+  // video not found, request failed) KEEPS the bet — we never remove what we cannot
+  // prove is gone. Closing only flips status; the rooms-list open-market filter then
+  // hides the room, and no trade/ledger row is ever deleted. Simulated money; this is a
+  // liveness truth, not a settlement.
+  async function pruneEndedMarkets() {
+    const { rows } = await db.query(
+      `select id, engine_video_id, engine_channel_slug from markets
+        where source='sim-engine' and status='open'
+          and (engine_video_id is not null or engine_channel_slug is not null)`,
+    );
+    let closed = 0;
+    for (const m of rows) {
+      let live = null; // null = unknown → keep
+      if (m.engine_video_id && typeof youtube?.isVideoLive === 'function') {
+        live = await youtube.isVideoLive(m.engine_video_id);
+      } else if (m.engine_channel_slug && typeof kick?.getChannelBySlug === 'function') {
+        const ch = await kick.getChannelBySlug(m.engine_channel_slug);
+        live = ch ? Boolean(ch.isLive) : null;
+      }
+      if (live === false) {
+        await db.query(`update markets set status='closed' where id=$1 and status='open'`, [m.id]);
+        closed += 1;
+      }
+    }
+    return closed;
+  }
+
   // Live grid (via aggregator's cache/ladder), deduped by id.
   // BROADCAST RULE (user): a bet is born from a live BROADCAST — a candidate must
   // carry a real watchable stream (watchUrl + thumbnail).
@@ -258,6 +312,7 @@ export function createMarketEngine(options = {}) {
         question,
         resolutionRule: sanitizeText(m?.resolutionRule) || 'Resolved from the live broadcast named in the question.',
         category: sanitizeText(m?.category) || cand.category || cand.kind || 'gaming',
+        prior: clampPrior(m?.openingProbability),
       });
     }
     return out.slice(0, cfg.marketsMax);
@@ -275,7 +330,7 @@ export function createMarketEngine(options = {}) {
     return t.length >= 3 ? t : 'Live broadcast';
   }
 
-  async function insertEngineMarket({ cand, question, resolutionRule, category }) {
+  async function insertEngineMarket({ cand, question, resolutionRule, category, prior }) {
     // Dedup: never two OPEN markets with the same question text (global, any creator).
     const { rows: dup } = await db.query(
       `select 1 from markets where status='open' and lower(question)=lower($1) limit 1`,
@@ -290,6 +345,10 @@ export function createMarketEngine(options = {}) {
     const resolution = new Date(now() + cfg.marketTtlMs + 5 * 60 * 1000).toISOString();
     // Sources of truth = the REAL stream the market is about (never a placeholder).
     const sourcesOfTruth = [cand.watchUrl || cand.liveItemId];
+    // Opening line: the model's honest prior (already clamped). Shown price == the
+    // price the first bettor executes against, and the LMSR-with-prior curve opens at
+    // exactly this value at q=0. A missing prior degrades to the historical 0.5.
+    const p = clampPrior(prior);
     await db.query(
       `insert into rooms(id, owner_id, title, video_url, status, is_seed, category)
        values($1,$2,$3,$4,'live',false,$5)`,
@@ -299,9 +358,9 @@ export function createMarketEngine(options = {}) {
       `insert into markets(
          id, room_id, creator_id, source, question, resolution_rule, sources_of_truth,
          category, image_url, start_time, end_time, resolution_time,
-         yes_price, no_price, volume, status, is_seed,
+         prior_yes, yes_price, no_price, volume, status, is_seed,
          engine_live_item_id, engine_video_id, engine_channel_slug, engine_watch_url)
-       values($1,$2,$3,'sim-engine',$4,$5,$6,$7,$8,$9,$10,$11,0.5,0.5,0,'open',false,$12,$13,$14,$15)`,
+       values($1,$2,$3,'sim-engine',$4,$5,$6,$7,$8,$9,$10,$11,$12,$12,$13,0,'open',false,$14,$15,$16,$17)`,
       [
         id,
         roomId,
@@ -314,6 +373,8 @@ export function createMarketEngine(options = {}) {
         start,
         end,
         resolution,
+        p,
+        roundPrice(1 - p),
         cand.liveItemId,
         cand.videoId,
         cand.channelSlug,
@@ -327,13 +388,23 @@ export function createMarketEngine(options = {}) {
   // never bypasses the disabled guard, the daily budget, or question dedup.
   async function tick({ force = false } = {}) {
     if (state.ticking) return { skipped: 'in-flight' };
-    if (!gemini || typeof gemini.generateJson !== 'function' || gemini.isEnabled?.() === false) {
-      // DISABLE-SAFE: keep whatever is already stored; no call, no crash, no wipe.
-      return { skipped: 'disabled', keptBatch: state.lastBatch || null };
-    }
-
     state.ticking = true;
     try {
+      // P1 (owner fix, Oct 2026): LIVENESS PRUNE runs on EVERY rotation, AHEAD of the
+      // generation gates, so a bet whose broadcast has PROVABLY ended is retired even
+      // when the LLM is disabled / over budget / rotation-full. Best-effort: a probe
+      // failure never over-closes (pruneEndedMarkets only flips streams proven dead).
+      try {
+        state.lastPruned = await pruneEndedMarkets();
+      } catch (e) {
+        warn(`marketEngine: liveness prune failed (${e.code || e.name || e.message})`);
+      }
+
+      if (!gemini || typeof gemini.generateJson !== 'function' || gemini.isEnabled?.() === false) {
+        // DISABLE-SAFE: keep whatever is already stored; no call, no crash, no wipe.
+        return { skipped: 'disabled', keptBatch: state.lastBatch || null };
+      }
+
       const day = utcDay(now());
       const used = await readBudget(day);
       if (used >= budgetPerDay) {

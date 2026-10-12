@@ -385,3 +385,126 @@ describe('marketEngine/retry ladder (a failed boot tick must NOT wait the 30-min
     e.stop();
   });
 });
+
+// P1 (Oct 2026): a bet must be about a broadcast that is LIVE RIGHT NOW. Every tick
+// re-proves each OPEN sim-engine market's OWN source and closes the ones PROVABLY
+// over — running AHEAD of the generation gates so a dead bet is retired even when the
+// LLM is disabled. Conservative: an UNKNOWN liveness keeps the bet (never over-closes).
+describe('marketEngine — P1 liveness prune (retire bets on ended broadcasts)', () => {
+  before(setupTestEnv);
+  beforeEach(resetDb);
+  after(teardownTestEnv);
+
+  function engineWith(db, { youtube, kick }) {
+    return createMarketEngine({
+      db,
+      // DISABLED gemini proves the prune runs independent of generation.
+      gemini: fakeGemini({ markets: [] }, { enabled: false }),
+      aggregator: fakeAggregator(),
+      youtube,
+      kick,
+      env: {},
+      now,
+      warn: () => {},
+    });
+  }
+
+  async function statusOf(db, id) {
+    const { rows } = await db.query(`select status from markets where id=$1`, [id]);
+    return rows[0]?.status;
+  }
+
+  it('closes an OPEN market whose YouTube video is PROVEN ended (isVideoLive=false)', async () => {
+    const { db } = await makeApp();
+    const id = await seedMarket(db, { question: 'Will this ended stream still be running in ten minutes?', engine: { videoId: 'vid1' } });
+    const youtube = { isVideoLive: async (vid) => (vid === 'vid1' ? false : null) };
+    const res = await engineWith(db, { youtube }).tick();
+    assert.equal(res.skipped, 'disabled', 'generation was gated off — the prune still ran');
+    assert.equal(await statusOf(db, id), 'closed');
+  });
+
+  it('KEEPS the bet when liveness is UNKNOWN (isVideoLive=null) — never over-closes', async () => {
+    const { db } = await makeApp();
+    const id = await seedMarket(db, { question: 'Is this ambiguous stream still happening in ten minutes?', engine: { videoId: 'vid2' } });
+    const youtube = { isVideoLive: async () => null };
+    await engineWith(db, { youtube }).tick();
+    assert.equal(await statusOf(db, id), 'open');
+  });
+
+  it('KEEPS the bet while the source is still LIVE (isVideoLive=true)', async () => {
+    const { db } = await makeApp();
+    const id = await seedMarket(db, { question: 'Will this live stream hold for ten more minutes?', engine: { videoId: 'vid3' } });
+    const youtube = { isVideoLive: async () => true };
+    await engineWith(db, { youtube }).tick();
+    assert.equal(await statusOf(db, id), 'open');
+  });
+
+  it('retires a Kick-bound market when getChannelBySlug reports the stream offline', async () => {
+    const { db } = await makeApp();
+    const id = await seedMarket(db, { question: 'Did this Kick channel end its live broadcast?', engine: { channelSlug: 'gonechannel' } });
+    const kick = { getChannelBySlug: async () => ({ slug: 'gonechannel', isLive: false }) };
+    await engineWith(db, { kick }).tick();
+    assert.equal(await statusOf(db, id), 'closed');
+  });
+
+  it('no kick/youtube wired → OPEN markets are left untouched (fail-safe, no crash)', async () => {
+    const { db } = await makeApp();
+    const id = await seedMarket(db, { question: 'Does this bet survive a client-less rotation tick?', engine: { videoId: 'vid4' } });
+    await engineWith(db, {}).tick();
+    assert.equal(await statusOf(db, id), 'open');
+  });
+});
+
+// Gemini now supplies each market's OPENING LINE (prior_yes). The engine must honor it
+// into the prior_yes column AND the shown yes/no price, degrade a missing value to the
+// historical flat 0.5, and clamp anything out of the prior_yes CHECK range.
+describe('marketEngine — Gemini opening line (prior_yes)', () => {
+  before(setupTestEnv);
+  beforeEach(resetDb);
+  after(teardownTestEnv);
+
+  async function pricesOf(db, question) {
+    const { rows } = await db.query(`select prior_yes, yes_price, no_price from markets where question=$1`, [question]);
+    return rows[0];
+  }
+
+  it('honors a Gemini openingProbability into prior_yes + yes/no price', async () => {
+    const { db } = await makeApp();
+    const q = 'Will Al Jazeera lead with the summit in the next half hour?';
+    const g = fakeGemini({ markets: [{ liveItemId: 'yt-vid1', question: q, openingProbability: 0.72 }] });
+    const res = await newEngine(db, g, fakeAggregator([liveItem()])).tick();
+    assert.equal(res.created, 1);
+    const m = await pricesOf(db, q);
+    assert.equal(Number(m.prior_yes), 0.72);
+    assert.equal(Number(m.yes_price), 0.72);
+    assert.ok(Math.abs(Number(m.no_price) - 0.28) < 1e-6, 'no_price = 1 - prior');
+  });
+
+  it('a missing openingProbability degrades to the flat 0.5 open (no regression)', async () => {
+    const { db } = await makeApp();
+    const q = 'Will this broadcast still be up in ten minutes?';
+    const g = fakeGemini({ markets: [{ liveItemId: 'yt-vid1', question: q }] });
+    await newEngine(db, g, fakeAggregator([liveItem()])).tick();
+    const m = await pricesOf(db, q);
+    assert.equal(Number(m.prior_yes), 0.5);
+    assert.equal(Number(m.yes_price), 0.5);
+    assert.equal(Number(m.no_price), 0.5);
+  });
+
+  it('clamps an out-of-range openingProbability into [0.05,0.95]', async () => {
+    const { db } = await makeApp();
+    const hiQ = 'An absurdly high opening line from the model?';
+    const loQ = 'An absurdly low opening line from the model?';
+    const g = fakeGemini({ markets: [
+      { liveItemId: 'yt-vid1', question: hiQ, openingProbability: 5 },
+      { liveItemId: 'yt-vid1', question: loQ, openingProbability: -3 },
+    ] });
+    const res = await newEngine(db, g, fakeAggregator([liveItem()])).tick();
+    assert.equal(res.created, 2);
+    const hi = await pricesOf(db, hiQ);
+    const lo = await pricesOf(db, loQ);
+    assert.equal(Number(hi.prior_yes), 0.95);
+    assert.equal(Number(lo.prior_yes), 0.05);
+  });
+});
+

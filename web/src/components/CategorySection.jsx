@@ -23,12 +23,19 @@ export default function CategorySection({
   onTogglePin,
   renderCard,
   fallbackNote,
+  hideWhenEmpty = false,
 }) {
   const [expanded, setExpanded] = useState(false);
   const sid = testid || `section-${sectionKey}`;
   const shown = visibleItems(items, expanded);
   const Card = renderCard
     || ((ch) => <LiveTile channel={ch} pinned={pinnedIds?.has(String(ch.id))} onTogglePin={onTogglePin} />);
+
+  // Kick-primary rule (owner, Oct 2026): once loaded, a section with NO real rows is
+  // HIDDEN outright rather than showing an empty placeholder box — but only after the
+  // server had its full Kick → merged-YouTube → curated chance to fill it. While
+  // loading we still show the skeleton so the page never flashes blank.
+  if (hideWhenEmpty && !loading && isEmptySection(items)) return null;
 
   return (
     <section className="mt-8" data-testid={sid}>

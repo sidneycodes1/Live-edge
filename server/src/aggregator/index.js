@@ -43,8 +43,17 @@ function dedupeSorted(items, limit) {
     seen.add(it.id);
     out.push(it);
   }
-  // Highest-viewership first for the landing grid; ties keep priority order.
-  out.sort((a, b) => b.viewerCount - a.viewerCount);
+  // Highest-viewership first for the landing grid. ENGLISH-FIRST (owner rule,
+  // Oct 2026): we no longer DROP provably-non-English Kick rows (that filter
+  // STARVED Kick and handed whole sections to YouTube). Instead English rows rank
+  // ABOVE non-English, so the grid leads with English but keeps non-English Kick as
+  // depth instead of discarding it. Ties within a rank keep viewer-count order.
+  out.sort((a, b) => {
+    const ea = isEnglishStream(a) ? 1 : 0;
+    const eb = isEnglishStream(b) ? 1 : 0;
+    if (ea !== eb) return eb - ea;
+    return b.viewerCount - a.viewerCount;
+  });
   return Number.isFinite(limit) ? out.slice(0, limit) : out;
 }
 
@@ -143,10 +152,10 @@ export function createLiveAggregator({
 
     // Preserve priority order when merging (dedupe/sort runs after).
     const ordered = LIVE_SOURCES.map((src) => results.find((r) => r.name === src)).filter(Boolean);
-    // English-only (Phase 2, Oct 2026): drop provably-non-English Kick rows
-    // before merge; untagged YouTube/curated/floor rows are never proven, so
-    // they pass and the ≥12 curated fill stays intact.
-    const mergedRaw = ordered.flatMap((r) => r.value || []).filter(isEnglishStream);
+    // ENGLISH-FIRST (not English-ONLY): keep every real row, including provably
+    // non-English Kick. dedupeSorted ranks English above non-English so Kick is never
+    // starved into a YouTube hand-off (the hard filter that caused the flood).
+    const mergedRaw = ordered.flatMap((r) => r.value || []);
     const items = dedupeSorted(mergedRaw, limit);
 
     const sources = {};

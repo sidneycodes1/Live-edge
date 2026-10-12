@@ -52,21 +52,39 @@ function str(v) {
   return v == null ? '' : String(v);
 }
 // ---------------------------------------------------------------------------
-// English-only filter (Phase 2, Oct 2026 — owner asked for English streams).
-// The HONEST rule mirrors the YouTube ended-stream prune: we only REMOVE what
-// we can PROVE is non-English. Kick tags every livestream with an ISO `language`
-// code, so a Kick row whose language is set and is NOT an `en`/`en-*` variant is
-// dropped. YouTube/curated/floor rows carry NO language tag (null) — we cannot
-// prove them non-English, so they pass; the curated 24/7 list is operator-
-// selected English channels and the YouTube queries are English operators, so
-// this keeps the grid honestly English while never inventing a language field
-// or silently dropping an untagged real stream that would break the ≥12 fill.
-// PURE, never throws.
+// English PREFERENCE (Phase 2 → Oct 2026 revision — owner: "Kick is primary, make
+// the balance automatic, don't starve it"). This is a PURE predicate, not a delete:
+// the aggregator uses it to RANK English rows ahead of provably-non-English ones,
+// and NEVER drops a live Kick broadcast for language alone. Kick tags every stream
+// with an ISO `language`; an untagged row (YouTube/curated/floor) is not provably
+// non-English and always counts as preferred. PURE, never throws.
 // ---------------------------------------------------------------------------
 export function isEnglishStream(item) {
   const lang = String(item?.language == null ? '' : item.language).trim().toLowerCase();
   if (!lang) return true; // untagged → not provably non-English, keep
   return lang === 'en' || lang.startsWith('en-');
+}
+
+// ---------------------------------------------------------------------------
+// Live-football detector (owner ask, Oct 2026: "when there is a live football match
+// it should pop up in the live section"). PURE and QUOTA-FREE: it never calls an API
+// — it only inspects the `category` + `title` strings ALREADY on a real live row and
+// matches a fixed keyword table for association football / soccer. Used by the
+// sections route to promote a genuinely-live football broadcast to the TOP of the
+// Sports bucket. No match → nothing is pinned (never fabricate a "match"). PURE,
+// never throws. Deliberately narrows past the generic `sports` bucket (which also
+// holds UFC/boxing/cricket/tennis) to football specifically.
+// ---------------------------------------------------------------------------
+const FOOTBALL_KEYWORDS = [
+  'football', 'soccer', 'premier league', 'epl', 'la liga', 'laliga', 'bundesliga',
+  'serie a', 'ligue 1', 'champions league', 'uefa', 'ucl', 'europa league',
+  'world cup', 'fifa', 'afcon', 'nations league', 'republic of football',
+  'carabao', 'fa cup', 'copa', 'matchday',
+];
+export function isFootballStream(item) {
+  if (!item) return false;
+  const hay = `${str(item.category)} ${str(item.title)}`.toLowerCase();
+  return FOOTBALL_KEYWORDS.some((k) => hay.includes(k));
 }
 
 function int(v) {

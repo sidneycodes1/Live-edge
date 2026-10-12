@@ -233,9 +233,37 @@ export function createYouTubeClient({
     }
   }
 
+  // Public: never throws. Single-video liveness probe (videos.list = 1 quota unit,
+  // NOT the 100-unit search). The market engine calls this to retire a bet the
+  // instant its source broadcast ends. Returns:
+  //   true  → the video is live right now (keep the bet)
+  //   false → PROVEN over (actualEndTime set / no longer a live broadcast) → close
+  //   null  → UNKNOWN (no creds, video not found, or request failed) → the caller
+  //           MUST keep the bet: we only ever remove what we can PROVE is over.
+  async function isVideoLive(videoId) {
+    const id = String(videoId || '').trim();
+    if (!hasCreds() || !id) return null;
+    try {
+      const v = await apiGet(
+        `/videos?part=snippet,liveStreamingDetails&id=${encodeURIComponent(id)}&key=${encodeURIComponent(apiKey)}`,
+      );
+      const d = (v.items || [])[0];
+      if (!d) return null; // not found → cannot prove ended → keep
+      const lsd = d.liveStreamingDetails || {};
+      if (lsd.actualEndTime) return false; // stream has ended
+      if (d.snippet?.liveBroadcastContent === 'live') return true;
+      // Live detail present but no explicit live flag and no end time → ambiguous.
+      return null;
+    } catch (e) {
+      warn(`YouTube isVideoLive("${id}") failed → unknown (${e.code || e.name})`);
+      return null;
+    }
+  }
+
   return {
     hasCreds,
     getTopLiveChannels,
     searchLive,
+    isVideoLive,
   };
 }

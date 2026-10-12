@@ -3,7 +3,6 @@ import { z } from 'zod';
 import { randomUUID } from 'node:crypto';
 import { validate } from '../middleware/validate.js';
 import { sanitizeText } from '../services/sanitize.js';
-import { ENGINE_USER } from '../services/marketEngine.js';
 
 export function roomsRouter({ db, hub, kick }) {
   const r = Router();
@@ -29,10 +28,13 @@ export function roomsRouter({ db, hub, kick }) {
         // trades/ledger rows on a seeded room stay queryable forever (the FKs on
         // orders/trades -> markets have no cascade, so deleting rows is unsafe).
         if (room.is_seed) continue;
-        // Engine rooms exist only while their broadcast-born bet is OPEN. Once the
-        // 30-min market closes, hide the room from the list (read-path filter, NOT
-        // a delete — any trades/ledger rows stay queryable forever).
-        if (room.owner_id === ENGINE_USER.id && (!hero || hero.status !== 'open')) continue;
+        // THE LIST IS AN OPEN-BET LIST (owner fix, Oct 2026). A room earns a card only
+        // while it carries an OPEN market — for EVERY owner, not just the engine. A
+        // market-less room (a half-finished "create game": a title with nothing to bet
+        // on) or one whose only market has closed is NOT a market, so it must never
+        // render as a lone "Play" tile in "All markets". Read-path filter, NOT a
+        // delete — any trades/ledger rows stay queryable forever (FKs have no cascade).
+        if (!hero || hero.status !== 'open') continue;
         const viewers = hub ? hub.count(room.id) : 0;
         result.push({
           id: room.id,

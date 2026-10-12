@@ -131,4 +131,32 @@ describe('market lifecycle (B3)', () => {
     const anon = await fetchJson('/api/markets/register', { method: 'POST', body: JSON.stringify({ quoteId: 'does-not-matter' }) });
     assert.ok(!anon.res.ok, 'unauthenticated register must fail');
   });
+
+  it('the rooms list is an OPEN-BET list: market-less rooms are hidden, open ones show, closed ones drop off', async () => {
+    const { fetchJson, db } = await makeApp();
+    const A = genWallet();
+    const UA = await auth(fetchJson, A);
+
+    // A half-finished "create game": a room with NO market must never be listed
+    // (this is the "rererere / PLAY" junk tile the owner reported).
+    const emptyRoomId = await createRoom(fetchJson, UA, 'rererere');
+    let list = await fetchJson('/api/rooms');
+    assert.ok(!list.json.some((r) => r.id === emptyRoomId), 'a market-less room is hidden from the list');
+
+    // A room carrying an OPEN market IS listed, with that market as its hero.
+    const liveRoomId = await createRoom(fetchJson, UA, 'Real bet room');
+    const open = await createMarket(fetchJson, UA, liveRoomId, 'Will this open bet show up?', 10);
+    list = await fetchJson('/api/rooms');
+    const shown = list.json.find((r) => r.id === liveRoomId);
+    assert.ok(shown, 'an open-market room is listed');
+    assert.equal(shown.heroMarket.id, open.id, 'the open market is the room hero');
+
+    // Once its only market closes, the room drops off the open-bet list — but the
+    // row is KEPT (read-path filter, never a delete), so history stays queryable.
+    await db.query(`update markets set status='closed' where id=$1`, [open.id]);
+    list = await fetchJson('/api/rooms');
+    assert.ok(!list.json.some((r) => r.id === liveRoomId), 'a room whose only market closed is hidden again');
+    const { rows } = await db.query(`select 1 from rooms where id=$1`, [liveRoomId]);
+    assert.equal(rows.length, 1, 'the room row is preserved in the DB');
+  });
 });

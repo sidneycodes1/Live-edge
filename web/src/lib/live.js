@@ -61,6 +61,9 @@ export function normalizeChannel(raw) {
     // YouTube-fallback rows carry these — the tile badges them "via YouTube".
     fallback: raw.fallback === true,
     sourceLabel: raw.sourceLabel == null ? '' : str(raw.sourceLabel),
+    // P3 live-football pin (server/src/routes/sections.js): a real football row the
+    // server popped to the top of Sports. Pure passthrough — never set client-side.
+    pinnedFootball: raw.pinnedFootball === true,
   };
 }
 
@@ -121,6 +124,8 @@ export function normalizeSections(raw) {
       ]),
     ),
     fallbackUsed: raw?.fallbackUsed && typeof raw.fallbackUsed === 'object' ? raw.fallbackUsed : {},
+    // P3: server says a genuinely-live football broadcast is at the top of Sports.
+    footballLive: raw?.footballLive === true,
     servedFrom: raw?.servedFrom || 'empty',
   };
 }

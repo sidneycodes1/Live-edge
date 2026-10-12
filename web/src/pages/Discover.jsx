@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+﻿import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api.js';
 import { normalizeLive, normalizeChannel, normalizeSections } from '../lib/live.js';
@@ -220,6 +220,12 @@ export default function Discover() {
 
   const all = rooms || [];
 
+  // "All markets" is an OPEN-BET grid: a room only earns a card while it carries a
+  // real, tradeable market. The server already hides market-less / closed rooms, but
+  // we filter here too so a stale list can never paint a lone "Play" tile that leads
+  // to a room with nothing to bet on.
+  const marketRooms = all.filter((r) => r.heroMarket && r.heroMarket.status === 'open');
+
   // The landing rows. A search narrows the flat Kick grid client-side (exact
   // query, no pins/tailoring). Otherwise the server-bucketed s4 sections drive
   // the grids (until they arrive, the flat Kick grid fills the buckets with NO
@@ -236,7 +242,10 @@ export default function Discover() {
     buckets = Object.fromEntries(
       ['sports', 'news', 'irl', 'games'].map((k) => [k, orderLandingRows(sections.items?.[k] || [], pins, interests)]),
     );
-    laidKick = buckets.sports; // hero = the top SPORTS row (server orders by real viewers)
+    // Hero = the top Kick row across ALL sections (server orders rows by real
+    // viewers). Reading only `buckets.sports` left the hero blank whenever Kick had
+    // no English sports stream — even though real Kick live rows sat in IRL/Games.
+    laidKick = ['sports', 'news', 'irl', 'games'].flatMap((k) => buckets[k]);
   } else {
     const kickRows = (live?.items || []).filter((c) => c.source === 'kick');
     laidKick = tailorByInterests(mergePinnedFirst(kickRows, pins), user?.interests || [], {
@@ -261,8 +270,8 @@ export default function Discover() {
   // Market rails re-present the SAME rooms through honest lenses (re-sorting,
   // never fabricating). When searching, narrow them to the matching query too.
   const searched = !q
-    ? all
-    : all.filter((r) => {
+    ? marketRooms
+    : marketRooms.filter((r) => {
         const hay = [r.title, r.owner?.displayName, r.heroMarket?.question, r.heroMarket?.category]
           .filter(Boolean).join(' ').toLowerCase();
         return hay.includes(q);
@@ -398,6 +407,7 @@ export default function Discover() {
           pinnedIds={pinnedIds}
           onTogglePin={handlePin}
           fallbackNote={!q && sections?.fallbackUsed?.sports ? FALLBACK_NOTE : null}
+          hideWhenEmpty
         />
         <CategorySection
           title="News"
@@ -407,6 +417,7 @@ export default function Discover() {
           pinnedIds={pinnedIds}
           onTogglePin={handlePin}
           fallbackNote={!q && sections?.fallbackUsed?.news ? FALLBACK_NOTE : null}
+          hideWhenEmpty
         />
         <CategorySection
           title="IRL"
@@ -416,6 +427,7 @@ export default function Discover() {
           pinnedIds={pinnedIds}
           onTogglePin={handlePin}
           fallbackNote={!q && sections?.fallbackUsed?.irl ? FALLBACK_NOTE : null}
+          hideWhenEmpty
         />
         <CategorySection
           title="Games"
@@ -425,6 +437,7 @@ export default function Discover() {
           pinnedIds={pinnedIds}
           onTogglePin={handlePin}
           fallbackNote={!q && sections?.fallbackUsed?.games ? FALLBACK_NOTE : null}
+          hideWhenEmpty
         />
       </div>
 
@@ -489,11 +502,11 @@ export default function Discover() {
             </div>
           )}
         </div>
-      ) : all.length > 0 && (
+      ) : marketRooms.length > 0 && (
         <div className="mt-8">
           <h2 className="font-heading font-bold text-lg text-white/80">All markets</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-3 min-w-0">
-            {all.map((r) => <MarketCard key={r.id} room={r} />)}
+            {marketRooms.map((r) => <MarketCard key={r.id} room={r} />)}
           </div>
         </div>
       )}

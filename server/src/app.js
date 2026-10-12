@@ -138,7 +138,7 @@ export async function createApp({ env: rawEnv, db: existingDb, privyVerifier: in
     ],
   });
   // The engine's "gemini" dependency is now the chain (same interface, more reliable).
-  const marketEngine = createMarketEngine({ db, gemini: marketLLM, aggregator: liveAggregator, env });
+  const marketEngine = createMarketEngine({ db, gemini: marketLLM, aggregator: liveAggregator, kick, youtube, env });
   const hub = createHub();
   const notify = createNotifier(db, hub);
   const priceCache = createPriceCache({ ttlMs: 10000 });
@@ -211,11 +211,12 @@ export async function createApp({ env: rawEnv, db: existingDb, privyVerifier: in
   app.use('/api/live', liveRouter({ aggregator: liveAggregator, enabled }));
 
   // Landing sections with the s4 empty-section fallback (server/src/routes/
-  // sections.js): Kick rows fill the four buckets; a bucket with ZERO Kick rows
-  // gets source-labelled YouTube live rows (never on the happy path, cached per
-  // query). Mounted AFTER /api/live — liveRouter has no '/sections' route, so
-  // this sub-path falls through here. Never 500s.
-  app.use('/api/live/sections', sectionsRouter({ aggregator: liveAggregator, youtube, enabled }));
+  // sections.js): Kick rows fill the four buckets; a bucket with ZERO Kick rows is
+  // filled from the merged YouTube/floor rows, then the quota-free curated 24/7
+  // channels, and ONLY then a labelled YouTube live search (never on the happy path,
+  // cached per query). Mounted AFTER /api/live — liveRouter has no '/sections' route,
+  // so this sub-path falls through here. Never 500s.
+  app.use('/api/live/sections', sectionsRouter({ aggregator: liveAggregator, youtube, curated, enabled }));
 
   // Keyless live search with REAL depth (server/src/routes/search.js): the full
   // Kick page (100), the merged grid, an exact-slug Kick resolution, and a

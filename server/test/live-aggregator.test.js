@@ -246,15 +246,15 @@ describe('AggResult shape (spec §3: the internal return contract)', () => {
   });
 });
 
-// English-only merge (Phase 2, Oct 2026): provably-non-English Kick rows are
-// dropped BEFORE the grid is served; the untagged curated fill still reaches the
-// ≥12 goal so filtering a few Kick rows never empties a section.
-describe('aggregator English-only filter (schema isEnglishStream at merge)', () => {
-  it('drops a non-English Kick row and keeps the English one + untagged curated fill', async () => {
+// English-FIRST ranking (Oct 2026 revision): the old hard DROP starved Kick and
+// handed sections to YouTube. Now provably-non-English Kick rows are KEPT but
+// ranked BELOW English/untagged rows — Kick leads, never discarded for language.
+describe('aggregator English-first ranking (isEnglishStream as a sort, NOT a delete)', () => {
+  it('KEEPS a non-English Kick row but ranks it below English/untagged rows', async () => {
     const kickRows = [
       ch('kick', 'en-1', 500, { language: 'en' }),
       ch('kick', 'pt-1', 900, { language: 'pt' }),
-      ch('kick', 'no-lang', 300), // untagged → kept (not provably non-English)
+      ch('kick', 'no-lang', 300), // untagged → treated as English-preferred
     ];
     const curated = Array.from({ length: 12 }, (_, i) => ({
       id: `yt-c${i}`, source: 'curated-youtube', category: 'News', title: `curated ${i}`,
@@ -270,9 +270,13 @@ describe('aggregator English-only filter (schema isEnglishStream at merge)', () 
     });
     const r = await agg.getChannels(24);
     const ids = r.items.map((x) => x.id);
-    assert.ok(ids.some((i) => i.includes('en-1')), 'English Kick row survives');
-    assert.ok(ids.some((i) => i.includes('no-lang')), 'untagged Kick row survives (cannot prove non-English)');
-    assert.ok(!ids.some((i) => i.includes('pt-1')), 'Portuguese Kick row is dropped');
-    assert.ok(r.items.filter((x) => x.source === 'curated-youtube').length >= 10, 'curated fill keeps the grid well populated');
+    const ptIdx = ids.findIndex((i) => i.includes('pt-1'));
+    const enIdx = ids.findIndex((i) => i.includes('en-1'));
+    assert.ok(ptIdx >= 0, 'non-English Kick row is KEPT (English-first, not English-only)');
+    assert.ok(enIdx >= 0 && enIdx < ptIdx, 'English Kick ranks above non-English despite fewer viewers');
+    assert.ok(ids.findIndex((i) => i.includes('no-lang')) < ptIdx, 'untagged ranks above provably-non-English');
+    // 3 Kick rows + curated top-up to the CURATED_FILL_MIN(12) goal = 9 curated.
+    assert.equal(r.items.length, 12, 'grid reaches the ≥12 curated-fill goal (3 kick + 9 curated)');
+    assert.ok(r.items.filter((x) => x.source === 'curated-youtube').length >= 9, 'curated fill still populates');
   });
 });

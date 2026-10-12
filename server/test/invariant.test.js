@@ -71,6 +71,22 @@ async function micro(db) {
       coalesce((select count(distinct market_id) from trades where kind='buy'), 0)::bigint::text as active_markets
   `);
   const r = rows[0];
+  // Prior-aware virtual-liquidity bound. A UNIFORM (prior 0.5) market can only ever
+  // push the house to -B*ln(2). A prior-weighted LMSR market opens at price = prior,
+  // so its worst-case directional loss is B*ln(1/min(pi_yes,pi_no)) — strictly larger
+  // than B*ln(2) for any confident line. This sums that per-MARKET bound across every
+  // market that has real buys, so a non-0.5 prior never lets the check understate the
+  // true (still finite) AMM exposure. For an all-0.5 fixture this equals
+  // activeMarkets * B*ln(2) exactly — the existing uniform markets are unaffected.
+  const { rows: priorRows } = await db.query(
+    `select distinct t.market_id, m.prior_yes from trades t join markets m on m.id = t.market_id where t.kind='buy'`,
+  );
+  let virtualMicro = 0;
+  for (const pr of priorRows) {
+    const p = Number(pr.prior_yes);
+    const pmin = Math.min(p, 1 - p);
+    virtualMicro += B * Math.log(1 / pmin) * 1e6;
+  }
   return {
     bal: BigInt(r.bal),
     mint: BigInt(r.mint),
@@ -80,6 +96,7 @@ async function micro(db) {
     cclaims: BigInt(r.cclaims),
     minbal: BigInt(r.minbal),
     activeMarkets: BigInt(r.active_markets),
+    virtualBound: BigInt(Math.floor(virtualMicro)),
   };
 }
 
@@ -145,5 +162,40 @@ describe('money conservation invariant (F-009 / Phase 4.1)', () => {
     assert.equal(houseEquity, 0n, 'no trades => house holds nothing beyond burned fees');
     assert.equal(m.bal, m.mint, 'with no spends, balances equal total minted');
     assert.equal(m.mint / MICRO, 200n, 'welcome (100) + faucet (100)');
+  });
+
+  // Gemini opening line (prior_yes) must NOT mint play money. Open a market at a
+  // confident 0.9 line, load the CHEAP side (NO @ ~0.1), resolve it NO, and redeem —
+  // the worst-case directional case for the AMM. The ledger must still reconcile
+  // EXACTLY, and the house loss must stay inside the honest prior-aware bound
+  // B*ln(1/0.1)=B*ln(10) (which is why a flat B*ln(2) bound would be wrong here).
+  it('a prior (opening line) conserves money exactly and stays inside its widened bound', async () => {
+    const { fetchJson, db } = await makeApp();
+    const A = await auth(fetchJson, genWallet()); // creator
+    const C = await auth(fetchJson, genWallet()); // buys the cheap NO side
+
+    const roomId = await createRoom(fetchJson, A, 'Prior Room');
+    const mid = await createMarket(fetchJson, A, roomId, 'Does this prior market conserve money?');
+    // Stamp a confident Gemini line exactly as the engine insert would.
+    await db.query(`update markets set prior_yes=0.9 where id=$1`, [mid]);
+
+    await buy(fetchJson, C, mid, 'no', 50); // loads the ~0.1 side
+    await fetchJson(`/api/markets/${mid}/resolve`, {
+      method: 'POST', body: JSON.stringify({ outcome: 'no', force: true }),
+      headers: { Authorization: `Bearer ${A.token}` },
+    });
+    const win = await claim(fetchJson, C, mid, 'win');
+    assert.equal(win.res.status, 200, JSON.stringify(win.json));
+
+    const m = await micro(db);
+    const houseEquity = m.createfee + m.buys - m.claims - m.cclaims;
+    // (1) THE money-integrity guardrail: exact to the micro-unit, independent of price model.
+    assert.equal(m.bal + houseEquity, m.mint, `Σbalances(${m.bal}) + houseEquity(${houseEquity}) must equal minted(${m.mint})`);
+    assert.ok(m.minbal >= 0n, 'no user balance may go negative');
+    // (2) The prior WIDENS the house's exposure beyond B*ln(2), but only up to the
+    // honest per-market bound. Prove the generalized bound is what we rely on now.
+    const flatBound = m.activeMarkets * VIRTUAL_PER_MARKET;
+    assert.ok(m.virtualBound > flatBound, 'a 0.9 line must widen the bound beyond B*ln(2) (documents the prior-aware change)');
+    assert.ok(houseEquity >= -m.virtualBound, `houseEquity ${houseEquity} below prior-aware bound -${m.virtualBound} (money minted beyond the AMM)`);
   });
 });
