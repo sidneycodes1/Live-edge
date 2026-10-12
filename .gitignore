@@ -20,3 +20,13 @@ audit-logs
 .vercel
 .netlify
 .worktrees/
+
+# repo-hygiene: IDE/agent/generated artifacts (never track these)
+.qoder/
+.cursor/
+.ccctmp/
+x-ray/
+audit/screenshots-live/
+audit/screenshots/live-verify-*.png
+FULL_REAUDIT_REPORT.md
+*.bak
