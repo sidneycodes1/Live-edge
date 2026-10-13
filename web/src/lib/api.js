@@ -1,4 +1,6 @@
-const BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+import { resolveApiBase } from './api-base.js';
+
+export const BASE = resolveApiBase({ value: import.meta.env.VITE_API_URL, dev: import.meta.env.DEV });
 
 export function getToken() { return window.sessionStorage.getItem('liveedge_token'); }
 export function setToken(t) { if (t) window.sessionStorage.setItem('liveedge_token', t); else window.sessionStorage.removeItem('liveedge_token'); }
@@ -10,12 +12,14 @@ async function request(path, { method='GET', body, auth=false, token, _retry=0 }
     const tok = token || getToken();
     if (tok) headers['Authorization'] = `Bearer ${tok}`;
   }
-  // waking server retry with backoff up to ~70s
+  // A sleeping host can be slow; a refused connection is not a cold start forever.
   let attempt = 0;
-  const maxAttempts = 7;
+  const maxAttempts = 1;
   while (true) {
     try {
-      const res = await fetch(url, { method, headers, body: body ? JSON.stringify(body) : undefined });
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 3000);
+      const res = await fetch(url, { method, headers, body: body ? JSON.stringify(body) : undefined, signal: controller.signal }).finally(() => clearTimeout(timeout));
       const json = await res.json().catch(()=> ({}));
       if (!res.ok) {
         const err = new Error(json.error?.message || `HTTP ${res.status}`);
@@ -28,7 +32,7 @@ async function request(path, { method='GET', body, auth=false, token, _retry=0 }
     } catch (e) {
       const isNetwork = e instanceof TypeError || e.status >= 500 || e.status === 0;
       if (isNetwork && attempt < maxAttempts) {
-        const delay = Math.min(1000 * Math.pow(1.8, attempt), 15000);
+        const delay = 500;
         await new Promise(r=>setTimeout(r, delay));
         attempt++;
         continue;

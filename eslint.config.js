@@ -60,6 +60,9 @@ export default [
       },
       globals: {
         console: 'readonly',
+        // Vite's config executes in Node, even though application source runs
+        // in the browser.
+        process: 'readonly',
         fetch: 'readonly',
         URL: 'readonly',
         setTimeout: 'readonly',

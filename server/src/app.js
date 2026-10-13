@@ -162,7 +162,16 @@ export async function createApp({ env: rawEnv, db: existingDb, privyVerifier: in
   // and avoids trusting an attacker-supplied X-Forwarded-For chain.
   app.set('trust proxy', 1);
   app.use(helmet());
-  app.use(cors({ origin: env.CORS_ORIGIN, credentials: true }));
+  // Hosts often need both a production Vercel URL and preview URLs. Preserve a
+  // single origin while accepting a comma-separated allow-list with credentials.
+  const corsOrigins = String(env.CORS_ORIGIN || '').split(',').map((origin) => origin.trim()).filter(Boolean);
+  app.use(cors({
+    origin(origin, callback) {
+      if (!origin || corsOrigins.includes(origin)) return callback(null, true);
+      return callback(new Error('Origin not allowed by CORS'));
+    },
+    credentials: true,
+  }));
   app.use(express.json({ limit: '100kb' }));
   app.use(pinoHttp({ logger }));
 
