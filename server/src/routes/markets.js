@@ -90,7 +90,7 @@ export function marketsRouter({ db, panta, hub, priceCache, notify, engine, env 
       const includeSeed = req.query.includeSeed !== '0' && req.query.includeSeed !== 'false';
       const limit = clampInt(req.query.limit, 1, 100, 24);
       const betsExpr = `(select count(*) from trades t where t.market_id = m.id and t.kind='buy')`;
-      const statusClause = rail === 'closing' || rail === 'trending' ? `and m.status = 'open'` : '';
+      const statusClause = rail === 'closing' || rail === 'trending' ? `and (m.status = 'open' or m.is_seed)` : '';
       const seedClause = includeSeed ? '' : `and m.is_seed = false`;
       let orderTail;
       if (rail === 'closing') orderTail = 'm.end_time asc';

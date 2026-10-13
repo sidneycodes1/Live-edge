@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { PantaError } from './errors.js';
-import { priceYes, priceNo, sharesForSpend, round6 } from '../sim/lmsr.js';
+import { cost, priceYes, priceNo, sharesForSpend, round6 } from '../sim/lmsr.js';
 import { bpsFee } from '../lib/money.js';
 import { canonicalStringify } from '../lib/signature.js';
 import nacl from 'tweetnacl';
@@ -272,6 +272,101 @@ export function createSimClient({ db, env }) {
         // update chat? caller will do
         const { rows: updatedM } = await query('select * from markets where id=$1', [m.id]);
         return { trade: { id: tradeId, market_id: m.id, side: order.side, amount: order.amount, shares }, market: updatedM[0], idempotent: false };
+      });
+    },
+    async cashout({ marketId, userId }) {
+      return db.tx(async ({ query }) => {
+        // 1) Select ... for update market + position
+        const { rows: mRows } = await query('select * from markets where id=$1 for update', [marketId]);
+        if (mRows.length === 0) throw new PantaError('NOT_FOUND', 'Market not found', { status: 404 });
+        const m = mRows[0];
+
+        // 2) Refuse status != 'open' -> 409 MARKET_NOT_OPEN
+        if (m.status !== 'open') throw new PantaError('MARKET_NOT_OPEN', 'Market not open', { status: 409 });
+
+        const { rows: posRows } = await query('select * from positions where user_id=$1 and market_id=$2 for update', [userId, marketId]);
+        if (posRows.length === 0) throw new PantaError('NO_POSITION', 'No position to cash out', { status: 400 });
+        const pos = posRows[0];
+        const yesShares = Number(pos.yes_shares || 0);
+        const noShares = Number(pos.no_shares || 0);
+        if (yesShares <= 0 && noShares <= 0) throw new PantaError('NO_POSITION', 'No position to cash out', { status: 400 });
+
+        // 3) proceeds = cost(q_now) - cost(q_after) summed over BOTH sides held, clamp >= 0, non-finite -> 500 honest fail
+        const qy = Number(m.q_yes);
+        const qn = Number(m.q_no);
+        const prior = Number(m.prior_yes);
+        const qyAfter = Math.max(0, round6(qy - yesShares));
+        const qnAfter = Math.max(0, round6(qn - noShares));
+
+        const costNow = cost(qy, qn, B, prior);
+        const costAfter = cost(qyAfter, qnAfter, B, prior);
+        const rawProceeds = costNow - costAfter;
+        if (!Number.isFinite(rawProceeds)) {
+          throw new PantaError('INTERNAL_ERROR', 'Non-finite cash-out proceeds', { status: 500 });
+        }
+        const proceeds = round6(Math.max(0, rawProceeds));
+
+        // 4) decrement q_yes/q_no + position shares, balances += proceeds, insert one trades(kind='sell') row per side, bump volume
+        const newYesPrice = round6(priceYes(qyAfter, qnAfter, B, prior));
+        const newNoPrice = round6(priceNo(qyAfter, qnAfter, B, prior));
+
+        let displayYes = newYesPrice;
+        let displayNo = newNoPrice;
+        let displayPriceSource = m.price_source || 'simulated';
+        if (m.source === 'panta') {
+          if (m.price_source === 'panta_live') {
+            displayYes = Number(m.yes_price);
+            displayNo = Number(m.no_price);
+          } else {
+            const band = DRIFT_MAX_BPS / 10000;
+            const lo = 0.5 - band;
+            const hi = 0.5 + band;
+            displayYes = round6(Math.min(hi, Math.max(lo, newYesPrice)));
+            displayNo = round6(Math.min(hi, Math.max(lo, newNoPrice)));
+            displayPriceSource = 'simulated';
+          }
+        }
+
+        const newVolume = round6(Number(m.volume) + proceeds);
+        await query(
+          `update markets set q_yes=$1, q_no=$2, yes_price=$3, no_price=$4, volume=$5, price_source=$7 where id=$6`,
+          [qyAfter, qnAfter, displayYes, displayNo, newVolume, m.id, displayPriceSource],
+        );
+        await query(`update balances set sim_usdc = sim_usdc + $1 where user_id=$2`, [proceeds, userId]);
+        await query(`update positions set yes_shares = 0, no_shares = 0 where user_id=$1 and market_id=$2`, [userId, marketId]);
+
+        if (yesShares > 0 && noShares > 0) {
+          const deltaYes = Math.max(0, cost(qy, qn, B, prior) - cost(qyAfter, qn, B, prior));
+          const deltaNo = Math.max(0, cost(qy, qn, B, prior) - cost(qy, qnAfter, B, prior));
+          const sumDelta = deltaYes + deltaNo;
+          const amtYes = sumDelta > 0 ? round6((deltaYes / sumDelta) * proceeds) : round6(proceeds / 2);
+          const amtNo = round6(proceeds - amtYes);
+          const sigYes = `sim:cashout:${randomUUID()}`;
+          const sigNo = `sim:cashout:${randomUUID()}`;
+          await query(
+            `insert into trades(id, user_id, market_id, kind, side, amount, shares, signature) values($1,$2,$3,'sell','yes',$4,$5,$6)`,
+            [randomUUID(), userId, marketId, amtYes, yesShares, sigYes],
+          );
+          await query(
+            `insert into trades(id, user_id, market_id, kind, side, amount, shares, signature) values($1,$2,$3,'sell','no',$4,$5,$6)`,
+            [randomUUID(), userId, marketId, amtNo, noShares, sigNo],
+          );
+        } else if (yesShares > 0) {
+          const sigYes = `sim:cashout:${randomUUID()}`;
+          await query(
+            `insert into trades(id, user_id, market_id, kind, side, amount, shares, signature) values($1,$2,$3,'sell','yes',$4,$5,$6)`,
+            [randomUUID(), userId, marketId, proceeds, yesShares, sigYes],
+          );
+        } else if (noShares > 0) {
+          const sigNo = `sim:cashout:${randomUUID()}`;
+          await query(
+            `insert into trades(id, user_id, market_id, kind, side, amount, shares, signature) values($1,$2,$3,'sell','no',$4,$5,$6)`,
+            [randomUUID(), userId, marketId, proceeds, noShares, sigNo],
+          );
+        }
+
+        const { rows: updatedM } = await query('select * from markets where id=$1', [m.id]);
+        return { proceeds, yesShares, noShares, market: updatedM[0], roomId: m.room_id };
       });
     },
     async getPositions(walletOrUserId) {

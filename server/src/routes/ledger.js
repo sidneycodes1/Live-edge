@@ -18,6 +18,7 @@ export function ledgerRouter({ db }) {
         t.kind as kind,
         case t.kind
           when 'buy' then 'Trade'
+          when 'sell' then 'Cash out'
           when 'claim' then 'Winnings'
           else 'Creator fees'
         end as label,

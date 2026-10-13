@@ -199,6 +199,9 @@ export function createHybrid({ db, env }) {
     async submitCreatorFeeClaim(args) {
       return sim.submitCreatorFeeClaim(args);
     },
+    async cashout(...args) {
+      return sim.cashout(...args);
+    },
     _sim: sim,
     _live: live,
   };

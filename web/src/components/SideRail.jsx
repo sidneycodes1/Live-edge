@@ -62,7 +62,7 @@ export default function SideRail() {
 
       {user && !collapsed && (
         <nav className="px-2 pb-2 space-y-0.5 border-b border-white/5">
-          <button onClick={openPortfolio} className="w-full flex items-center gap-2 px-2 py-1.5 rounded hover:bg-white/5 text-sm text-white/70 text-center cursor-pointer">Your bets</button>
+          <button onClick={openPortfolio} data-testid="your-predictions-open" className="w-full flex items-center gap-2 px-2 py-1.5 rounded hover:bg-white/5 text-sm text-white/70 text-center cursor-pointer">Your Predictions</button>
           <button onClick={() => openCreator()} className="w-full flex items-center gap-2 px-2 py-1.5 rounded hover:bg-white/5 text-sm text-white/70 text-left cursor-pointer">Create a market</button>
         </nav>
       )}

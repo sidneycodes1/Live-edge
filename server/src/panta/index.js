@@ -21,6 +21,7 @@ export function createPanta({ db, env }) {
       async submitClaim(...a) { return sim.submitClaim(...a); },
       async buildCreatorFeeClaim(...a) { return sim.buildCreatorFeeClaim(...a); },
       async submitCreatorFeeClaim(...a) { return sim.submitCreatorFeeClaim(...a); },
+      async cashout(...a) { return sim.cashout(...a); },
       async getMetrics(...a) { return sim.getMetrics(...a); },
       _sim: sim,
       _live: live,

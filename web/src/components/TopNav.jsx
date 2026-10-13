@@ -74,7 +74,7 @@ export default function TopNav() {
         <SearchField term={term} setTerm={setTerm} onSubmit={onSubmit} id="desktop-search" className="hidden sm:flex flex-1 max-w-xl" />
 
         <div className="hidden md:flex gap-4 text-sm ml-auto shrink-0">
-          <button onClick={openPortfolio} data-testid="nav-portfolio" className="text-white/70 hover:text-white cursor-pointer">Portfolio</button>
+          <button onClick={openPortfolio} data-testid="nav-portfolio" className="text-white/70 hover:text-white cursor-pointer">Your Predictions</button>
           <button onClick={() => openCreator()} data-testid="nav-create" className="text-white/70 hover:text-white cursor-pointer">Create</button>
         </div>
         <div className="flex items-center gap-1.5 sm:gap-2 ml-auto md:ml-0 shrink-0 min-w-0">

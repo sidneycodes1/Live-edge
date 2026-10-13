@@ -98,6 +98,8 @@ export const api = {
   // session as the bettor's consent, so submit sends no client signature.
   submitOrder: (orderId, signature) => request('/api/orders/submit', { method:'POST', body: signature ? { orderId, signature } : { orderId }, auth:true }),
   getPortfolio: () => request('/api/portfolio', { auth:true }),
+  getHistory: (limit=50, offset=0) => request(`/api/portfolio/history?limit=${limit}&offset=${offset}`, { auth:true }),
+  cashout: (marketId) => request('/api/orders/cashout', { method:'POST', body:{ marketId }, auth:true }),
   getLedger: (limit=50, offset=0) => request(`/api/ledger?limit=${limit}&offset=${offset}`, { auth:true }),
   faucet: () => request('/api/faucet', { method:'POST', auth:true }),
   // Signature is optional (Oct 2026 sim consent, mirrors submitOrder): the sim

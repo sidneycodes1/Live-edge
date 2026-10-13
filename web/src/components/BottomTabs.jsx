@@ -67,7 +67,7 @@ export default function BottomTabs() {
     { key: 'search', label: 'Search', to: '/?search=1', icon: IconSearch, active: searchActive },
     // Portfolio is an OVERLAY now (Oct 2026), not a route: this tab pops the box
     // over the current page instead of navigating, and highlights while it is open.
-    { key: 'portfolio', label: 'Portfolio', icon: IconPortfolio, onOpen: openPortfolio, active: panel === 'portfolio' },
+    { key: 'portfolio', label: 'Predictions', icon: IconPortfolio, onOpen: openPortfolio, active: panel === 'portfolio' },
   ];
 
   return (
@@ -158,7 +158,7 @@ export default function BottomTabs() {
             ) : (
               <>
                 <p className="text-sm text-white/60 mt-2 leading-relaxed">
-                  Pinning, betting and Portfolio need an account. Sign in with email code or Google —
+                  Pinning, betting and Your Predictions need an account. Sign in with email code or Google —
                   it takes a few seconds.
                 </p>
                 {/* Sign-in is the centered overlay now (Oct 2026) — the sheet

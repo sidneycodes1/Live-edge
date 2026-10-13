@@ -161,8 +161,8 @@ function WelcomeBridge() {
 }
 
 // /portfolio is retired as a page (owner decision, Oct 2026): any deep-link,
-// bookmark, or stale tab lands on the feed with the Portfolio OVERLAY already
-// open, so there is never a full-screen panel with no way back (mirrors
+// bookmark, or stale tab lands on the feed with the Your Predictions OVERLAY
+// already open, so there is never a full-screen panel with no way back (mirrors
 // SigninBridge). openPortfolio is stable, so this runs once per mount.
 function PortfolioBridge() {
   const { openPortfolio } = usePanelModal();

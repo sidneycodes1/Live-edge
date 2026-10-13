@@ -132,12 +132,19 @@ describe('portfolio expiry', () => {
     await buy(fetchJson, UB, marketId, 'yes', 10);
     await fetchJson(`/api/markets/${marketId}/resolve`, { method: 'POST', body: JSON.stringify({ outcome: 'no', force: true }), headers: { Authorization: `Bearer ${UA.token}` } });
 
-    const row = (await portfolio(fetchJson, UB)).positions.find((p) => p.market.id === marketId);
-    assert.equal(row.settlement.outcome, 'no');
-    assert.equal(row.settlement.won, false, 'held only YES, YES lost');
-    assert.equal(row.settlement.payout, 0, 'losing side pays nothing');
-    assert.equal(row.settlement.realizedPnl, -10, 'the whole stake is the honest loss');
-    assert.equal(row.claimable, false);
+    // History contract (Oct 2026): a resolved loss is FINAL — nothing to claim —
+    // so it leaves the Live tab and lives in /api/portfolio/history, honestly
+    // tagged lost with the whole stake as the loss.
+    const live = (await portfolio(fetchJson, UB)).positions.find((p) => p.market.id === marketId);
+    assert.equal(live, undefined, 'a resolved loss does not linger in Live positions');
+
+    const { json: hist } = await fetchJson('/api/portfolio/history', { headers: { Authorization: `Bearer ${UB.token}` } });
+    const item = hist.items.find((h) => h.market.id === marketId);
+    assert.ok(item, 'the loss appears in History');
+    assert.equal(item.outcome, 'lost');
+    assert.equal(item.proceeds, 0, 'losing side pays nothing');
+    assert.equal(item.invested, 10, 'cost basis = the buy amount actually paid');
+    assert.equal(item.realizedPnl, -10, 'the whole stake is the honest loss');
   });
 });
 

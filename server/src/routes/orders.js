@@ -116,5 +116,55 @@ export function ordersRouter({ db, panta, hub }) {
     }
   });
 
+  const cashoutSchema = z.object({ marketId: z.string().uuid() });
+
+  r.post('/cashout', async (req, res, next) => {
+    try {
+      if (!req.user) return res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Unauthorized' } });
+      await assertTermsAccepted(db, req.user.id);
+      const parsed = cashoutSchema.safeParse(req.body);
+      if (!parsed.success) throw new PantaError('VALIDATION_ERROR', 'Invalid input', { status: 400, details: parsed.error.issues });
+      const { marketId } = parsed.data;
+
+      let result;
+      if (panta._sim) result = await panta._sim.cashout({ marketId, userId: req.user.id });
+      else result = await panta.cashout({ marketId, userId: req.user.id });
+
+      const { proceeds, market, roomId } = result;
+
+      const { rows: uRows } = await db.query('select display_name, wallet from users where id=$1', [req.user.id]);
+      const name = uRows[0]?.display_name || (req.user.wallet.slice(0, 4) + '…' + req.user.wallet.slice(-4));
+      const body = `@${name} cashed out for $${Number(proceeds).toFixed(2)}`;
+
+      const effectiveRoomId = roomId || market?.room_id;
+      if (effectiveRoomId) {
+        await db.query(`insert into chat_messages(room_id, user_id, kind, body) values($1,$2,'trade',$3)`, [effectiveRoomId, req.user.id, body]);
+      }
+      if (hub && effectiveRoomId) {
+        hub.broadcast(effectiveRoomId, 'odds', {
+          marketId,
+          yesPrice: Number(market.yes_price),
+          noPrice: Number(market.no_price),
+          volume: Number(market.volume),
+          priceSource: market.price_source,
+          observedAt: market.price_observed_at,
+          ts: new Date().toISOString(),
+        });
+        hub.broadcast(effectiveRoomId, 'trade', {
+          name,
+          side: 'cash out',
+          amount: Number(proceeds),
+          priceSource: 'simulated',
+          ts: new Date().toISOString(),
+        });
+        hub.broadcast(effectiveRoomId, 'chat', { kind: 'trade', body, name });
+      }
+
+      res.json({ proceeds, market, ok: true });
+    } catch (e) {
+      next(e);
+    }
+  });
+
   return r;
 }

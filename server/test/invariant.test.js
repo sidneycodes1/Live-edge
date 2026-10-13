@@ -65,6 +65,7 @@ async function micro(db) {
       coalesce((select sum(amount * ${MICRO}) from mint_events), 0)::bigint::text as mint,
       coalesce((select sum(amount * ${MICRO}) from fee_events), 0)::bigint::text as createfee,
       coalesce((select sum(amount * ${MICRO}) from trades where kind='buy'), 0)::bigint::text as buys,
+      coalesce((select sum(amount * ${MICRO}) from trades where kind='sell'), 0)::bigint::text as sells,
       coalesce((select sum(amount * ${MICRO}) from trades where kind='claim'), 0)::bigint::text as claims,
       coalesce((select sum(amount * ${MICRO}) from trades where kind='creator_fee_claim'), 0)::bigint::text as cclaims,
       coalesce((select min(sim_usdc * ${MICRO}) from balances), 0)::bigint::text as minbal,
@@ -92,6 +93,7 @@ async function micro(db) {
     mint: BigInt(r.mint),
     createfee: BigInt(r.createfee),
     buys: BigInt(r.buys),
+    sells: BigInt(r.sells),
     claims: BigInt(r.claims),
     cclaims: BigInt(r.cclaims),
     minbal: BigInt(r.minbal),
@@ -137,7 +139,7 @@ describe('money conservation invariant (F-009 / Phase 4.1)', () => {
     assert.equal(fees.res.status, 200, JSON.stringify(fees.json));
 
     const m = await micro(db);
-    const houseEquity = m.createfee + m.buys - m.claims - m.cclaims;
+    const houseEquity = m.createfee + m.buys - m.claims - m.cclaims - m.sells;
     // (1) Core conservation of the LEDGER, exact in micro-units: a user's balance can
     // only change via a journaled event, so balances reconcile perfectly to the mints
     // and spends. This is the money-integrity guardrail (F-009 / F-006).
@@ -158,10 +160,44 @@ describe('money conservation invariant (F-009 / Phase 4.1)', () => {
     const A = await auth(fetchJson, genWallet());
     await faucet(fetchJson, A);
     const m = await micro(db);
-    const houseEquity = m.createfee + m.buys - m.claims - m.cclaims;
+    const houseEquity = m.createfee + m.buys - m.claims - m.cclaims - m.sells;
     assert.equal(houseEquity, 0n, 'no trades => house holds nothing beyond burned fees');
     assert.equal(m.bal, m.mint, 'with no spends, balances equal total minted');
     assert.equal(m.mint / MICRO, 200n, 'welcome (100) + faucet (100)');
+  });
+
+  it('conserves money across buy -> cashout -> resolve lifecycle (cashout shrinks exposure)', async () => {
+    const { fetchJson, db } = await makeApp();
+    const A = await auth(fetchJson, genWallet()); // creator
+    const B = await auth(fetchJson, genWallet()); // trader who cashes out
+    const C = await auth(fetchJson, genWallet()); // trader who holds to resolve
+
+    const roomId = await createRoom(fetchJson, A, 'Cashout Invariant Room');
+    const mid = await createMarket(fetchJson, A, roomId, 'Cashout invariant test market?');
+
+    await buy(fetchJson, B, mid, 'yes', 50);
+    await buy(fetchJson, C, mid, 'yes', 50);
+
+    const cashRes = await fetchJson('/api/orders/cashout', {
+      method: 'POST',
+      body: JSON.stringify({ marketId: mid }),
+      headers: { Authorization: `Bearer ${B.token}` },
+    });
+    assert.equal(cashRes.res.status, 200, 'cashout succeeded');
+
+    await fetchJson(`/api/markets/${mid}/resolve`, {
+      method: 'POST', body: JSON.stringify({ outcome: 'yes', force: true }),
+      headers: { Authorization: `Bearer ${A.token}` },
+    });
+    const cWin = await claim(fetchJson, C, mid, 'win');
+    assert.equal(cWin.res.status, 200, 'C win claimed');
+
+    const m = await micro(db);
+    const houseEquity = m.createfee + m.buys - m.claims - m.cclaims - m.sells;
+    assert.equal(m.bal + houseEquity, m.mint, `Σbalances(${m.bal}) + houseEquity(${houseEquity}) must equal minted(${m.mint})`);
+    assert.ok(m.minbal >= 0n, 'no user balance may go negative');
+    const bound = m.activeMarkets * VIRTUAL_PER_MARKET;
+    assert.ok(houseEquity >= -bound, `houseEquity ${houseEquity} below bound -${bound}`);
   });
 
   // Gemini opening line (prior_yes) must NOT mint play money. Open a market at a

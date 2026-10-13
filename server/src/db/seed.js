@@ -30,9 +30,6 @@ const ROOMS = {
 // live broadcast, so there is no fixed market id / time horizon / demo source here.
 
 export async function seed(db, { fallbackChannel } = {}) {
-  const { rows: existing } = await db.query('select count(*) as c from rooms');
-  if (Number(existing[0].c) > 0) return;
-
   // When a reliable 24/7 channel is configured (KICK_FALLBACK_CHANNEL) we bind it
   // to the gaming room so the "always-live" room is genuinely real. Embeds don't
   // need API creds. If unset, the room stays an honest `demo` room — we NEVER fake
@@ -76,20 +73,16 @@ export async function seed(db, { fallbackChannel } = {}) {
   for (const room of rooms) {
     await db.query(
       `insert into rooms(id, owner_id, title, video_url, kick_channel, status, is_seed, category, source)
-       values($1,$2,$3,$4,$5,'live',true,$6,$7)`,
+       values($1,$2,$3,$4,$5,'live',true,$6,$7)
+       on conflict (id) do nothing`,
       [room.id, room.owner, room.title, room.video_url, room.kick_channel, room.category, room.source],
     );
   }
 
   // --- markets: honest simulated starter rail -------------------------------
-  // The demo bet questions ("Will he beat Malenia first try?", etc.) are retired:
-  // every bet the app shows must be BORN FROM A LIVE BROADCAST via the market
-  // engine (source='sim-engine'), never a static seed row. A fresh DB therefore
-  // starts with rooms plus clearly-labelled simulated markets. This gives a first
-  // visitor a usable rail without claiming that a live broadcast or external price
-  // generated the question. The engine later adds its own live-tied markets.
-  // hidden from the rooms list by the is_seed filter in routes/rooms.js — never
-  // deleted, so any historical trades/ledger stay queryable.)
+  // A fresh DB starts with rooms plus clearly-labelled simulated markets.
+  // This gives a first visitor a usable rail without claiming that a live broadcast
+  // or external price generated the question. The engine later adds its own live-tied markets.
   const far = '2099-01-01T00:00:00.000Z';
   const starts = '2026-01-01T00:00:00.000Z';
   const demoMarkets = [
@@ -98,15 +91,18 @@ export async function seed(db, { fallbackChannel } = {}) {
   ];
   for (const [id, roomId, question, rule, category, yes] of demoMarkets) {
     await db.query(
-      `insert into markets(id, room_id, creator_id, source, question, resolution_rule, sources_of_truth, category, start_time, end_time, resolution_time, yes_price, no_price, volume, status, is_seed)
-       values($1,$2,$3,'sim',$4,$5,ARRAY['demo:seeded-simulated'], $6,$7,$8,$9,$10,$11,0,'open',true)
-       on conflict do nothing`,
-      [id, roomId, USERS.owner, question, rule, category, starts, far, far, yes, 1 - yes],
+      `insert into markets(id, room_id, creator_id, source, question, resolution_rule, sources_of_truth, category, start_time, end_time, resolution_time, yes_price, no_price, prior_yes, volume, status, is_seed)
+       values($1,$2,$3,'sim',$4,$5,ARRAY['demo:seeded-simulated'], $6,$7,$8,$9,$10,$11,$12,0,'open',true)
+       on conflict (id) do nothing`,
+      [id, roomId, USERS.owner, question, rule, category, starts, far, far, yes, 1 - yes, yes],
     );
   }
 
-  await db.query(
-    `insert into chat_messages(room_id, user_id, kind, body, is_seed) values($1,$2,'chat',$3,true)`,
-    [ROOMS.gaming, USERS.viewer, "let's go!"],
-  );
+  const { rows: existingChat } = await db.query('select 1 from chat_messages where is_seed = true limit 1');
+  if (existingChat.length === 0) {
+    await db.query(
+      `insert into chat_messages(room_id, user_id, kind, body, is_seed) values($1,$2,'chat',$3,true)`,
+      [ROOMS.gaming, USERS.viewer, "let's go!"],
+    );
+  }
 }
