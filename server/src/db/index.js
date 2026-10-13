@@ -1,33 +1,94 @@
 import pg from 'pg';
 import { PGlite } from '@electric-sql/pglite';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 
 export async function createDb(env) {
   if (env.DATABASE_URL) {
-    try {
+    const attempts = pgBootAttempts(env);
+    let lastError;
+    for (let attempt = 1; attempt <= attempts; attempt++) {
       const db = await createPgDb(env);
       // F-017: a committed/placeholder DATABASE_URL (e.g. host "db") otherwise
       // crashes `node src/server.js` with ENOTFOUND and no way to boot locally.
       // Probe reachability once before committing to the pg path.
-      await db.query('select 1 as ok');
-      return db;
-    } catch (e) {
-      // In production, a configured DB that is unreachable is a hard error — never
-      // silently fall back (that would route real money/state to a throwaway store).
-      if (env.NODE_ENV === 'production') throw e;
-      console.warn(
-        `DATABASE_URL unreachable (${e.code || e.message}); falling back to embedded PGlite for local dev. ` +
-          'Set a reachable DB (or omit DATABASE_URL) as intended. See .env.example.',
-      );
-      return createPgliteDb(env);
+      try {
+        await db.query('select 1 as ok');
+        return db;
+      } catch (e) {
+        lastError = e;
+        // Release the pool so a retry gets a fresh socket instead of a leaked one.
+        await db.close().catch(() => {});
+        if (attempt < attempts) await sleep(pgRetryDelayMs(attempt));
+      }
     }
+    // In production, a configured DB that is unreachable is a hard error — never
+    // silently fall back (that would route real money/state to a throwaway store).
+    if (env.NODE_ENV === 'production') throw lastError;
+    console.warn(
+      `DATABASE_URL unreachable (${lastError.code || lastError.message}); falling back to embedded PGlite for local dev. ` +
+        'Set a reachable DB (or omit DATABASE_URL) as intended. See .env.example.',
+    );
+    return createPgliteDb(env);
   }
   return createPgliteDb(env);
 }
 
+// ---------------------------------------------------------------------------
+// Managed Postgres (Neon) plumbing. These are exported pure functions so the
+// deploy-critical decisions are testable without a network or a live database.
+
+// Neon and Supabase refuse plaintext: with no `sslmode` in the URI the pg driver
+// negotiates NO TLS (verified against pg 8.12: ssl resolves to false) and the boot
+// probe dies, so a URI pasted without its query string would crash a production
+// boot. Infer TLS for hosts known to require it — VERIFIED TLS, using Node's
+// bundled CA store, the same guarantee `sslmode=require` already gives. An
+// operator who truly needs to skip verification opts in explicitly with
+// `?sslmode=no-verify`; a local or self-hosted database keeps no-TLS untouched.
+const TLS_ONLY_HOSTS = /(?:\.neon\.tech|\.supabase\.co)$/i;
+
+export function resolvePgSsl(url) {
+  // An explicit sslmode always wins: pg-connection-string parses it and overrides
+  // whatever we pass here (verified), so stay out of its way.
+  if (/sslmode=/i.test(url)) return undefined;
+  let host = '';
+  try {
+    host = new URL(url).hostname;
+  } catch {
+    return undefined; // not a parsable URL — change nothing
+  }
+  return TLS_ONLY_HOSTS.test(host) ? true : undefined;
+}
+
+// A Neon compute that has been suspended takes several seconds to wake and accept
+// its first connection. 2.5s was a local-dev number; in production it turned a
+// routine cold start into a crash loop.
+export function pgConnectTimeoutMs(env) {
+  const configured = Number(env.PG_CONNECT_TIMEOUT_MS);
+  if (Number.isFinite(configured) && configured > 0) return configured;
+  return env.NODE_ENV === 'production' ? 10000 : 2500;
+}
+
+export function pgBootAttempts(env) {
+  const configured = Number(env.PG_CONNECT_ATTEMPTS);
+  if (Number.isInteger(configured) && configured >= 1) return Math.min(configured, 5);
+  return env.NODE_ENV === 'production' ? 3 : 1;
+}
+
+export function pgRetryDelayMs(attempt) {
+  return Math.min(500 * attempt, 2000);
+}
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 async function createPgDb(env) {
-  const pool = new pg.Pool({ connectionString: env.DATABASE_URL, ssl: env.DATABASE_URL.includes('sslmode') ? { rejectUnauthorized: false } : undefined });
+  const pool = new pg.Pool({
+    connectionString: env.DATABASE_URL,
+    connectionTimeoutMillis: pgConnectTimeoutMs(env),
+    ssl: resolvePgSsl(env.DATABASE_URL),
+  });
+
   // simple wrapper
   return {
     kind: 'pg',
@@ -66,9 +127,24 @@ async function createPgliteDb(env) {
     // PGlite
     // In test, use in-memory; in dev, use .data/pglite
     const isTest = env.NODE_ENV === 'test';
-    const dataDir = isTest ? undefined : path.join(process.cwd(), '.data', 'pglite');
-    if (dataDir) fs.mkdirSync(path.dirname(dataDir), { recursive: true });
-    const db = isTest ? new PGlite() : new PGlite(dataDir);
+    // An explicit directory makes local recovery safe when a checked-out path is
+    // problematic for embedded Postgres. It is intentionally ignored in test.
+    const configuredDir = isTest ? undefined : (env.PGLITE_DATA_DIR || path.join(process.cwd(), '.data', 'pglite'));
+    const tempDir = path.join(os.tmpdir(), 'liveedge-pglite');
+    let dataDir = configuredDir;
+    let db;
+    try {
+      if (dataDir) fs.mkdirSync(path.dirname(dataDir), { recursive: true });
+      db = isTest ? new PGlite() : new PGlite(dataDir);
+      await db.waitReady;
+    } catch (error) {
+      if (isTest || env.NODE_ENV === 'production') throw error;
+      console.warn(`PGlite could not open ${dataDir}; using temporary local data at ${tempDir}.`);
+      dataDir = tempDir;
+      fs.mkdirSync(path.dirname(dataDir), { recursive: true });
+      db = new PGlite(dataDir);
+      await db.waitReady;
+    }
     // Add gen_random_uuid support: pglite doesn't have pgcrypto by default; we emulate via JS or use randomUUID in inserts.
     // We'll rely on uuid generated in app side if needed, but schema uses gen_random_uuid() -> we need extension or workaround.
     // PGlite supports uuid extension? We'll create table without default and fill via JS where needed, but migration uses gen_random_uuid fallback.

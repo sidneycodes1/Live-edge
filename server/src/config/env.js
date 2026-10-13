@@ -4,7 +4,14 @@ const schema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().default(4000),
   DATABASE_URL: z.string().optional(),
+  // Boot patience for a managed Postgres (Neon suspends idle computes, and the first
+  // connection after a wake takes seconds). Held unknown ON PURPOSE like the other
+  // lenient knobs: a malformed value degrades to the environment default in
+  // db/index.js instead of crashing boot.
+  PG_CONNECT_TIMEOUT_MS: z.unknown().optional(),
+  PG_CONNECT_ATTEMPTS: z.unknown().optional(),
   ALLOW_PGLITE_IN_PROD: z.enum(['true', 'false']).optional(),
+  PGLITE_DATA_DIR: z.string().optional(),
   JWT_SECRET: z.string().min(32).default('dev-only-secret-change-me-dev-only-secret'),
   CORS_ORIGIN: z.string().default('http://localhost:5173'),
   PANTA_MODE: z.enum(['sim', 'hybrid', 'live']).default('sim'),
