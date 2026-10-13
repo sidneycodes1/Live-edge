@@ -30,7 +30,7 @@ function utcDay(nowMs) {
 
 // Default budget store: DB-backed (durable across restarts) when a db is given,
 // else a process-lifetime in-memory map (tests / no-DB dev). Both self-reset by day.
-function createBudgetStore({ db, now }) {
+function createBudgetStore({ db }) {
   if (!db) {
     const mem = new Map(); // `${provider}|${day}` -> calls
     const key = (p, d) => `${p}|${d}`;
@@ -68,7 +68,7 @@ export function createMarketLLM({ providers = [], db, now = () => Date.now(), wa
     .filter((p) => p && p.client && typeof p.client.generateJson === 'function')
     .map((p) => ({ name: p.name || 'anon', client: p.client, budgetPerDay: Number(p.budgetPerDay) || 0 }));
 
-  const budgets = budgetStore || createBudgetStore({ db, now });
+  const budgets = budgetStore || createBudgetStore({ db });
   const state = { lastServed: null, lastError: null, totalCalls: 0, byProvider: {} };
 
   function isEnabled() {

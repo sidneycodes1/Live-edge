@@ -2,12 +2,14 @@ import { describe, it, before, beforeEach, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { setupTestEnv, teardownTestEnv, resetDb, makeApp } from './helpers/testApp.js';
+import { seed } from '../src/db/seed.js';
 import { ENGINE_USER } from '../src/services/marketEngine.js';
 
-// TASK 3 — the public markets listing / rails (GET /api/markets) and its ordering:
+// The public markets listing / rails (GET /api/markets) and its ordering:
 //   * markets with REAL user activity (buy trades > 0) lead,
-//   * sim-engine filler ranks LAST inside the no-activity tier,
-//   * legacy seed markets (is_seed) are excluded from every rail (opt back via ?includeSeed=1),
+//   * engine markets rank next,
+//   * starter demo markets (is_seed) rank LAST, surfaced by default (demo: true)
+//     to keep fresh rails usable, but hideable via ?includeSeed=0,
 //   * sim-engine rows expose the broadcast-tie `engine` object; every other row `null`.
 // Fixed far-future clock so the read-path auto-close (real DB clock) never flips our
 // seeded open markets closed mid-assertion.
@@ -46,10 +48,10 @@ describe('GET /api/markets (listing + TASK 3 ordering)', () => {
   beforeEach(resetDb);
   after(teardownTestEnv);
 
-  it('real-activity markets rank above sim-engine filler; legacy seeds are excluded', async () => {
+  it('real-activity markets rank above engine filler and demo seeds; seeds surface last by default and hide on ?includeSeed=0', async () => {
     const { db, fetchJson } = await makeApp();
     const realId = await seedMarket(db, { source: 'sim', question: 'A real user market with a bet on it?', isSeed: false });
-    await seedMarket(db, { source: 'sim-engine', question: 'A fresh engine market about a live stream?' });
+    const engineId = await seedMarket(db, { source: 'sim-engine', question: 'A fresh engine market about a live stream?' });
     const seedId = await seedMarket(db, { source: 'sim', question: 'Legacy 2024 seed demo market here?', isSeed: true });
     // a user + a buy trade on the real market → bets>0
     const uid = randomUUID();
@@ -58,11 +60,28 @@ describe('GET /api/markets (listing + TASK 3 ordering)', () => {
 
     const { json } = await fetchJson('/api/markets?rail=trending');
     const ids = json.items.map((m) => m.id);
-    assert.ok(!ids.includes(seedId), 'legacy seed excluded from trending rail');
     assert.equal(ids[0], realId, 'the bet-backed market leads the rail');
-    const engine = json.items.find((m) => m.source === 'sim-engine');
-    assert.ok(engine, 'engine market still listed (just not first)');
-    assert.ok(engine.bets >= 0);
+    assert.ok(ids.indexOf(engineId) < ids.indexOf(seedId), 'engine market ranks before demo seed market');
+    assert.ok(ids.includes(seedId), 'seed market surfaced by default');
+    const seedItem = json.items.find((m) => m.id === seedId);
+    assert.equal(seedItem.demo, true, 'demo market is flagged demo: true');
+    assert.equal(seedItem.is_seed, true, 'demo market is flagged is_seed: true');
+
+    const { json: hiddenJson } = await fetchJson('/api/markets?rail=trending&includeSeed=0');
+    assert.ok(!hiddenJson.items.some((m) => m.id === seedId), 'seed excluded when includeSeed=0');
+  });
+
+  it('fresh seeded DB returns >0 items on the default rail, flagged as demo with honest metrics', async () => {
+    const { db, fetchJson } = await makeApp();
+    await seed(db);
+    const { json } = await fetchJson('/api/markets?rail=trending');
+    assert.ok(json.items.length > 0, 'rail returns >0 items on a fresh seeded DB');
+    for (const item of json.items) {
+      assert.equal(item.demo, true, 'demo market flagged demo: true');
+      assert.equal(item.is_seed, true, 'demo market flagged is_seed: true');
+      assert.equal(item.volume, 0, 'honest 0 volume');
+      assert.equal(item.bets, 0, 'honest 0 bets');
+    }
   });
 
   it('sim-engine rows expose the broadcast-tie `engine` object; others are null', async () => {

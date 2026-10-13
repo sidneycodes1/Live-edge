@@ -35,6 +35,7 @@ export function marketsRouter({ db, panta, hub, priceCache, notify, engine, env 
       graduated: m.graduated,
       source: m.source,
       is_seed: m.is_seed,
+      demo: Boolean(m.is_seed),
       // Price provenance + freshness (Door 1 honesty): the UI MUST be able to label
       // every rendered price 'panta_live' / 'simulated' / 'stale_panta' and show how
       // old a Panta quote is. These come straight from the mirrored row.
@@ -74,18 +75,19 @@ export function marketsRouter({ db, panta, hub, priceCache, notify, engine, env 
 
   // GET /api/markets — the public listing / rails the web consumes.
   //   ?rail=trending (default) | closing | all
-  // Ordering (TASK 3): markets with REAL user activity (buy trades > 0) first, then
-  //   everything else, and sim-engine filler LAST within the no-activity tier — so an
-  //   engine batch never outranks a market people are actually betting on. Legacy seed
-  //   markets (is_seed) are EXCLUDED from every rail by default (override ?includeSeed=1)
-  //   but stay in the DB and keep answering GET /:id / the room rails unchanged.
+  // Ordering: markets with REAL user activity (buy trades > 0) first, then
+  //   engine/live markets, and starter demo markets (is_seed) LAST.
+  //   Seed markets are labeled with demo: true and surface by default to keep
+  //   a usable fresh rail on a cold boot; operators can hide them via ?includeSeed=0.
   r.get('/', async (req, res, next) => {
     try {
       // Read-path auto-close so 'closing'/'trending' reflect reality (same guard the
       // background loop + GET /:id already run).
       await db.query(`update markets set status='closed' where status='open' and end_time <= now()`);
       const rail = String(req.query.rail || 'trending').toLowerCase();
-      const includeSeed = req.query.includeSeed === '1' || req.query.includeSeed === 'true';
+      // Starter markets are honest simulated content and keep a usable fresh rail.
+      // Operators can still explicitly hide them with ?includeSeed=0.
+      const includeSeed = req.query.includeSeed !== '0' && req.query.includeSeed !== 'false';
       const limit = clampInt(req.query.limit, 1, 100, 24);
       const betsExpr = `(select count(*) from trades t where t.market_id = m.id and t.kind='buy')`;
       const statusClause = rail === 'closing' || rail === 'trending' ? `and m.status = 'open'` : '';
@@ -99,6 +101,7 @@ export function marketsRouter({ db, panta, hub, priceCache, notify, engine, env 
          where 1=1 ${statusClause} ${seedClause}
          order by
            (case when ${betsExpr} > 0 then 0 else 1 end),
+           (case when m.is_seed then 1 else 0 end),
            (case when m.source = 'sim-engine' then 1 else 0 end),
            ${orderTail}
          limit $1`,

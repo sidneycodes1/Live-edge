@@ -81,14 +81,29 @@ export async function seed(db, { fallbackChannel } = {}) {
     );
   }
 
-  // --- markets: NONE seeded (owner decision, Oct 2026) ----------------------
+  // --- markets: honest simulated starter rail -------------------------------
   // The demo bet questions ("Will he beat Malenia first try?", etc.) are retired:
   // every bet the app shows must be BORN FROM A LIVE BROADCAST via the market
   // engine (source='sim-engine'), never a static seed row. A fresh DB therefore
-  // starts with rooms + users but ZERO markets, and the engine fills the rails with
-  // real, rotating, live-tied bets. (Existing seed rows in an already-seeded DB are
+  // starts with rooms plus clearly-labelled simulated markets. This gives a first
+  // visitor a usable rail without claiming that a live broadcast or external price
+  // generated the question. The engine later adds its own live-tied markets.
   // hidden from the rooms list by the is_seed filter in routes/rooms.js — never
   // deleted, so any historical trades/ledger stay queryable.)
+  const far = '2099-01-01T00:00:00.000Z';
+  const starts = '2026-01-01T00:00:00.000Z';
+  const demoMarkets = [
+    ['33333333-3333-4333-8333-333333333333', ROOMS.gaming, 'Will the player complete the next boss attempt?', 'Resolved by the room host after the attempt.', 'gaming', 0.58],
+    ['44444444-4444-4444-8444-444444444444', ROOMS.lifestyle, 'Will the sketch use more than three colors?', 'Resolved from the completed stream segment.', 'lifestyle', 0.42],
+  ];
+  for (const [id, roomId, question, rule, category, yes] of demoMarkets) {
+    await db.query(
+      `insert into markets(id, room_id, creator_id, source, question, resolution_rule, sources_of_truth, category, start_time, end_time, resolution_time, yes_price, no_price, volume, status, is_seed)
+       values($1,$2,$3,'sim',$4,$5,ARRAY['demo:seeded-simulated'], $6,$7,$8,$9,$10,$11,0,'open',true)
+       on conflict do nothing`,
+      [id, roomId, USERS.owner, question, rule, category, starts, far, far, yes, 1 - yes],
+    );
+  }
 
   await db.query(
     `insert into chat_messages(room_id, user_id, kind, body, is_seed) values($1,$2,'chat',$3,true)`,
