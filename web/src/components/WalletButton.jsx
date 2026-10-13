@@ -32,7 +32,7 @@ export default function WalletButton() {
   // honest "auth service unavailable" state when Privy is not mounted.
   return (
     <div className="flex items-center gap-1.5 sm:gap-2">
-      <button onClick={openAuth} data-testid="sign-in-cta" className="bg-white text-black px-3 sm:px-4 py-2 rounded-full text-sm font-bold shrink-0 min-h-[44px]">Sign in</button>
+      <button onClick={openAuth} data-testid="sign-in-cta" className="bg-brand text-brand-ink px-3 sm:px-4 py-2 rounded-full text-sm font-bold shrink-0 min-h-[44px]">Sign in</button>
     </div>
   );
 }

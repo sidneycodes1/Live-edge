@@ -13,9 +13,9 @@ export default function MarketPanel({ market, onTrade }) {
   const timeLeft = market.status === 'open' ? fmtTimeLeft(market.end_time) : null;
   const showCountdown = timeLeft && timeLeft !== 'closed' && timeLeft !== '—';
   return (
-    <div className="bg-surface rounded-card border border-white/10 p-4">
+    <div className="bg-surface rounded-card border border-border shadow-card p-4 text-ink">
       <div className="flex items-center gap-2 text-xs">
-        <span className={`px-2 py-1 rounded-full text-xs ${market.status==='open'?'bg-live text-black':'bg-white/10'}`}>{market.status}</span>
+        <span className={`px-2 py-1 rounded-full text-xs ${market.status==='open'?'bg-live text-on-warn':'bg-white/10'}`}>{market.status}</span>
         {/* Honesty label for the price provenance (Door 1 / ToU §5). */}
         <MarketSourceChip priceSource={market.price_source} observedAt={market.price_observed_at} />
         {showCountdown && (
@@ -32,8 +32,8 @@ export default function MarketPanel({ market, onTrade }) {
         <OddsBar yesPrice={market.yes_price} noPrice={market.no_price} />
       </div>
       <div className="flex gap-2 mt-4">
-        <button onClick={()=>onTrade('yes')} className="flex-1 bg-yes text-black font-bold py-3 rounded-full">YES</button>
-        <button onClick={()=>onTrade('no')} className="flex-1 bg-no text-white font-bold py-3 rounded-full">NO</button>
+        <button onClick={()=>onTrade('yes')} className="flex-1 bg-yes text-on-yes font-bold py-3 rounded-full inline-flex items-center justify-center gap-1">✓ YES</button>
+        <button onClick={()=>onTrade('no')} className="flex-1 bg-no text-on-no font-bold py-3 rounded-full inline-flex items-center justify-center gap-1">× NO</button>
       </div>
       <p className="text-xs text-white/40 mt-2">Volume ${market.volume}</p>
       {/* Mandatory attribution on Panta-sourced markets (ToU §6) — never dismissible. */}

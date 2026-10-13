@@ -33,7 +33,7 @@ export default function AuthModal() {
         <button
           onClick={() => { loginWithPrivy(); }}
           data-testid="auth-modal-privy-cta"
-          className="mt-5 w-full bg-white text-black font-bold py-3 rounded-full min-h-[48px]"
+          className="mt-5 w-full bg-brand text-brand-ink font-bold py-3 rounded-full min-h-[48px]"
         >
           Sign in with email or Google
         </button>

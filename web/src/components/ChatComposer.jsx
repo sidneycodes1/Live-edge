@@ -27,7 +27,7 @@ export default function ChatComposer({ roomId, onPosted }) {
           type="button"
           data-testid="chat-signin"
           onClick={openAuth}
-          className="w-full rounded-card bg-white text-black py-2 text-sm font-semibold cursor-pointer hover:bg-white/90 transition"
+          className="w-full rounded-card bg-brand text-brand-ink py-2 text-sm font-semibold cursor-pointer hover:bg-brand-deep transition"
         >
           Sign in to post
         </button>
@@ -86,7 +86,7 @@ export default function ChatComposer({ roomId, onPosted }) {
           type="submit"
           data-testid="chat-send"
           disabled={sending || !body.trim()}
-          className="min-h-[36px] px-4 rounded-card bg-white text-black text-sm font-semibold cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed hover:bg-white/90 transition"
+          className="min-h-[36px] px-4 rounded-card bg-brand text-brand-ink text-sm font-semibold cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed hover:bg-brand-deep transition"
         >
           {sending ? 'Sending...' : 'Send'}
         </button>

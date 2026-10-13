@@ -62,7 +62,7 @@ export default function Portfolio() {
       <div className="py-6 text-center" data-testid="portfolio-signed-out">
         <h2 id="portfolio-modal-title" className="font-heading font-bold text-xl">Portfolio</h2>
         <p className="mt-3 mb-4 text-sm text-white/70">Sign in to see your portfolio — it&rsquo;s play money only, never real.</p>
-        <button onClick={openAuth} className="bg-white text-black px-6 py-2 rounded-full font-bold min-h-[44px]">Sign in</button>
+        <button onClick={openAuth} className="bg-brand text-brand-ink px-6 py-2 rounded-full font-bold min-h-[44px]">Sign in</button>
       </div>
     );
   }

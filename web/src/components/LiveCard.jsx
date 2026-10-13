@@ -128,7 +128,7 @@ function PlayableCard({ channel, pinned, onTogglePin }) {
       data-source={channel.source}
       className="group block bg-surface rounded-card border border-white/10 overflow-hidden hover:border-white/25 transition cursor-pointer"
     >
-      <div className="relative aspect-video bg-black">
+      <div className="relative aspect-video bg-canvas">
         <img
           src={channel.thumbnailUrl}
           alt={channel.title || `${channel.channelName} live`}
@@ -137,7 +137,7 @@ function PlayableCard({ channel, pinned, onTogglePin }) {
           onError={(e) => { e.currentTarget.style.display = 'none'; }}
         />
         <span className="absolute top-2 left-2 inline-flex items-center gap-1 bg-red-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded">
-          <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+          <span className="w-1.5 h-1.5 rounded-full bg-brand animate-pulse" />
           LIVE
         </span>
         {hasViewers && (

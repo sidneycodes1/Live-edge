@@ -67,9 +67,9 @@ export default function TopNav() {
   };
 
   return (
-    <nav className="sticky top-0 z-40 bg-bg/80 backdrop-blur border-b border-white/10">
+  <nav className="sticky top-0 z-40 bg-canvas/90 backdrop-blur border-b border-border">
       <div className="px-3 sm:px-4 py-2.5 flex items-center gap-2 sm:gap-3 lg:gap-4">
-        <Link to="/" className="font-heading font-bold text-lg shrink-0">LiveEdge</Link>
+        <Link to="/" className="font-display font-bold text-xl text-ink shrink-0 inline-flex items-center gap-2"><span aria-hidden="true" className="grid place-items-center w-8 h-8 rounded-full bg-brand text-brand-ink">⌁</span>LiveEdge</Link>
 
         <SearchField term={term} setTerm={setTerm} onSubmit={onSubmit} id="desktop-search" className="hidden sm:flex flex-1 max-w-xl" />
 

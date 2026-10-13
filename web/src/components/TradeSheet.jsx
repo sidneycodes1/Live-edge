@@ -66,11 +66,11 @@ export default function TradeSheet({ market, side: initialSide, onClose, onSucce
         </div>
         <p className="text-sm text-white/70 mt-1">{market.question}</p>
         <div className="flex gap-2 mt-4">
-          <button onClick={()=>chooseSide('yes')} className={`flex-1 py-2 rounded-full font-bold ${side==='yes'?'bg-yes text-black':'bg-white/10'}`}>YES</button>
-          <button onClick={()=>chooseSide('no')} className={`flex-1 py-2 rounded-full font-bold ${side==='no'?'bg-no text-white':'bg-white/10'}`}>NO</button>
+          <button onClick={()=>chooseSide('yes')} className={`flex-1 py-2 rounded-full font-bold ${side==='yes'?'bg-yes text-on-yes':'bg-white/10'}`}>YES</button>
+          <button onClick={()=>chooseSide('no')} className={`flex-1 py-2 rounded-full font-bold ${side==='no'?'bg-no text-on-no':'bg-white/10'}`}>NO</button>
         </div>
         <div className="flex flex-wrap items-center gap-2 mt-4">
-          {[1,5,10].map(v=> <button key={v} onClick={()=>chooseAmount(v)} className={`px-4 py-2 rounded-full ${amount===v?'bg-white text-black':'bg-white/10'}`}>${v}</button>)}
+          {[1,5,10].map(v=> <button key={v} onClick={()=>chooseAmount(v)} className={`px-4 py-2 rounded-full ${amount===v?'bg-brand text-brand-ink':'bg-white/10'}`}>${v}</button>)}
           <input type="number" value={amount} onChange={e=>setAmount(Number(e.target.value))} onBlur={()=>refreshQuote(side, amount)} aria-label="Custom amount" className="ml-auto w-24 bg-black/30 border border-white/10 rounded px-3 py-2 min-h-[44px]" />
         </div>
         {quote && <p className="text-xs text-white/60 mt-3">Shares ~{quote.shares} &middot; Fee ${quote.fee} &middot; If {side.toUpperCase()} wins you get about ${quote.payoutIfWin}</p>}
@@ -79,7 +79,7 @@ export default function TradeSheet({ market, side: initialSide, onClose, onSucce
         <button
           onClick={placeBet}
           disabled={!quote?.orderId || submitting}
-          className="w-full mt-4 bg-white text-black font-bold py-3 rounded-full min-h-[48px] disabled:opacity-40 disabled:cursor-not-allowed"
+          className="w-full mt-4 bg-brand text-brand-ink font-bold py-3 rounded-full min-h-[48px] disabled:opacity-40 disabled:cursor-not-allowed"
           data-testid="bet-confirm"
         >
           {submitting ? 'Placing bet&hellip;' : `Bet $${amount} on ${side.toUpperCase()}`}

@@ -66,7 +66,7 @@ export default function CreatorPanel({ roomId, onCreated }) {
       </select>
 
       {!quote ? (
-        <button onClick={handlePreview} disabled={status === 'Quoting…'} className="w-full mt-4 bg-white text-black font-bold rounded-full py-2 min-h-[44px] text-sm disabled:opacity-50">Preview creation fee</button>
+        <button onClick={handlePreview} disabled={status === 'Quoting…'} className="w-full mt-4 bg-brand text-brand-ink font-bold rounded-full py-2 min-h-[44px] text-sm disabled:opacity-50">Preview creation fee</button>
       ) : (
         <div className="mt-4 border border-white/15 rounded-card p-4 bg-black/20" data-testid="fee-preview">
           <div className="flex justify-between items-center">
@@ -79,7 +79,7 @@ export default function CreatorPanel({ roomId, onCreated }) {
           {shortByFee && <p className="text-xs text-no mt-2">Insufficient balance for this fee — use the faucet or a smaller action.</p>}
           <div className="flex gap-2 mt-3">
             <button onClick={() => { setQuote(null); setError(''); }} className="flex-1 border border-white/20 rounded-full py-2 min-h-[44px] text-sm">Cancel</button>
-            <button onClick={handleConfirm} disabled={shortByFee || status === 'Building…' || status === 'Registering…'} className="flex-1 bg-white text-black font-bold rounded-full py-2 min-h-[44px] text-sm disabled:opacity-50" data-testid="confirm-create">Confirm &amp; create</button>
+            <button onClick={handleConfirm} disabled={shortByFee || status === 'Building…' || status === 'Registering…'} className="flex-1 bg-brand text-brand-ink font-bold rounded-full py-2 min-h-[44px] text-sm disabled:opacity-50" data-testid="confirm-create">Confirm &amp; create</button>
           </div>
         </div>
       )}

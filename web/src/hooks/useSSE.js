@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { BASE } from '../lib/api.js';
 
 export function useSSE(roomId) {
   const [events, setEvents] = useState([]);
@@ -8,8 +9,7 @@ export function useSSE(roomId) {
 
   useEffect(() => {
     if (!roomId) return;
-    const base = import.meta.env.VITE_API_URL || 'http://localhost:4000';
-    const es = new EventSource(`${base}/api/stream/${roomId}`);
+    const es = new EventSource(`${BASE}/api/stream/${roomId}`);
     esRef.current = es;
     const on = (type, handler) => es.addEventListener(type, handler);
     on('hello', (e) => { try { const d=JSON.parse(e.data); setViewers(d.viewers);} catch { /* ignore parse errors */ } });

@@ -24,7 +24,7 @@ export default function RoomFeed({ videoUrl, parent }) {
 
   if (embed.kind === 'iframe' && embed.verified) {
     return (
-      <div className="relative w-full aspect-video md:aspect-auto md:h-full min-h-[300px] bg-black rounded-card overflow-hidden border border-white/10" data-testid="room-video" data-provider={embed.provider}>
+      <div className="relative w-full aspect-video md:aspect-auto md:h-full min-h-[300px] bg-canvas rounded-card overflow-hidden border border-white/10" data-testid="room-video" data-provider={embed.provider}>
         <iframe
           title={`${embed.provider} stream`}
           src={embed.src}

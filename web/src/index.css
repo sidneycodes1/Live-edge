@@ -2,76 +2,10 @@
 @tailwind components;
 @tailwind utilities;
 
-:root { color-scheme: dark; }
-body { background:#0B0B10; color:#fff; font-family: Inter, system-ui, sans-serif; }
-h1,h2,h3 { font-family: 'Space Grotesk', system-ui, sans-serif; }
-.num { font-variant-numeric: tabular-nums; font-family: 'Space Grotesk', monospace; }
-
-/* Streaming UI (Phase A): motion that makes odds feel alive. */
-/* Odds delta flashes — a one-shot halo when a side moves up or down. */
-@keyframes flash-up {
-  0% { box-shadow: 0 0 0 0 rgba(61, 255, 181, 0.7); }
-  100% { box-shadow: 0 0 0 6px rgba(61, 255, 181, 0); }
-}
-@keyframes flash-down {
-  0% { box-shadow: 0 0 0 0 rgba(255, 94, 108, 0.7); }
-  100% { box-shadow: 0 0 0 6px rgba(255, 94, 108, 0); }
-}
-.flash-up { animation: flash-up 0.9s ease-out; }
-.flash-down { animation: flash-down 0.9s ease-out; }
-.mover-up { color: #3DFFB5; }
-.mover-down { color: #FF5E6C; }
-
-/* Horizontal rails / tickers scroll by swipe but shouldn't show a chunky bar. */
-.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-.no-scrollbar::-webkit-scrollbar { display: none; }
-
-/* Design-system MASTER (design-system/liveedge/MASTER.md): visible keyboard focus
-   is required for a11y. A high-contrast ring that reads on the cinema-dark surface
-   for every interactive element, shown only for keyboard/AT focus (:focus-visible),
-   so mouse clicks aren't noisy. */
-:where(a, button, input, select, textarea, [tabindex]):focus-visible {
-  outline: 2px solid #FFFFFF;
-  outline-offset: 2px;
-  border-radius: 6px;
-}
-
-/* Honour prefers-reduced-motion: freeze the ambient "live" animations and kill
-   transition/animation churn. The motion is decorative, so the UI stays fully
-   usable when it's disabled (design MASTER + WCAG 2.3.3). */
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
-    animation-duration: 0.001ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.001ms !important;
-    scroll-behavior: auto !important;
-  }
-  .flash-up, .flash-down { animation: none !important; }
-  .animate-pulse { animation: none !important; }
-}
-
-/* ---------------------------------------------------------------------------
-   Mobile responsiveness (design-system MASTER checklist: no horizontal scroll
-   on mobile, no content hidden behind the fixed bars, every tap target ≥44px).
-   ------------------------------------------------------------------------- */
-
-/* Belt-and-braces: guarantee the PAGE never scrolls sideways on a phone. The
-   individual layouts are fixed at their source too, but one stray wide child
-   must never lift the whole document into a horizontal scroll. */
-html, body { overflow-x: hidden; }
-body { max-width: 100vw; }
-
-/* Keep fixed bars clear of the iOS home indicator / Android gesture area. */
-.pb-safe { padding-bottom: max(0px, env(safe-area-inset-bottom)); }
-
-/* On touch-sized viewports, every interactive control meets the 44×44 minimum.
-   Scoped to <=768px so the pointer-first sizing never distorts the desktop grid,
-   and to real controls only (not layout wrappers like card <a> blocks). */
-@media (max-width: 768px) {
-  .tap, a[href], button:not([data-icon]), input, select, textarea,
-  [role="button"] {
-    min-height: 44px;
-  }
-  /* Icon-only affordances (search submit, modal close) keep a square touch box. */
-  [data-icon] { min-width: 40px; min-height: 40px; }
-}
+:root { color-scheme:dark; --c-canvas:8 20 13; --c-surface:16 36 26; --c-surface-soft:27 58 42; --c-ink:232 245 236; --c-ink-muted:175 202 184; --c-ink-subtle:146 178 156; --c-border:39 80 58; --c-border-strong:75 119 91; --c-brand:107 219 142; --c-brand-ink:6 33 15; --c-brand-deep:69 190 111; --c-brand-soft:25 67 45; --c-yes:11 127 71; --c-on-yes:255 255 255; --c-no:201 58 82; --c-on-no:255 255 255; --c-warn:225 157 39; --c-on-warn:48 36 11; --c-focus:107 219 142; --c-shadow:0 0 0; }
+* { box-sizing:border-box; } html,body { overflow-x:hidden; max-width:100%; background:rgb(var(--c-canvas)); color:rgb(var(--c-ink)); } body { margin:0; font-family:Nunito,system-ui,sans-serif; font-size:16px; } h1,h2,h3 { font-family:Fredoka,ui-rounded,system-ui,sans-serif; } .num { font-variant-numeric:tabular-nums; } .pb-safe { padding-bottom:max(0px,env(safe-area-inset-bottom)); }
+.pressable { box-shadow:0 3px 0 rgb(var(--c-brand-deep)); transition:transform 160ms ease-out,box-shadow 160ms ease-out; }.pressable:active{transform:translateY(2px);box-shadow:0 1px 0 rgb(var(--c-brand-deep));}.paper{background-image:radial-gradient(rgb(var(--c-brand-deep) / .035) 1px,transparent 1px);background-size:18px 18px}.flash-up{animation:flash-up .6s ease-out}.flash-down{animation:flash-down .6s ease-out}@keyframes flash-up{from{box-shadow:0 0 0 0 rgb(var(--c-yes) / .45)}to{box-shadow:0 0 0 6px rgb(var(--c-yes) / 0)}}@keyframes flash-down{from{box-shadow:0 0 0 0 rgb(var(--c-no) / .45)}to{box-shadow:0 0 0 6px rgb(var(--c-no) / 0)}}.mover-up{color:rgb(var(--c-yes))}.mover-down{color:rgb(var(--c-no))}
+:where(a,button,input,select,textarea,[tabindex]):focus-visible{outline:2px solid rgb(var(--c-focus));outline-offset:2px;border-radius:8px}@media(max-width:768px){.tap,a[href],button:not([data-icon]),input,select,textarea,[role='button']{min-height:44px}[data-icon]{min-width:40px;min-height:40px}}@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important;scroll-behavior:auto!important}}
+/* Transitional aliases keep existing screen-level markup theme-safe while each
+   component is moved to semantic utilities. */
+[class*='text-white']{color:rgb(var(--c-ink))!important}[class*='border-white']{border-color:rgb(var(--c-border))!important}[class*='bg-black']{background-color:rgb(var(--c-surface-soft))!important}[class*='bg-white/']{background-color:rgb(var(--c-surface-soft))!important}/* Legacy exact utilities only: a white CTA becomes the accessible brand CTA. */[class~='bg-white']{background-color:rgb(var(--c-brand))!important}[class~='text-black']{color:rgb(var(--c-brand-ink))!important}::selection{background:rgb(var(--c-brand) / .35);color:rgb(var(--c-ink))}*{scrollbar-color:rgb(var(--c-border-strong)) rgb(var(--c-canvas))}::-webkit-scrollbar{width:10px}::-webkit-scrollbar-track{background:rgb(var(--c-canvas))}::-webkit-scrollbar-thumb{background:rgb(var(--c-border-strong));border-radius:99px}input:-webkit-autofill{-webkit-text-fill-color:rgb(var(--c-ink));-webkit-box-shadow:0 0 0 1000px rgb(var(--c-surface)) inset}

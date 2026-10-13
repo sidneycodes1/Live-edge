@@ -199,7 +199,7 @@ export default function WatchRoom() {
             <p className="text-xs text-white/45 mt-1">Watch the real feed here, or open a simulated market on it.</p>
             <Link
               to="/creator"
-              className="inline-block mt-3 px-4 py-2 rounded-card bg-white text-black text-sm font-semibold cursor-pointer hover:bg-white/90 transition"
+              className="inline-block mt-3 px-4 py-2 rounded-card bg-brand text-brand-ink text-sm font-semibold cursor-pointer hover:bg-brand-deep transition"
             >
               Create a market →
             </Link>

@@ -73,6 +73,7 @@ export default function Discover() {
   const [liveLoading, setLiveLoading] = useState(true);
   const [loading, setLoading] = useState(true);
   const [waking, setWaking] = useState(false);
+  const [loadError, setLoadError] = useState('');
   const [reload, setReload] = useState(0);
   const [params] = useSearchParams();
   const location = useLocation();
@@ -124,6 +125,7 @@ export default function Discover() {
   useEffect(() => {
     let cancelled = false;
     setWaking(false);
+    setLoadError('');
     // If the first paint is still pending after 2.5s, surface the cold-start hint.
     // The timer is cleared the moment data settles, so it never needs to read
     // `loading` (which would churn this effect's dependency array).
@@ -140,9 +142,12 @@ export default function Discover() {
       api.getLiveSections(9).then((r) => {
         if (!cancelled) setSections(normalizeSections(r));
       }).catch(() => { if (!cancelled) setSections(null); }),
-    ]).then(() => {
+    ]).then((results) => {
       if (cancelled) return;
       clearTimeout(t);
+      if (results.every((result) => result.status === 'rejected')) {
+        setLoadError('Could not reach the server. Check that the API is running, then try again.');
+      }
       setLoading(false);
       setLiveLoading(false);
     });
@@ -306,6 +311,10 @@ export default function Discover() {
     );
   }
 
+  if (loadError) {
+    return <div className="max-w-6xl mx-auto px-4 py-16 text-center"><div className="mx-auto max-w-md rounded-card border border-border bg-surface p-6 shadow-card"><span aria-hidden="true" className="text-3xl">🌱</span><h1 className="font-heading font-bold text-2xl mt-3">Couldn’t load LiveEdge</h1><p className="text-sm text-ink-muted mt-2">{loadError}</p><button type="button" onClick={() => setReload((n) => n + 1)} className="pressable mt-5 min-h-[44px] rounded-full bg-brand px-5 text-sm font-bold text-brand-ink">Try again</button></div></div>;
+  }
+
   const sectionsLoading = q ? searchLoading : liveLoading;
 
   return (
@@ -464,7 +473,7 @@ export default function Discover() {
               </div>
             </div>
             {featuredThumb && (
-              <div className="order-1 md:order-2 relative aspect-video md:aspect-auto bg-black">
+              <div className="order-1 md:order-2 relative aspect-video md:aspect-auto bg-canvas">
                 <img
                   src={featuredThumb}
                   alt={featured.heroMarket.question}

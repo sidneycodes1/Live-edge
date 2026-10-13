@@ -55,7 +55,7 @@ export default function PositionRow({ pos, onClaim }) {
       {pos.claimable && onClaim === null && (
         <button disabled data-testid="claim-disabled" className="shrink-0 bg-white/10 text-white/50 font-bold px-4 py-2 rounded-full text-sm cursor-not-allowed">Claim ${pos.claimAmount}</button>
       )}
-      {pos.claimable && onClaim && <button onClick={()=>onClaim(pos)} className="shrink-0 bg-yes text-black font-bold px-4 py-2 rounded-full text-sm">Claim ${pos.claimAmount}</button>}
+      {pos.claimable && onClaim && <button onClick={()=>onClaim(pos)} className="shrink-0 bg-yes text-on-yes font-bold px-4 py-2 rounded-full text-sm">Claim ${pos.claimAmount}</button>}
     </div>
   );
 }

@@ -57,7 +57,7 @@ function BetPill({ market, onBet }) {
         type="button"
         data-testid="bet-pill-yes"
         onClick={() => onBet('yes')}
-        className="shrink-0 min-h-[44px] min-w-[64px] px-4 rounded-full bg-yes text-black font-bold text-sm cursor-pointer"
+        className="shrink-0 min-h-[44px] min-w-[64px] px-4 rounded-full bg-yes text-on-yes font-bold text-sm cursor-pointer"
       >
         YES
       </button>
@@ -65,7 +65,7 @@ function BetPill({ market, onBet }) {
         type="button"
         data-testid="bet-pill-no"
         onClick={() => onBet('no')}
-        className="shrink-0 min-h-[44px] min-w-[64px] px-4 rounded-full bg-no text-white font-bold text-sm cursor-pointer"
+        className="shrink-0 min-h-[44px] min-w-[64px] px-4 rounded-full bg-no text-on-no font-bold text-sm cursor-pointer"
       >
         NO
       </button>
@@ -148,7 +148,7 @@ export default function Room() {
             <div className="md:hidden flex gap-2">
               {['chat', 'market'].map(t => (
                 <button key={t} onClick={() => setMobileTab(t)}
-                  className={`flex-1 py-2 rounded-card text-sm font-semibold border ${mobileTab === t ? 'bg-white text-black border-white' : 'bg-surface text-white/70 border-white/10'}`}>
+                  className={`flex-1 py-2 rounded-card text-sm font-semibold border ${mobileTab === t ? 'bg-brand text-brand-ink border-brand' : 'bg-surface text-white/70 border-white/10'}`}>
                   {t === 'chat' ? 'Chat' : 'Market'}
                 </button>
               ))}
@@ -160,7 +160,7 @@ export default function Room() {
                 : <div className="bg-surface border border-white/10 rounded-card p-4 text-sm text-white/50">No market attached to this channel yet.</div>}
               {room.markets && room.markets.length > 1 && (
                 <div className="space-y-2 mt-3">
-                  {room.markets.map(m => <button key={m.id} onClick={() => setActiveMarket(m)} className={`w-full text-left p-3 rounded-card border text-sm ${activeMarket?.id === m.id ? 'bg-white text-black' : 'bg-surface border-white/10'}`}>{m.question}</button>)}
+                  {room.markets.map(m => <button key={m.id} onClick={() => setActiveMarket(m)} className={`w-full text-left p-3 rounded-card border text-sm ${activeMarket?.id === m.id ? 'bg-brand-soft text-ink border-2 border-brand-deep' : 'bg-surface text-ink border-border'}`}>{m.question}</button>)}
                 </div>
               )}
             </div>
@@ -200,7 +200,7 @@ export default function Room() {
           <div className="md:hidden flex gap-2">
             {['chat', 'market'].map(t => (
               <button key={t} onClick={() => setMobileTab(t)}
-                className={`flex-1 py-2 rounded-card text-sm font-semibold border ${mobileTab === t ? 'bg-white text-black border-white' : 'bg-surface text-white/70 border-white/10'}`}>
+                className={`flex-1 py-2 rounded-card text-sm font-semibold border ${mobileTab === t ? 'bg-brand text-brand-ink border-brand' : 'bg-surface text-white/70 border-white/10'}`}>
                 {t === 'chat' ? 'Chat' : 'Market'}
               </button>
             ))}
@@ -214,7 +214,7 @@ export default function Room() {
           {activeMarket && <MarketPanel market={activeMarket} onTrade={handleTrade} />}
           {room.markets && room.markets.length > 1 && (
             <div className="space-y-2">
-              {room.markets.map(m => <button key={m.id} onClick={() => setActiveMarket(m)} className={`w-full text-left p-3 rounded-card border text-sm ${activeMarket?.id === m.id ? 'bg-white text-black' : 'bg-surface border-white/10'}`}>{m.question}</button>)}
+              {room.markets.map(m => <button key={m.id} onClick={() => setActiveMarket(m)} className={`w-full text-left p-3 rounded-card border text-sm ${activeMarket?.id === m.id ? 'bg-brand-soft text-ink border-2 border-brand-deep' : 'bg-surface text-ink border-border'}`}>{m.question}</button>)}
             </div>
           )}
         </div>

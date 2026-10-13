@@ -75,7 +75,7 @@ export default function Creator({ roomId = null, prefillTitle = '', prefillChann
       <div className="py-6 text-center" data-testid="creator-signed-out">
         <h2 id="creator-modal-title" className="font-heading font-bold text-xl">Create a bet</h2>
         <p className="mt-3 mb-4 text-sm text-white/70">Sign in to open the creator cockpit and start a market.</p>
-        <button onClick={openAuth} className="bg-white text-black px-6 py-2 rounded-full font-bold min-h-[44px]">Sign in</button>
+        <button onClick={openAuth} className="bg-brand text-brand-ink px-6 py-2 rounded-full font-bold min-h-[44px]">Sign in</button>
       </div>
     );
   }
@@ -93,7 +93,7 @@ export default function Creator({ roomId = null, prefillTitle = '', prefillChann
               <select value={resolveOutcome} onChange={e => setResolveOutcome(e.target.value)} className="bg-black/30 border border-white/10 rounded px-3 py-2 text-sm">
                 <option value="yes">YES</option><option value="no">NO</option>
               </select>
-              <button onClick={handleResolve} className="bg-white text-black px-4 py-2 rounded-full text-sm font-bold">Resolve</button>
+              <button onClick={handleResolve} className="bg-brand text-brand-ink px-4 py-2 rounded-full text-sm font-bold">Resolve</button>
             </div>
             {msg && <p className="text-xs mt-2 text-yes">{msg}</p>}
           </div>
@@ -105,7 +105,7 @@ export default function Creator({ roomId = null, prefillTitle = '', prefillChann
           <form onSubmit={handleCreateRoom} className="flex flex-col gap-2">
             <input value={roomTitle} onChange={(e) => setRoomTitle(e.target.value)} required minLength={3} maxLength={80} placeholder="Room title (e.g. Friday ranked grind)" className="flex-1 bg-black/30 border border-white/10 rounded px-3 py-2 text-sm" />
             <input value={roomChannel} onChange={(e) => setRoomChannel(e.target.value)} maxLength={40} placeholder="Attach a live Kick channel (optional) — e.g. amouranth" className="flex-1 bg-black/30 border border-white/10 rounded px-3 py-2 text-sm" />
-            <button type="submit" disabled={creating} className="bg-white text-black px-4 py-2 rounded-full text-sm font-bold disabled:opacity-50">{creating ? 'Creating…' : 'Create room & open cockpit'}</button>
+            <button type="submit" disabled={creating} className="bg-brand text-brand-ink px-4 py-2 rounded-full text-sm font-bold disabled:opacity-50">{creating ? 'Creating…' : 'Create room & open cockpit'}</button>
           </form>
           {msg && <p className="text-xs text-yes mt-2">{msg}</p>}
           {createErr && <p className="text-xs text-no mt-2">{createErr}</p>}

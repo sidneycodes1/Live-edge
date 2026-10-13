@@ -15,7 +15,7 @@ export default function KickVideo({ channel }) {
   if (!src) return null;
   return (
     <div
-      className="relative w-full aspect-video bg-black rounded-card overflow-hidden border border-white/10"
+      className="relative w-full aspect-video bg-canvas rounded-card overflow-hidden border border-white/10"
       data-testid="kick-video-embed"
       data-channel={channel}
       data-player-src={src}
@@ -51,7 +51,7 @@ export function KickChatLinkOut({ channel }) {
         href={url}
         target="_blank"
         rel="noopener noreferrer"
-        className="inline-block px-4 py-2 rounded-card bg-white text-black text-sm font-semibold cursor-pointer hover:bg-white/90 transition"
+        className="inline-block px-4 py-2 rounded-card bg-brand text-brand-ink text-sm font-semibold cursor-pointer hover:bg-brand-deep transition"
       >
         Open kick.com/{channel} ↗
       </a>

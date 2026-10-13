@@ -16,8 +16,8 @@ export default function ChatFeed({ messages, sseEvents, roomId }) {
   useEffect(() => { if (ref.current) ref.current.scrollTop = ref.current.scrollHeight; }, [all.length]);
   const onPosted = (msg) => setPending((prev) => [...prev, msg]);
   return (
-    <div className="flex h-full min-h-64 flex-col bg-black">
-      <div ref={ref} data-testid="chat-feed" className="flex-1 min-h-0 overflow-y-auto bg-black p-3 space-y-2">
+    <div className="flex h-full min-h-64 flex-col bg-canvas">
+      <div ref={ref} data-testid="chat-feed" className="flex-1 min-h-0 overflow-y-auto bg-canvas p-3 space-y-2">
         {all.map((m, i) => (
           <div key={i} data-kind={m.kind} className={`text-sm ${m.kind === 'trade' ? 'text-yes' : m.kind === 'system' ? 'text-live' : m.kind === 'ai' ? 'text-white/60' : 'text-white/80'}`}>
             {m.kind === 'ai' && <span data-testid="ai-badge" className="mr-1.5 px-1.5 py-0.5 rounded bg-white/15 text-[10px] font-bold uppercase tracking-wide text-white/70 align-middle">AI</span>}

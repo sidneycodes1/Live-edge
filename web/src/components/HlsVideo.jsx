@@ -61,7 +61,7 @@ export default function HlsVideo({ src, poster, className = '' }) {
 
   return (
     <div
-      className={`relative w-full aspect-video bg-black rounded-card overflow-hidden border border-white/10 ${className}`}
+      className={`relative w-full aspect-video bg-canvas rounded-card overflow-hidden border border-white/10 ${className}`}
       data-testid="hls-video"
       data-status={status}
     >

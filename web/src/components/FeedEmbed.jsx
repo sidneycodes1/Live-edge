@@ -18,7 +18,7 @@ import HlsVideo from './HlsVideo.jsx';
 function YouTubeFrame({ src, videoId }) {
   return (
     <div
-      className="relative w-full aspect-video bg-black rounded-card overflow-hidden border border-white/10"
+      className="relative w-full aspect-video bg-canvas rounded-card overflow-hidden border border-white/10"
       data-testid="youtube-video-embed"
       data-video-id={videoId}
     >
@@ -49,7 +49,7 @@ function ExternalPanel({ title, embed, fallback }) {
             href={embed.watchUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 mt-3 px-4 py-2 rounded-card bg-white text-black text-sm font-semibold cursor-pointer hover:bg-white/90 transition"
+            className="inline-flex items-center gap-1.5 mt-3 px-4 py-2 rounded-card bg-brand text-brand-ink text-sm font-semibold cursor-pointer hover:bg-brand-deep transition"
           >
             <IconExternal className="w-4 h-4" />
             {title}

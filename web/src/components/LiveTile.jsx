@@ -123,7 +123,7 @@ export default function LiveTile({ channel, pinned, onTogglePin }) {
           )}
           {channel.isLive && (
             <span className="absolute top-2 left-2 z-10 inline-flex items-center gap-1 bg-red-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded">
-              <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+              <span className="w-1.5 h-1.5 rounded-full bg-brand animate-pulse" />
               LIVE
             </span>
           )}
@@ -135,7 +135,7 @@ export default function LiveTile({ channel, pinned, onTogglePin }) {
           {/* P3: the server popped a genuinely-live football broadcast to the top of
               Sports — badge it honestly. Only ever set from the real row, never here. */}
           {channel.pinnedFootball && (
-            <span className="absolute bottom-2 left-2 z-10 inline-flex items-center gap-1 bg-live/90 text-black text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wide"
+            <span className="absolute bottom-2 left-2 z-10 inline-flex items-center gap-1 bg-live/90 text-on-warn text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wide"
               data-testid="live-tile-football">
               Live football
             </span>
