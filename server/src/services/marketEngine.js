@@ -118,12 +118,18 @@ function buildPrompt(candidates) {
   const n = candidates.length;
   return [
     'You write prediction-market questions for a LIVE-stream betting app.',
-    'Below are streams that are LIVE RIGHT NOW. Produce between 3 and 5 questions,',
-    'each about something genuinely resolvable about the specific stream it is tied to',
-    '(what happens on THAT broadcast in the next ~30 minutes).',
-    'Rules:',
+    'Below are streams that are LIVE RIGHT NOW. Produce between 3 and 5 questions.',
+    'DIVERSITY IS MANDATORY - the feed looks broken if two cards ask the same thing:',
+    '  - Put each question on a DIFFERENT stream: use a UNIQUE liveItemId per market and',
+    '    NEVER write two markets about the same stream.',
+    '  - Every question must be a DIFFERENT, non-overlapping event. Do NOT rephrase one',
+    '    idea into two, and do NOT ask twice about the same action/subject/metric (e.g.',
+    '    never two "will X clip / how many clips" questions, even on different streams).',
+    '  - Spread across the streams/categories shown below rather than clustering on one.',
+    'Content rules:',
     '  - Each item MUST set liveItemId to EXACTLY one id from the list (copy it verbatim).',
-    '  - question: a single yes/no question, 8-140 characters, ending in "?".',
+    '  - question: a single yes/no question, 8-140 chars, ending in "?", about something',
+    '    genuinely resolvable on THAT broadcast in the next ~30 minutes.',
     '  - resolutionRule: one plain sentence stating how YES is decided.',
     '  - category: the stream category shown.',
     '  - openingProbability: your honest estimate, between 0.05 and 0.95, that the',
@@ -265,9 +271,15 @@ export function createMarketEngine(options = {}) {
 
   // Live grid (via aggregator's cache/ladder), deduped by id.
   // BROADCAST RULE (user): a bet is born from a live BROADCAST — a candidate must
-  // carry a real watchable stream (watchUrl + thumbnail).
+  // carry a real WATCHABLE stream. The watchability guarantee is `watchUrl` (a live
+  // kick.com/<slug> or a YouTube watch page). A thumbnail is NOT required: the public
+  // Kick API exposes no thumbnail and §4 forbids fabricating one, so gating on
+  // thumbnailUrl silently disqualified the ENTIRE primary source (Kick always fills the
+  // grid past the curated-fill threshold, so the thumbnail-bearing curated rows never
+  // reached the engine either) → zero candidates → no AI markets, ever. Requiring
+  // watchUrl still rejects data-only feed items (no stream), which is the rule's intent.
   function isBroadcastCandidate(c) {
-    return Boolean(c && c.watchUrl && c.thumbnailUrl);
+    return Boolean(c && c.watchUrl);
   }
 
   async function snapshotCandidates() {
@@ -302,11 +314,14 @@ export function createMarketEngine(options = {}) {
     const list = Array.isArray(raw?.markets) ? raw.markets : Array.isArray(raw) ? raw : [];
     const byId = new Map(candidates.map((c) => [c.liveItemId, c]));
     const out = [];
+    const usedStreams = new Set(); // DIVERSITY: at most ONE market per live stream per batch
     for (const m of list) {
       const cand = byId.get(String(m?.liveItemId));
       if (!cand) continue; // ties to a stream NOT in the snapshot → drop (§4 honesty)
+      if (usedStreams.has(cand.liveItemId)) continue; // already have a market on this stream -> drop the clone
       const question = normalizeQuestion(m?.question);
       if (!question) continue;
+      usedStreams.add(cand.liveItemId);
       out.push({
         cand,
         question,

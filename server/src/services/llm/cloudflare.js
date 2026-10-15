@@ -131,8 +131,11 @@ export function createCloudflareClient({
       throw new GeminiError('EMPTY', 'Cloudflare AI returned no response', { details: JSON.stringify(json).slice(0, 500) });
     }
     if (typeof raw === 'object') return raw; // some models hand back an object directly
+    // Cloudflare's Llama models wrap JSON in a ```json fence even under
+    // response_format — strip it before parsing (mirrors the OpenRouter client).
+    const unfenced = String(raw).replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
     try {
-      return JSON.parse(raw);
+      return JSON.parse(unfenced);
     } catch {
       throw new GeminiError('PARSE', 'Cloudflare AI response was not valid JSON', { details: String(raw).slice(0, 500) });
     }

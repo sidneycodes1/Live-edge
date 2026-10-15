@@ -24,7 +24,7 @@ import { GeminiError } from '../../gemini/errors.js';
 
 const DEFAULT_BASE_URL = 'https://openrouter.ai/api/v1';
 const DEFAULT_MODEL = 'meta-llama/llama-3.3-70b-instruct:free';
-const DEFAULT_TIMEOUT_MS = 25000; // a touch more headroom for the emergency tier
+const DEFAULT_TIMEOUT_MS = 45000; // free-tier models are slow; the 24-candidate market prompt needs headroom
 
 function isRetryableStatus(status) {
   return status === 429 || (status >= 500 && status <= 599);

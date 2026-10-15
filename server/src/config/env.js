@@ -87,6 +87,19 @@ const schema = z.object({
   OPENROUTER_API_KEY: z.string().optional(),
   OPENROUTER_MODEL: z.string().default('meta-llama/llama-3.3-70b-instruct:free'),
   OPENROUTER_BUDGET_PER_DAY: z.unknown().optional(),
+  // Groq - the PRIMARY market LLM (fastest + most reliable free tier, ~1-2s). Two models
+  // give intra-provider redundancy: GROQ_MODEL (qwen3.8-27b) is tried first, then
+  // GROQ_FALLBACK_MODEL (gpt-oss-120b). Enabled when a key is present. Secret.
+  GROQ_API_KEY: z.string().optional(),
+  GROQ_MODEL: z.string().default('qwen/qwen3.8-27b'),
+  GROQ_FALLBACK_MODEL: z.string().default('openai/gpt-oss-120b'),
+  GROQ_BUDGET_PER_DAY: z.unknown().optional(),
+  // GitHub Models - a LAST-RESORT emergency fallback (low free rate limits + the
+  // inference host is not always DNS-reachable). Auth is a GitHub personal access token
+  // (secret, header-only). Enabled only when a token is present.
+  GITHUB_MODELS_TOKEN: z.string().optional(),
+  GITHUB_MODEL: z.string().default('gpt-4o'),
+  GITHUB_BUDGET_PER_DAY: z.unknown().optional(),
   // Aggregate attempts/day ceiling for the market engine across ALL providers (a
   // runaway guard, distinct from each provider's own cap). Lenient like the others:
   // a bad value degrades to the engine default with a warning, never a boot crash.
@@ -170,21 +183,24 @@ export function loadEnv(raw = process.env) {
     }
   }
   const liveSources = { kick: kickEnabled, youtube: youtubeEnabled, floor: floorEnabled };
-  // LLM failover chain for the broadcast market engine: Gemini (primary) ->
-  // Cloudflare Workers AI (durable free fallback) -> OpenRouter (emergency). Each is
-  // enabled from its creds ONLY; an absent provider is simply skipped by the chain.
-  // The engine ROTATES only when at least one provider is enabled (llmEnabled); with
-  // none, it is DISABLE-SAFE (keeps the last batch, never crashes, never fabricates).
+  // LLM failover chain for the broadcast market engine, ordered by reliability/speed:
+  // Groq (PRIMARY - fastest + most reliable free tier; qwen3.8-27b then gpt-oss-120b) ->
+  // OpenRouter -> Gemini -> Cloudflare -> GitHub Models (emergency). Each is enabled from
+  // its creds ONLY; an absent provider is simply skipped by the chain. The engine ROTATES
+  // only when at least one provider is enabled (llmEnabled); with none it is DISABLE-SAFE
+  // (keeps the last batch, never crashes, never fabricates).
   const geminiEnabled = Boolean(env.GEMINI_API_KEY);
   const cloudflareEnabled = Boolean(env.CLOUDFLARE_API_TOKEN && env.CLOUDFLARE_ACCOUNT_ID);
   const openrouterEnabled = Boolean(env.OPENROUTER_API_KEY);
-  const llmEnabled = geminiEnabled || cloudflareEnabled || openrouterEnabled;
-  // Loud-but-non-fatal, per-provider: an operator should know which rungs are silent.
-  // Gemini is the PRIMARY, so its absence is always called out (the chain still falls
-  // through to Cloudflare/OpenRouter when those are configured).
-  if (!geminiEnabled) warnings.push('GEMINI_API_KEY missing → Gemini disabled in the LLM chain (falls through to Cloudflare/OpenRouter when configured)');
+  const groqEnabled = Boolean(env.GROQ_API_KEY);
+  const githubEnabled = Boolean(env.GITHUB_MODELS_TOKEN);
+  const llmEnabled = groqEnabled || openrouterEnabled || geminiEnabled || cloudflareEnabled || githubEnabled;
+  // Loud-but-non-fatal: an operator should know which rungs are silent. Groq is the
+  // PRIMARY now, so its absence is called out (the chain still falls through to the
+  // OpenRouter/Gemini/Cloudflare/GitHub rungs when those are configured).
+  if (!groqEnabled) warnings.push('GROQ_API_KEY missing → Groq (primary) disabled in the LLM chain; falling through to OpenRouter/Gemini/Cloudflare/GitHub when configured');
   if (!llmEnabled) {
-    warnings.push('No LLM provider key (GEMINI/CLOUDFLARE/OPENROUTER) → market engine rotation disabled (no crash; existing markets kept)');
+    warnings.push('No LLM provider key (GROQ/OPENROUTER/GEMINI/CLOUDFLARE/GITHUB) → market engine rotation disabled (no crash; existing markets kept)');
   }
   // Privy session auth (docs/PRIVY_AUTH_SPEC.md). Enabled ONLY when both creds are
   // present; otherwise disabled with a startup notice (never a crash). Guests are
@@ -225,6 +241,8 @@ export function loadEnv(raw = process.env) {
     geminiEnabled,
     cloudflareEnabled,
     openrouterEnabled,
+    groqEnabled,
+    githubEnabled,
     llmEnabled,
     privyEnabled,
     pantaRealtimeEnabled,

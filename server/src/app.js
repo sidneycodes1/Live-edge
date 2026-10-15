@@ -17,6 +17,8 @@ import { createGeminiClient } from './gemini/client.js';
 import { createMarketLLM } from './services/llm/chain.js';
 import { createCloudflareClient } from './services/llm/cloudflare.js';
 import { createOpenRouterClient } from './services/llm/openrouter.js';
+import { createGroqClient } from './services/llm/groq.js';
+import { createGitHubModelsClient } from './services/llm/github.js';
 import { createMarketEngine } from './services/marketEngine.js';
 import { createPantaSync } from './services/pantaSync.js';
 import { createAiSpectator } from './services/aiChat.js';
@@ -120,21 +122,32 @@ export async function createApp({ env: rawEnv, db: existingDb, privyVerifier: in
   const enabled = { ...liveSources, gemini: llmEnabled };
   const liveAggregator = createLiveAggregator({ kick, youtube, floor, curated, enabled });
   // Broadcast-aligned market engine, now backed by an LLM FAILOVER CHAIN instead of
-  // Gemini alone: Gemini (primary) → Cloudflare Workers AI (durable free fallback) →
-  // OpenRouter (emergency). The chain exposes the SAME isEnabled()/generateJson()
-  // contract the engine already consumes, so the engine is unchanged. Each client is
-  // DISABLE-SAFE (inert without creds); the whole chain is inert with no keys, so the
-  // engine is ALWAYS constructed but only rotates when llmEnabled. It never throws at
-  // boot and never wipes markets — if ALL providers fail a tick, the last batch stays.
+  // Gemini alone. ORDER (by reliability/speed): Groq qwen3.8-27b (PRIMARY — ~1-2s, valid
+  // JSON, generous free tier) → Groq gpt-oss-120b (intra-provider backup) → OpenRouter →
+  // Gemini (best quality once its quota is live) → Cloudflare (weak: its Llama models
+  // emit malformed JSON) → GitHub Models (emergency; low rate limits). The chain exposes
+  // the SAME isEnabled()/generateJson() contract the engine already consumes, so the
+  // engine is unchanged. Each client is DISABLE-SAFE (inert without creds); the whole
+  // chain is inert with no keys, so the engine is ALWAYS constructed but only rotates
+  // when llmEnabled. It never throws at boot and never wipes markets — if ALL providers
+  // fail a tick, the last batch stays.
   const gemini = createGeminiClient({ apiKey: env.GEMINI_API_KEY, model: env.GEMINI_MODEL });
   const cloudflare = createCloudflareClient({ apiToken: env.CLOUDFLARE_API_TOKEN, accountId: env.CLOUDFLARE_ACCOUNT_ID, model: env.CLOUDFLARE_AI_MODEL });
   const openrouter = createOpenRouterClient({ apiKey: env.OPENROUTER_API_KEY, model: env.OPENROUTER_MODEL });
+  // Groq is the PRIMARY; two model rungs give intra-provider redundancy (qwen3.8-27b then
+  // gpt-oss-120b). GitHub Models is the last-resort emergency rung.
+  const groq = createGroqClient({ apiKey: env.GROQ_API_KEY, model: env.GROQ_MODEL });
+  const groqFallback = createGroqClient({ apiKey: env.GROQ_API_KEY, model: env.GROQ_FALLBACK_MODEL });
+  const github = createGitHubModelsClient({ token: env.GITHUB_MODELS_TOKEN, model: env.GITHUB_MODEL });
   const marketLLM = createMarketLLM({
     db,
     providers: [
+      { name: 'groq', client: groq, budgetPerDay: Number(env.GROQ_BUDGET_PER_DAY) || 300 },
+      { name: 'groq-120b', client: groqFallback, budgetPerDay: Number(env.GROQ_BUDGET_PER_DAY) || 300 },
+      { name: 'openrouter', client: openrouter, budgetPerDay: Number(env.OPENROUTER_BUDGET_PER_DAY) || 50 },
       { name: 'gemini', client: gemini, budgetPerDay: Number(env.GEMINI_BUDGET_PER_DAY) || 40 },
       { name: 'cloudflare', client: cloudflare, budgetPerDay: Number(env.CLOUDFLARE_BUDGET_PER_DAY) || 200 },
-      { name: 'openrouter', client: openrouter, budgetPerDay: Number(env.OPENROUTER_BUDGET_PER_DAY) || 50 },
+      { name: 'github', client: github, budgetPerDay: Number(env.GITHUB_BUDGET_PER_DAY) || 100 },
     ],
   });
   // The engine's "gemini" dependency is now the chain (same interface, more reliable).

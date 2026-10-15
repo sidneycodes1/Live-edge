@@ -343,11 +343,15 @@ describe('aggregator — curated post-merge fill (Phase 2)', () => {
 describe('env.loadEnv — Gemini groundwork (Phase 2, config only)', () => {
   const BASE = { NODE_ENV: 'development', JWT_SECRET: 'dev-only-secret-change-me-dev-only-secret' };
 
-  it('GEMINI_API_KEY absent → feature disabled, no crash, model default gemini-3.8-flash', () => {
+  it('GEMINI_API_KEY absent → gemini disabled, no crash, model default gemini-3.8-flash', () => {
     const env = loadEnv({ ...BASE });
     assert.equal(env.geminiEnabled, false);
     assert.equal(env.GEMINI_MODEL, 'gemini-3.8-flash');
-    assert.ok(env.warnings.some((w) => /GEMINI_API_KEY missing/i.test(w)));
+    // Gemini is no longer the chain PRIMARY (Groq is), so with zero provider keys the
+    // chain-level "no provider" notice fires and llmEnabled is false — not a
+    // Gemini-specific warning.
+    assert.equal(env.llmEnabled, false);
+    assert.ok(env.warnings.some((w) => /No LLM provider key/i.test(w)));
   });
 
   it('GEMINI_API_KEY present → enabled; a custom GEMINI_MODEL is honored', () => {

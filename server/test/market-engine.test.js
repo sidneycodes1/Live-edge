@@ -165,10 +165,10 @@ describe('marketEngine/tick', () => {
     const g = fakeGemini({
       markets: [
         { liveItemId: 'yt-vid1', question: 'Will Al Jazeera break a major headline within 30 minutes?', resolutionRule: 'YES if a breaking banner appears.', category: 'News' },
-        { liveItemId: 'yt-vid1', question: 'Will the anchor mention the summit before the hour?', category: 'News' },
+        { liveItemId: 'yt-vid2', question: 'Will the anchor mention the summit before the hour?', category: 'News' },
       ],
     });
-    const res = await newEngine(db, g, fakeAggregator([liveItem()])).tick();
+    const res = await newEngine(db, g, fakeAggregator([liveItem(), liveItem({ id: 'yt-vid2', videoUrl: 'https://www.youtube.com/watch?v=vid2', thumbnailUrl: 'https://i.ytimg.com/vi/vid2/hqdefault.jpg', title: 'Second Live Stream', channelName: 'Second Channel', owner: 'Second Channel' })])).tick();
     assert.equal(res.created, 2);
     assert.equal(res.calls, 1);
     const { rows } = await db.query(`select * from markets where source='sim-engine' order by created_at`);
@@ -193,6 +193,20 @@ describe('marketEngine/tick', () => {
     const res = await newEngine(db, g, fakeAggregator([liveItem()])).tick();
     assert.equal(res.created, 0);
     assert.equal(res.deduped, 1);
+  });
+
+  it('DIVERSITY: two markets on the SAME stream collapse to one per batch (no near-dup cards)', async () => {
+    const { db } = await makeApp();
+    const g = fakeGemini({
+      markets: [
+        { liveItemId: 'yt-vid1', question: 'Will this stream show a clip in the next 30 minutes?', category: 'News' },
+        { liveItemId: 'yt-vid1', question: 'Will this stream show five clips before it ends?', category: 'News' },
+      ],
+    });
+    const res = await newEngine(db, g, fakeAggregator([liveItem()])).tick();
+    assert.equal(res.created, 1, 'only one market per live stream per batch');
+    const { rows } = await db.query(`select count(*)::int c from markets where source='sim-engine'`);
+    assert.equal(rows[0].c, 1);
   });
 
   it('B3: an engine market gets its OWN room (real stream title + watch url) so the rails surface it', async () => {
@@ -497,9 +511,9 @@ describe('marketEngine — Gemini opening line (prior_yes)', () => {
     const loQ = 'An absurdly low opening line from the model?';
     const g = fakeGemini({ markets: [
       { liveItemId: 'yt-vid1', question: hiQ, openingProbability: 5 },
-      { liveItemId: 'yt-vid1', question: loQ, openingProbability: -3 },
+      { liveItemId: 'yt-vid2', question: loQ, openingProbability: -3 },
     ] });
-    const res = await newEngine(db, g, fakeAggregator([liveItem()])).tick();
+    const res = await newEngine(db, g, fakeAggregator([liveItem(), liveItem({ id: 'yt-vid2', videoUrl: 'https://www.youtube.com/watch?v=vid2', thumbnailUrl: 'https://i.ytimg.com/vi/vid2/hqdefault.jpg', title: 'Second Live Stream', channelName: 'Second Channel', owner: 'Second Channel' })])).tick();
     assert.equal(res.created, 2);
     const hi = await pricesOf(db, hiQ);
     const lo = await pricesOf(db, loQ);
